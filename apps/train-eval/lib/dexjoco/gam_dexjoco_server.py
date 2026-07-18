@@ -189,13 +189,25 @@ class GamDexJoCoPolicy:
         # only), and the prompt is constant across episodes of a task — the
         # only usable boundary signal is the proprio jump to the home pose.
         cur_state = closure_obs["state"]
-        if (
-            self._last_state is None
-            or float(np.linalg.norm(cur_state - self._last_state))
-            > self._reset_state_l2_threshold
-        ):
+        delta = (
+            float(np.linalg.norm(cur_state - self._last_state))
+            if self._last_state is not None
+            else float("inf")
+        )
+        self._req_count = getattr(self, "_req_count", 0) + 1
+        if delta > self._reset_state_l2_threshold:
             self.policy.reset_episode()  # also clears the KV/shallow caches
             self._prev_returned_chunk = None
+            self._commit_count = 0
+            logger.info(
+                "episode boundary: req=%d state_l2=%.3f (threshold %.3f)",
+                self._req_count, delta, self._reset_state_l2_threshold,
+            )
+        elif self._req_count % 20 == 0:
+            logger.info(
+                "in-episode: req=%d state_l2=%.3f commits=%d",
+                self._req_count, delta, getattr(self, "_commit_count", 0),
+            )
         self._last_state = cur_state
 
         # Commit the PREVIOUS request's staged observation as one history
@@ -209,6 +221,7 @@ class GamDexJoCoPolicy:
                 torch.from_numpy(self._prev_returned_chunk)
             )
             self.policy.commit_observation(1)
+            self._commit_count = getattr(self, "_commit_count", 0) + 1
 
         with torch.no_grad():
             act = self.policy(closure_obs, prompt)
