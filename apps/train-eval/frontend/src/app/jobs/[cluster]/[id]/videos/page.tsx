@@ -49,15 +49,18 @@ function videoBasename(episode: string): string {
   return i >= 0 ? episode.slice(i + 1) : episode;
 }
 
-// DexJoCo writes one directory per episode (episode_NN_success|failure[_reason])
-// holding one mp4 per camera; Isaac writes flat videos/ep*.mp4. Group cameras
-// of one episode together; Isaac videos land in the ungrouped bucket.
-const EPISODE_DIR_RE = /^episode_(\d+)_(success|failure)(?:_(.+))?$/;
+// DexJoCo writes one directory per episode (episode_NN_success|failure[_reason],
+// episode_NN_temp while in flight) holding one mp4 per camera; Isaac writes
+// flat videos/ep*.mp4. Group cameras of one episode together; Isaac videos
+// land in the ungrouped bucket.
+const EPISODE_DIR_RE = /^episode_(\d+)_(success|failure|temp)(?:_(.+))?$/;
+
+type EpisodeOutcome = "success" | "failure" | "temp";
 
 type EpisodeGroup = {
   key: string; // episode dir relative to run_dir
   index: string;
-  outcome: "success" | "failure";
+  outcome: EpisodeOutcome;
   reason: string | null;
   videos: VideoFile[];
 };
@@ -82,7 +85,7 @@ function groupEpisodes(videos: VideoFile[]): {
       g = {
         key,
         index: m[1],
-        outcome: m[2] as "success" | "failure",
+        outcome: m[2] as EpisodeOutcome,
         reason: m[3] ? m[3].replace(/_/g, " ") : null,
         videos: [],
       };
@@ -138,17 +141,15 @@ function buildSections(
   return sections;
 }
 
-function OutcomeBadge({ outcome }: { outcome: "success" | "failure" }) {
+function OutcomeBadge({ outcome }: { outcome: EpisodeOutcome }) {
+  const className =
+    outcome === "success"
+      ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+      : outcome === "failure"
+        ? "rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+        : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-400";
   return (
-    <span
-      className={
-        outcome === "success"
-          ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-          : "rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-400"
-      }
-    >
-      {outcome}
-    </span>
+    <span className={className}>{outcome === "temp" ? "in progress" : outcome}</span>
   );
 }
 
@@ -204,10 +205,12 @@ function RunCard({
   }
 
   const { episodes, flat } = groupEpisodes(section.videos);
+  const doneCount = episodes.filter((ep) => ep.outcome !== "temp").length;
+  const inFlight = episodes.length - doneCount;
   const countLabel =
     episodes.length > 0
-      ? `${episodes.length} episodes · ${section.videos.length} videos`
-      : `${section.videos.length} episodes`;
+      ? `${doneCount} episodes${inFlight ? ` (+${inFlight} in progress)` : ""} · ${section.videos.length} videos`
+      : `${section.videos.length} videos`;
 
   return (
     <Card
@@ -270,6 +273,11 @@ function RunCard({
                 {ep.reason && (
                   <span className="text-xs text-[var(--ssot-text-soft)]">
                     {ep.reason}
+                  </span>
+                )}
+                {ep.outcome === "temp" && (
+                  <span className="text-xs text-[var(--ssot-text-soft)]">
+                    still recording — videos may not play until the episode finishes
                   </span>
                 )}
               </div>
