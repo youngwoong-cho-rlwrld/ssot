@@ -7,9 +7,11 @@
 
 # ----- model -----
 MODEL_ID=dexjoco-gam
-# gam repo branch dexjoco-delta-actions (base 6b71f21 + delta-action impl
-# + b8837ed fix: action-stats pooling with samples=-1 used 1 window/leaf).
-TRAIN_GIT_COMMIT=b8837ed1cd69910567a9055cf7fd83717dbb3e2c
+# gam repo branch dexjoco-delta-actions (base 6b71f21 + delta-action impl,
+# b8837ed stats-pooling fix, 5b340e3 foreign-ckpt step-counter reset — the
+# pretrained-gam.pt init carries train_steps=235000 which otherwise ends a
+# 30k-step run at step 0).
+TRAIN_GIT_COMMIT=5b340e328664ce43730ada9866f21c7a2603d91b
 TRAIN_MODALITY_CONFIG=gam_config.yaml
 TRAIN_ACTION_HORIZON=8
 TRAIN_NOTE="DexJoCo 5-task bimanual GAM delta-action retrain: base_delta targets, C=8, delta stats key, lambda_vel=1.0 - fixes hold-collapse of the absolute-target run"
