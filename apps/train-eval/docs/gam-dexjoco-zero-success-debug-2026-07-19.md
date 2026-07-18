@@ -4,6 +4,53 @@ Handoff for continuing the investigation into why GAM-family policies score
 **0% success across all DexJoCo tasks** while PhysiXel (groot server) scores
 19–57% on winnable tasks with byte-identical eval configs.
 
+## 0. RESOLVED (2026-07-19, later same day): root cause found — retrain required
+
+**The fine-tune hold-collapsed during training.** Targets are absolute joint
+positions normalized to each joint's full q01/q99 working range, so
+within-chunk motion is only **2.3% of the normalized variance the L1 action
+loss sees** (xyz blocks ~1%). "Hold current pose" captures the other 97.7%,
+and the model converged to that optimum: offline teacher-forced chunks carry
+~**5% of GT motion magnitude** (chance direction on rot/hand), unchanged at
+H=1/3/7 with GT action history. The paper never hits this because LIBERO
+uses zero-centered **delta-EEF actions** where motion IS the loss signal;
+`base_delta` in our tree is a **no-op alias** (returns actions unchanged),
+so delta targets were never actually implemented for DexJoCo. W&B looked
+healthy (`r2_norm` 0.96) because that metric is DC-dominated — no
+motion-space metric is logged.
+
+Every other layer is now positively validated:
+- Offline abs-fit fine (R² 0.85, no denorm/sign/scale bug), but delta-space
+  magR≈0.05 → hold-collapse (`/fsx/.../debug_20260719/offline_fit/`).
+- GT-action replay solves microwave in the eval env (2/5 open-loop, sub-mm
+  tracking; absolute-pose semantics confirmed) → contract intact
+  (`.../gt_replay/`).
+- DA3 backbone sha256-matches the official release (HF dataset
+  `SeonghuJeon/3da-libero-training-assets`), renders sensible depth, no
+  fine-tune drift (blocks 13–39 moved ~1% relL2; EMA≈base to 0.1% — the
+  `use_ema` A/B is moot) (`.../backbone/`).
+- **Paper LIBERO-spatial checkpoint on OUR cluster stack: 15/15 closed-loop
+  success** and offline magR 0.6–0.9 → plumbing/serving/eval validated
+  end-to-end; the collapse is specific to our run (`.../libero_control/`).
+- Variance decomposition + recipe diff vs paper: `.../collapse_cause/vardecomp.json`.
+
+**Retrain prescription (ranked):**
+1. Implement real delta-action targets in the DexJoCo loader
+   (`a_t^Δ = a_t^abs − proprio_current`), recompute q01/q99 on the delta
+   distribution, reconstruct absolute at serve time (server has proprio).
+   This is a code change + stats refresh, not a config flip.
+2. `chunk_size=8` (match paper C=8; 16 amplifies DC dominance).
+3. Optional insurance: velocity-loss term `lambda_vel * L1(Δpred, Δgt)`.
+4. Log a motion-space metric (delta-R²/magR) to W&B — `r2_norm` is DC-blind.
+5. Secondary: fix rotvec antipodal range inflation (dims 3/25 span ~6.0).
+
+Serving fix status: boundary threshold recalibrated from 162856 probe data
+(in-episode deltas up to ~2.5 early-episode, true boundaries 5.6–6.3) →
+`GAM_SERVER_RESET_STATE_L2` default now **3.5**. Real but secondary; history
+provably does not rescue the collapsed checkpoint.
+
+The sections below are the investigation log that led here.
+
 ## 1. Symptom
 
 - `dexjoco_gam_bimanual_5tasks_224` (baseline) — **0 / 300+** episodes.

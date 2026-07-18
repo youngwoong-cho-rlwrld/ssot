@@ -145,13 +145,15 @@ class GamDexJoCoPolicy:
         # episode boundaries, restoring the trained multi-step regime.
         self._last_state: np.ndarray | None = None      # boundary detection
         self._prev_returned_chunk: np.ndarray | None = None  # executed-action feedback
-        # In-episode consecutive requests differ by ~chunk_size control steps
-        # (small L2); an env reset teleports the arms to the fixed home pose
-        # (large L2). A missed boundary contaminates at most the history
-        # horizon (7 commits); a spurious reset degrades one step to the old
-        # memoryless behavior — both strictly no worse than resetting always.
+        # Measured on bimanual_microwave_cook probes (job 162856, 2026-07-19):
+        # in-episode consecutive-request deltas reach ~2.5 during early-episode
+        # fast motion (typical 0.02-0.9), while a true env reset jumps 5.6-6.3.
+        # 3.5 sits between the observed in-episode max and boundary min with
+        # ~1.6x margin each way. A missed boundary contaminates at most the
+        # history horizon (7 commits); a spurious reset degrades one step to
+        # the old memoryless behavior.
         self._reset_state_l2_threshold = float(
-            os.environ.get("GAM_SERVER_RESET_STATE_L2", "0.5")
+            os.environ.get("GAM_SERVER_RESET_STATE_L2", "3.5")
         )
         self.policy.reset_episode()
         logger.info(
