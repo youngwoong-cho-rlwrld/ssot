@@ -275,11 +275,6 @@ function RunCard({
                     {ep.reason}
                   </span>
                 )}
-                {ep.outcome === "temp" && (
-                  <span className="text-xs text-[var(--ssot-text-soft)]">
-                    still recording — videos may not play until the episode finishes
-                  </span>
-                )}
               </div>
               <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {ep.videos.map((v) => (
