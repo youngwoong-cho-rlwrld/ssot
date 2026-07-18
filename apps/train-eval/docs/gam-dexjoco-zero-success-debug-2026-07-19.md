@@ -101,15 +101,19 @@ via `override_pending_action_chunk` + `commit_observation(1)`, resets only on
 a detected episode boundary (proprio L2 jump > `GAM_SERVER_RESET_STATE_L2`,
 default 0.5), logs `episode boundary`/`in-episode` decisions.
 
-**Probe results so far:** 20 episodes (microwave+photograph) with the
-stateful server: **0/20, all full-cap timeouts** (job 162748). CAVEAT: it is
-not yet confirmed the stateful path engaged — if in-episode state deltas
-exceed the 0.5 threshold, the server silently reset every request (no-test).
-An instrumented probe (job 162856, 3 episodes microwave) was running to log
-the actual delta distribution; check its `server_gpu0_*.log` for
-`episode boundary`/`in-episode` lines. If deltas >> 0.5 in-episode → raise
-threshold (calibrate from logs) and rerun the probe before drawing any
-conclusion about statefulness.
+**Probe verdict (RESOLVED 2026-07-19):** 20 episodes (microwave+photograph)
+with the stateful server: **0/20, all full-cap timeouts** (job 162748), and
+the instrumented probe (job 162856) CONFIRMS the stateful path engaged:
+in-episode deltas 0.07–0.46 (< 0.5 threshold), commits accumulated steadily
+(14→114 over reqs 20→120), true boundaries detected (L2≈5.6 at episode
+end/cap). Minor: the first ~4–5 chunks of each episode exceed the threshold
+(L2 0.7–2.5, fast initial motion) and spuriously reset, so history builds
+from ~chunk 5 — cosmetic. **Conclusion: memoryless serving was NOT the root
+cause of the 0%.** The serving fix is paper-aligned and stays, but the
+problem is upstream (model / data adaptation / training) — sections 5.0–5.2
+are the active line of attack. Remaining server-side second-order items:
+`use_ema=False` A/B, feeding back the executed ~8 actions instead of the
+full 16-chunk.
 
 ### Other shipped fixes (orthogonal)
 - Multi-env eval: `N_ENVS_PER_GPU` in config.sh (workers = GPUs × envs; each
