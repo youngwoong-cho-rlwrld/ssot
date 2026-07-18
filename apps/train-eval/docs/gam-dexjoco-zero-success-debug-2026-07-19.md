@@ -168,6 +168,10 @@ sample (state composition order, action column selection).
   `SeonghuJeon/3da-libero-gam`).
 - Functional: run DA3 on a few eval frames, render predicted depth — garbage
   depth = wrong/broken backbone in one glance.
+- Fine-tune drift check: cosine distance between the served encoder blocks
+  (checkpoint `student_da3`, and the EMA overlay for blocks 13–39) and the
+  pretrained `track4world_da3.pth` weights — catches a catastrophically
+  diverged fine-tune that "loads cleanly" but has drifted into uselessness.
 - A/B `use_ema=False` (server flag/env; serving currently overlays EMA onto
   blocks 13–39) — 3-episode probe.
 
