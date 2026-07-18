@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { keepPreviousData, useIsFetching, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, Database, ExternalLink, Table2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, Database, ExternalLink, Table2, Video } from "lucide-react";
 import { toast } from "sonner";
 import { api, type ResultCell, type ResultsResponse, type ResultTask, type ResultVariant } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,7 @@ import { isActiveJobState, primaryJobState } from "@/lib/job-status";
 import { isSlurmCluster } from "@/lib/cluster-env";
 import { formatKstShort, formatKstShortWithYear } from "@/lib/job-time";
 import { Th } from "@/components/table";
-import { jobDetailHref } from "@/lib/job-links";
+import { jobDetailHref, jobVideosHref } from "@/lib/job-links";
 import { basename, formatPct } from "@/lib/format";
 import { copyRich } from "@/lib/clipboard";
 
@@ -375,7 +375,17 @@ function ResultCard({ variant, className }: { variant: ResultVariant; className?
             {variant.note || "eval results"}
           </CardDescription>
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {variant.job_id && (
+            <Link
+              href={jobVideosHref(variant.cluster, variant.job_id)!}
+              className="inline-flex items-center gap-1 text-sm text-[var(--ssot-accent)] hover:underline"
+              title="View episode videos"
+            >
+              <Video className="h-3.5 w-3.5" />
+              Videos
+            </Link>
+          )}
           <CopyResultTableButton variant={variant} evalSets={evalSets} />
           <Badge variant="outline">{variant.cluster}</Badge>
           {variant.model_version && <Badge variant="secondary">{variant.model_version}</Badge>}

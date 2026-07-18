@@ -10,7 +10,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Check, ExternalLink, Pencil, X } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, Pencil, Video, X } from "lucide-react";
 import {
   api,
   logStreamUrl,
@@ -63,6 +63,7 @@ import { Th } from "@/components/table";
 import { JobTimestamp } from "@/components/job-timestamp";
 import { ProgressBar } from "@/components/progress-bar";
 import { JobLink } from "@/components/job-link";
+import { evalRunSlug, jobVideosHref } from "@/lib/job-links";
 
 const REFRESH_MS = 60_000;
 const LOG_PAGE_SIZE = 100;
@@ -999,11 +1000,21 @@ function EvalRunsCard({
   error?: Error | null;
 }) {
   const hasTask = rows.some((row) => row.task);
+  const videosHref = d ? jobVideosHref(d.cluster, d.job_id) : undefined;
 
   return (
     <Card className="mt-6">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Eval Runs</CardTitle>
+        {videosHref && (
+          <Link
+            href={videosHref}
+            className="inline-flex items-center gap-1 text-sm text-[var(--ssot-accent)] hover:underline"
+          >
+            <Video className="h-3.5 w-3.5" />
+            Videos
+          </Link>
+        )}
       </CardHeader>
       <CardContent>
         {isLoading && <LoadingState label="Loading eval runs..." />}
@@ -1035,7 +1046,13 @@ function EvalRunsCard({
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <EvalRunRow key={row.path} row={row} showTask={hasTask} />
+                  <EvalRunRow
+                    key={row.path}
+                    row={row}
+                    showTask={hasTask}
+                    cluster={d?.cluster}
+                    jobId={d?.job_id}
+                  />
                 ))}
               </tbody>
             </table>
@@ -1046,7 +1063,21 @@ function EvalRunsCard({
   );
 }
 
-function EvalRunRow({ row, showTask }: { row: EvalRun; showTask: boolean }) {
+function EvalRunRow({
+  row,
+  showTask,
+  cluster,
+  jobId,
+}: {
+  row: EvalRun;
+  showTask: boolean;
+  cluster?: string;
+  jobId?: string;
+}) {
+  const videosBase = cluster ? jobVideosHref(cluster, jobId) : undefined;
+  const runVideosHref = videosBase
+    ? `${videosBase}?run=${encodeURIComponent(evalRunSlug(row))}`
+    : undefined;
   return (
     <tr className="border-b border-slate-100 last:border-0 dark:border-slate-900">
       {showTask && (
@@ -1067,7 +1098,16 @@ function EvalRunRow({ row, showTask }: { row: EvalRun; showTask: boolean }) {
           <ImmediateTooltip content={row.path} className="min-w-0 flex-1">
             <span className="block w-full truncate font-mono text-xs">{row.path}</span>
           </ImmediateTooltip>
-          <span className="shrink-0">
+          <span className="flex shrink-0 items-center gap-1">
+            {runVideosHref && (
+              <Link
+                href={runVideosHref}
+                title="View episode videos for this run"
+                className="inline-flex items-center text-[var(--ssot-text-soft)] transition-colors hover:text-[var(--ssot-accent)]"
+              >
+                <Video className="h-3.5 w-3.5" />
+              </Link>
+            )}
             <CopyButton value={row.path} title="Copy result file" />
           </span>
         </div>

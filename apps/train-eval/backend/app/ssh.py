@@ -182,6 +182,33 @@ async def iter_logical_lines(reader: asyncio.StreamReader):
             yield line.decode(errors="replace")
 
 
+async def ssh_stream_bytes(host: str, cmd: str, chunk_size: int = 65536):
+    """Async generator yielding raw stdout bytes from `cmd` run on `host`.
+
+    Byte-oriented counterpart to `ssh_tail_lines`, used to pipe binary payloads
+    (e.g. an mp4 range served by remote `dd`/`cat`) straight through the
+    multiplexed ssh master without decoding.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", *_CM_OPTS,
+        host, _SLURM_PATH_PREFIX + cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        limit=1 << 20,
+    )
+    assert proc.stdout is not None
+    try:
+        while True:
+            chunk = await proc.stdout.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+
+
 async def ssh_tail_lines(host: str, remote_pattern: str, start_line: int = 1):
     """Async generator yielding `tail -F` lines from a remote file glob.
 

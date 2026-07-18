@@ -31,6 +31,10 @@ export function logStreamUrl(cluster: string, jobId: string, stream: LogStream) 
   return `${API_BASE}/api/jobs/${cluster}/${jobId}/logs?stream=${stream}`;
 }
 
+export function videoStreamUrl(cluster: string, jobId: string, path: string) {
+  return `${API_BASE}/api/jobs/${cluster}/${jobId}/videos/stream?path=${encodeURIComponent(path)}`;
+}
+
 // ── types matching backend Pydantic models ──
 
 export type Cluster = { name: string; vars: Record<string, string> };
@@ -411,6 +415,19 @@ export type JobProgress = {
 
 export type JobEvalRuns = {
   eval_runs: EvalRun[];
+};
+
+export type VideoFile = {
+  path: string;      // relative to eval_dir; feeds videoStreamUrl
+  size: number;      // bytes
+  run_dir: string;   // absolute run dir; equals dirname(EvalRun.path)
+  episode: string;   // file basename, e.g. "ep000.mp4"
+};
+
+export type VideoListing = {
+  eval_dir: string | null;
+  eval_harness: string | null;
+  videos: VideoFile[];
 };
 
 export type GitStatus = {
