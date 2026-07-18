@@ -50,6 +50,10 @@ N_ENVS_PER_GPU=4
 N_EPISODES=50
 N_RUNS=3
 EVAL_SETS=(rand_obj)
+# SKT clients die silently in node-correlated windows; 900s no-progress
+# detection (vs 2400s default) turns each death into a ~15min retry
+# instead of ~40min. Server load+warmup is ~6min, so ample margin.
+DEXJOCO_NO_PROGRESS_TIMEOUT_SECONDS=900
 DEXJOCO_INFERENCE_MODE=blocking_overlap
 DEXJOCO_ACTION_HORIZON=16
 DEXJOCO_REPLAN_RATIO=0.5
