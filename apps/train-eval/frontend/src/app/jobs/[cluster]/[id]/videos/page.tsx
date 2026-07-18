@@ -13,6 +13,7 @@ import {
   type VideoListing,
 } from "@/lib/api";
 import { formatPct } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/loading-state";
 import { evalRunSlug, jobDetailHref } from "@/lib/job-links";
@@ -142,15 +143,11 @@ function buildSections(
 }
 
 function OutcomeBadge({ outcome }: { outcome: EpisodeOutcome }) {
-  const className =
-    outcome === "success"
-      ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-      : outcome === "failure"
-        ? "rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-400"
-        : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-400";
-  return (
-    <span className={className}>{outcome === "temp" ? "in progress" : outcome}</span>
-  );
+  const variant =
+    outcome === "success" ? "success"
+    : outcome === "failure" ? "danger"
+    : "warning";
+  return <Badge variant={variant}>{outcome === "temp" ? "in progress" : outcome}</Badge>;
 }
 
 function VideoTile({
