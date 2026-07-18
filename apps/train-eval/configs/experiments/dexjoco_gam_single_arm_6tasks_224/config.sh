@@ -45,8 +45,9 @@ DEXJOCO_SERVER_TYPE=gam
 DEXJOCO_IMAGE_SIZE=224
 DEXJOCO_EMBODIMENT_TAG=dexjoco_single_arm
 EVAL_NUM_GPUS=4
-# Concurrent sim workers per GPU (~12G VRAM each; 2 fits L40S 48G safely).
-N_ENVS_PER_GPU=2
+# Concurrent sim workers per GPU (~12G VRAM each): 4 sized for H200
+# (rlwrld-gpu); drop to 2 for L40S 48G partitions.
+N_ENVS_PER_GPU=4
 N_EPISODES=50
 N_RUNS=3
 EVAL_SETS=(rand_obj)
