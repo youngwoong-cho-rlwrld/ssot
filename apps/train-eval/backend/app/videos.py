@@ -1,13 +1,13 @@
 """Eval-video listing and byte-range streaming.
 
-Isaac eval runs buffer per-episode recordings at
-``<eval_dir>/<task…>/<eval_set>/run_*/videos/ep*.mp4`` on the cluster. These
-helpers enumerate them in one remote round-trip and stream individual files
-(with HTTP Range support so the browser player can seek) straight off the
-cluster over the same ssh mechanism the rest of the backend uses.
-
-DexJoCo runs write ``episode_NN_success|failure`` directories instead and
-generally produce no mp4s, so the listing simply comes back empty for them.
+Eval runs buffer per-episode recordings on the cluster in harness-specific
+layouts: Isaac writes ``<run_*>/videos/ep*.mp4``; DexJoCo writes one directory
+per episode with one file per camera,
+``<run_*>/dexjoco_out/episode_NN_<success|failure>[_<reason>]/{ego,wrist_*}.mp4``.
+These helpers enumerate every mp4 under a job's eval dir in one remote
+round-trip and stream individual files (with HTTP Range support so the browser
+player can seek) straight off the cluster over the same ssh mechanism the rest
+of the backend uses.
 """
 
 from __future__ import annotations
@@ -28,7 +28,8 @@ class VideoFile(BaseModel):
     path: str        # POSIX path relative to eval_dir (used by the stream endpoint)
     size: int        # bytes
     run_dir: str     # absolute run directory — equals dirname(EvalRun.path)
-    episode: str     # file basename, e.g. "ep0.mp4"
+    episode: str     # POSIX path relative to run_dir, e.g. "videos/ep000.mp4"
+                     # or "dexjoco_out/episode_02_failure_reason/wrist_right.mp4"
 
 
 class VideoListing(BaseModel):
@@ -37,28 +38,37 @@ class VideoListing(BaseModel):
     videos: list[VideoFile] = []
 
 
-# Enumerates every buffered episode mp4 under EVAL_DIR in one shot: relative
-# path (for the stream query), size, absolute run dir (so the frontend can join
-# a video to its EvalRun via dirname(EvalRun.path)), and basename.
+# Enumerates every mp4 under EVAL_DIR in one shot (os.walk — one pass over the
+# NFS tree regardless of layout): relative path (for the stream query), size,
+# absolute run dir (nearest run_* ancestor, so the frontend can join a video to
+# its EvalRun via dirname(EvalRun.path)), and path relative to that run dir.
 _VIDEO_LISTING_SCRIPT = r'''
 import json
 import os
-from pathlib import Path
 
-root = Path(os.environ["EVAL_DIR"])
+root = os.path.abspath(os.environ["EVAL_DIR"])
 rows = []
-if root.is_dir():
-    for path in sorted(root.glob("**/videos/ep*.mp4"), key=lambda p: str(p)):
+for dirpath, dirnames, filenames in os.walk(root):
+    for name in filenames:
+        if not name.endswith(".mp4"):
+            continue
+        full = os.path.join(dirpath, name)
         try:
-            size = path.stat().st_size
+            size = os.path.getsize(full)
         except OSError:
             continue
+        run_dir = dirpath
+        while run_dir != root and not os.path.basename(run_dir).startswith("run_"):
+            run_dir = os.path.dirname(run_dir)
+        if not os.path.basename(run_dir).startswith("run_"):
+            run_dir = dirpath
         rows.append({
-            "path": path.relative_to(root).as_posix(),
+            "path": os.path.relpath(full, root).replace(os.sep, "/"),
             "size": size,
-            "run_dir": str(path.parent.parent),
-            "episode": path.name,
+            "run_dir": run_dir,
+            "episode": os.path.relpath(full, run_dir).replace(os.sep, "/"),
         })
+rows.sort(key=lambda r: r["path"])
 print(json.dumps(rows))
 '''
 

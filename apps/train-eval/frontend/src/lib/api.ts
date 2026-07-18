@@ -421,7 +421,8 @@ export type VideoFile = {
   path: string;      // relative to eval_dir; feeds videoStreamUrl
   size: number;      // bytes
   run_dir: string;   // absolute run dir; equals dirname(EvalRun.path)
-  episode: string;   // file basename, e.g. "ep000.mp4"
+  episode: string;   // relative to run_dir, e.g. "videos/ep000.mp4" or
+                     // "dexjoco_out/episode_02_failure_reason/ego.mp4"
 };
 
 export type VideoListing = {

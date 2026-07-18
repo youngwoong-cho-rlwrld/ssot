@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useEffect, useRef } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import {
   api,
   videoStreamUrl,
@@ -42,6 +42,58 @@ function formatSuccess(row: EvalRun): string | null {
     return `${row.success_count}/${row.total_episodes}${rate ? ` (${rate})` : ""}`;
   }
   return rate;
+}
+
+function videoBasename(episode: string): string {
+  const i = episode.lastIndexOf("/");
+  return i >= 0 ? episode.slice(i + 1) : episode;
+}
+
+// DexJoCo writes one directory per episode (episode_NN_success|failure[_reason])
+// holding one mp4 per camera; Isaac writes flat videos/ep*.mp4. Group cameras
+// of one episode together; Isaac videos land in the ungrouped bucket.
+const EPISODE_DIR_RE = /^episode_(\d+)_(success|failure)(?:_(.+))?$/;
+
+type EpisodeGroup = {
+  key: string; // episode dir relative to run_dir
+  index: string;
+  outcome: "success" | "failure";
+  reason: string | null;
+  videos: VideoFile[];
+};
+
+function groupEpisodes(videos: VideoFile[]): {
+  episodes: EpisodeGroup[];
+  flat: VideoFile[];
+} {
+  const groups = new Map<string, EpisodeGroup>();
+  const flat: VideoFile[] = [];
+  for (const v of videos) {
+    const parts = v.episode.split("/");
+    const parent = parts.length >= 2 ? parts[parts.length - 2] : "";
+    const m = parent ? EPISODE_DIR_RE.exec(parent) : null;
+    if (!m) {
+      flat.push(v);
+      continue;
+    }
+    const key = parts.slice(0, -1).join("/");
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        key,
+        index: m[1],
+        outcome: m[2] as "success" | "failure",
+        reason: m[3] ? m[3].replace(/_/g, " ") : null,
+        videos: [],
+      };
+      groups.set(key, g);
+    }
+    g.videos.push(v);
+  }
+  return {
+    episodes: [...groups.values()].sort((a, b) => a.key.localeCompare(b.key)),
+    flat,
+  };
 }
 
 type RunSection = {
@@ -86,6 +138,154 @@ function buildSections(
   return sections;
 }
 
+function OutcomeBadge({ outcome }: { outcome: "success" | "failure" }) {
+  return (
+    <span
+      className={
+        outcome === "success"
+          ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+          : "rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+      }
+    >
+      {outcome}
+    </span>
+  );
+}
+
+function VideoTile({
+  video,
+  cluster,
+  id,
+}: {
+  video: VideoFile;
+  cluster: string;
+  id: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <video
+        controls
+        preload="none"
+        src={videoStreamUrl(cluster, id, video.path)}
+        className="w-full rounded-md border border-slate-200 bg-black dark:border-slate-800"
+      />
+      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-[var(--ssot-text-soft)]">
+        <span className="truncate font-mono">{videoBasename(video.episode)}</span>
+        <span className="shrink-0">{formatSize(video.size)}</span>
+      </div>
+    </div>
+  );
+}
+
+function RunCard({
+  section,
+  cluster,
+  id,
+  evalDir,
+  defaultOpen,
+  isActive,
+  activeRef,
+}: {
+  section: RunSection;
+  cluster: string;
+  id: string;
+  evalDir: string | null;
+  defaultOpen: boolean;
+  isActive: boolean;
+  activeRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  // Expand when this run becomes the ?run= target after mount (deep link
+  // navigation while already on the page).
+  const [prevActive, setPrevActive] = useState(isActive);
+  if (isActive !== prevActive) {
+    setPrevActive(isActive);
+    if (isActive && !open) setOpen(true);
+  }
+
+  const { episodes, flat } = groupEpisodes(section.videos);
+  const countLabel =
+    episodes.length > 0
+      ? `${episodes.length} episodes · ${section.videos.length} videos`
+      : `${section.videos.length} episodes`;
+
+  return (
+    <Card
+      id={section.slug}
+      ref={isActive ? activeRef : undefined}
+      className="mt-6 scroll-mt-8"
+    >
+      <CardHeader>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="w-full text-left"
+          aria-expanded={open}
+        >
+          <CardTitle className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base">
+            {open ? (
+              <ChevronDown className="h-4 w-4 shrink-0 self-center text-slate-400" />
+            ) : (
+              <ChevronRight className="h-4 w-4 shrink-0 self-center text-slate-400" />
+            )}
+            {section.run?.task && (
+              <span className="font-mono">{section.run.task}</span>
+            )}
+            <span className="font-mono text-[var(--ssot-accent)]">
+              {section.run?.eval_set ?? relDir(evalDir, section.runDir)}
+            </span>
+            {section.run && (
+              <span className="font-mono text-sm text-[var(--ssot-text-soft)]">
+                {section.run.run}
+              </span>
+            )}
+            {section.run?.seed != null && (
+              <span className="text-sm font-normal text-[var(--ssot-text-soft)]">
+                seed {section.run.seed}
+              </span>
+            )}
+            {section.run && formatSuccess(section.run) && (
+              <span className="text-sm font-normal text-[var(--ssot-text-soft)]">
+                {formatSuccess(section.run)}
+              </span>
+            )}
+            <span className="text-sm font-normal text-slate-400">{countLabel}</span>
+          </CardTitle>
+        </button>
+      </CardHeader>
+      {open && (
+        <CardContent>
+          {flat.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {flat.map((v) => (
+                <VideoTile key={v.path} video={v} cluster={cluster} id={id} />
+              ))}
+            </div>
+          )}
+          {episodes.map((ep) => (
+            <div key={ep.key} className="mt-4 first:mt-0">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-mono">episode {ep.index}</span>
+                <OutcomeBadge outcome={ep.outcome} />
+                {ep.reason && (
+                  <span className="text-xs text-[var(--ssot-text-soft)]">
+                    {ep.reason}
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {ep.videos.map((v) => (
+                  <VideoTile key={v.path} video={v} cluster={cluster} id={id} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export default function JobVideos({
   params,
   searchParams,
@@ -124,12 +324,6 @@ export default function JobVideos({
     }
   }, [runParam, isLoading]);
 
-  const harness = videos.data?.eval_harness;
-  const emptyMessage =
-    harness === "dexjoco"
-      ? "No videos found. DexJoCo eval runs don't record episode mp4s."
-      : "No episode videos were found for this job.";
-
   return (
     <div className="mx-auto max-w-7xl px-8 py-12">
       <Link
@@ -164,68 +358,22 @@ export default function JobVideos({
         {isLoading && <LoadingState label="Loading videos..." />}
         {!isLoading && error && <ErrorState message={error.message} />}
         {!isLoading && !error && sections.length === 0 && (
-          <EmptyState message={emptyMessage} />
+          <EmptyState message="No episode videos were found for this job." />
         )}
         {!isLoading &&
           !error &&
-          sections.map((section) => {
-            const isActive = section.slug === runParam;
-            return (
-              <Card
-                key={section.runDir}
-                id={section.slug}
-                ref={isActive ? activeRef : undefined}
-                className="mt-6 scroll-mt-8"
-              >
-                <CardHeader>
-                  <CardTitle className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base">
-                    {section.run?.task && (
-                      <span className="font-mono">{section.run.task}</span>
-                    )}
-                    <span className="font-mono text-[var(--ssot-accent)]">
-                      {section.run?.eval_set ?? relDir(videos.data?.eval_dir ?? null, section.runDir)}
-                    </span>
-                    {section.run && (
-                      <span className="font-mono text-sm text-[var(--ssot-text-soft)]">
-                        {section.run.run}
-                      </span>
-                    )}
-                    {section.run?.seed != null && (
-                      <span className="text-sm font-normal text-[var(--ssot-text-soft)]">
-                        seed {section.run.seed}
-                      </span>
-                    )}
-                    {section.run && formatSuccess(section.run) && (
-                      <span className="text-sm font-normal text-[var(--ssot-text-soft)]">
-                        {formatSuccess(section.run)}
-                      </span>
-                    )}
-                    <span className="text-sm font-normal text-slate-400">
-                      {section.videos.length} episodes
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {section.videos.map((v) => (
-                      <div key={v.path} className="min-w-0">
-                        <video
-                          controls
-                          preload="metadata"
-                          src={videoStreamUrl(cluster, id, v.path)}
-                          className="w-full rounded-md border border-slate-200 bg-black dark:border-slate-800"
-                        />
-                        <div className="mt-1 flex items-center justify-between gap-2 text-xs text-[var(--ssot-text-soft)]">
-                          <span className="truncate font-mono">{v.episode}</span>
-                          <span className="shrink-0">{formatSize(v.size)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          sections.map((section, i) => (
+            <RunCard
+              key={section.runDir}
+              section={section}
+              cluster={cluster}
+              id={id}
+              evalDir={videos.data?.eval_dir ?? null}
+              defaultOpen={i === 0 || section.slug === runParam}
+              isActive={section.slug === runParam}
+              activeRef={activeRef}
+            />
+          ))}
       </div>
     </div>
   );
