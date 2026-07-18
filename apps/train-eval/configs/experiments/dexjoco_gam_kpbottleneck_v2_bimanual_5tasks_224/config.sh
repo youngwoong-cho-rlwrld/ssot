@@ -47,6 +47,11 @@ DEXJOCO_IMAGE_SIZE=224
 DEXJOCO_EMBODIMENT_TAG=dexjoco_dual_arm
 DEXJOCO_EMBODIMENT_TAG_BIMANUAL=dexjoco_dual_arm
 EVAL_NUM_GPUS=4
+# Concurrent sim workers per GPU. Each worker owns whole (task, eval_set,
+# run) units with its own policy server (~13G VRAM each), so keep
+# N_ENVS_PER_GPU * 13G under the card's VRAM. Sims are CPU-bound; the
+# backend scales the job's CPU/memory request with this automatically.
+N_ENVS_PER_GPU=2
 N_EPISODES=50
 N_RUNS=3
 EVAL_SETS=(rand_obj)

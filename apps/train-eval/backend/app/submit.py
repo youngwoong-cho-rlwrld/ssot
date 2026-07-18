@@ -692,18 +692,23 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
         action_horizon_mode,
     ) if req.phase == "train" else None
     train_git_commit = resolve_train_git_commit(req, variant)
-    # Eval jobs allocate EVAL_NUM_GPUS (the harness runs one worker per GPU),
-    # not TRAIN_NUM_GPUS. Falls back to the train count when unset so existing
-    # eval variants are unchanged.
+    # Eval jobs allocate EVAL_NUM_GPUS (the harness runs N_ENVS_PER_GPU
+    # workers per GPU, default 1), not TRAIN_NUM_GPUS. Falls back to the
+    # train count when unset so existing eval variants are unchanged.
     job_num_gpus = train_settings.num_gpus
+    eval_envs_per_gpu = 1
     if req.phase == "eval":
         job_num_gpus = resolve_eval_num_gpus(variant, req.eval_num_gpus, train_settings.num_gpus)
+        # The eval body reads N_ENVS_PER_GPU from the sourced config.sh; read
+        # it here too so the CPU/memory request scales with the sim count.
+        eval_envs_per_gpu = variant_int(variant, "N_ENVS_PER_GPU", 1)
     gpus = str(job_num_gpus)
     slurm_resources = slurm_resources_for(
         cluster=req.cluster,
         partition=partition,
         phase=req.phase,
         num_gpus=job_num_gpus,
+        n_envs_per_gpu=eval_envs_per_gpu,
     )
 
     # Unified shape across slurm + MLXP. The cluster/partition are shown in

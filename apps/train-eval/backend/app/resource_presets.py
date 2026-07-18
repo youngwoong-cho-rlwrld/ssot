@@ -31,12 +31,27 @@ _SLURM_TRAIN_FALLBACK = SlurmResources(cpus_per_task=16, memory="180G")
 _SLURM_EVAL_DEFAULT = SlurmResources(cpus_per_task=4, memory="40G")
 
 
+def _eval_resources(num_gpus: int, n_envs_per_gpu: int) -> SlurmResources:
+    """Scale the eval request with the number of concurrent sim workers.
+
+    Each DexJoCo worker is a single-threaded MuJoCo client (physics + EGL
+    render thread + light inference process) plus a policy server, so budget
+    2 CPUs and 10G per sim, floored at the historical 4-CPU/40G request.
+    """
+    sims = max(1, num_gpus) * max(1, n_envs_per_gpu)
+    return SlurmResources(
+        cpus_per_task=max(_SLURM_EVAL_DEFAULT.cpus_per_task, 2 * sims),
+        memory=f"{max(40, 10 * sims)}G",
+    )
+
+
 def slurm_resources_for(
     *,
     cluster: str,
     partition: str,
     phase: Literal["train", "eval"],
     num_gpus: int,
+    n_envs_per_gpu: int = 1,
 ) -> SlurmResources | None:
     """Resource request for the sbatch command, or None to send no flags.
 
@@ -50,7 +65,7 @@ def slurm_resources_for(
         return None
 
     if phase == "eval":
-        return _SLURM_EVAL_DEFAULT
+        return _eval_resources(num_gpus, n_envs_per_gpu)
 
     partition_key = partition.strip().lower()
     if cluster_key == "skt" and partition_key == "rlwrld-gpu":
