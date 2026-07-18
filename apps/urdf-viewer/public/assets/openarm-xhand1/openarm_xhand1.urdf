@@ -1,0 +1,239 @@
+<?xml version="1.0"?>
+<!--
+  Kinematic-only OpenArm v2 + dual XHand1 description for the browser viewer.
+  Arm origins/axes are from enactic/openarm_description. XHand1 origins/axes
+  match the authored left/right RobotEra STAR1 URDFs after a rigid re-expression
+  into the browser skeleton's hand frames. The fixed wrist rotations below undo
+  that re-expression, so each physical XHand source frame is identity-clocked
+  to its OpenArm joint-7 frame. The viewer intentionally ignores meshes.
+-->
+<robot name="openarm_xhand1">
+  <link name="world"/>
+  <link name="openarm_body_link0"/>
+  <link name="openarm_head_pitch_link"/>
+  <link name="openarm_head_yaw_link"/>
+
+  <link name="openarm_left_base_link"/>
+  <link name="openarm_left_link1"/>
+  <link name="openarm_left_link2"/>
+  <link name="openarm_left_link3"/>
+  <link name="openarm_left_link4"/>
+  <link name="openarm_left_link5"/>
+  <link name="openarm_left_link6"/>
+  <link name="openarm_left_wrist_link"/>
+  <link name="left_hand_link"/>
+  <link name="left_hand_thumb_bend_link"/>
+  <link name="left_hand_thumb_rota_link1"/>
+  <link name="left_hand_thumb_rota_link2"/>
+  <link name="left_hand_thumb_rota_tip"/>
+  <link name="left_hand_index_bend_link"/>
+  <link name="left_hand_index_rota_link1"/>
+  <link name="left_hand_index_rota_link2"/>
+  <link name="left_hand_index_tip"/>
+  <link name="left_hand_mid_link1"/>
+  <link name="left_hand_mid_link2"/>
+  <link name="left_hand_mid_tip"/>
+  <link name="left_hand_ring_link1"/>
+  <link name="left_hand_ring_link2"/>
+  <link name="left_hand_ring_tip"/>
+  <link name="left_hand_pinky_link1"/>
+  <link name="left_hand_pinky_link2"/>
+  <link name="left_hand_pinky_tip"/>
+
+  <link name="openarm_right_base_link"/>
+  <link name="openarm_right_link1"/>
+  <link name="openarm_right_link2"/>
+  <link name="openarm_right_link3"/>
+  <link name="openarm_right_link4"/>
+  <link name="openarm_right_link5"/>
+  <link name="openarm_right_link6"/>
+  <link name="openarm_right_wrist_link"/>
+  <link name="right_hand_link"/>
+  <link name="right_hand_thumb_bend_link"/>
+  <link name="right_hand_thumb_rota_link1"/>
+  <link name="right_hand_thumb_rota_link2"/>
+  <link name="right_hand_thumb_rota_tip"/>
+  <link name="right_hand_index_bend_link"/>
+  <link name="right_hand_index_rota_link1"/>
+  <link name="right_hand_index_rota_link2"/>
+  <link name="right_hand_index_tip"/>
+  <link name="right_hand_mid_link1"/>
+  <link name="right_hand_mid_link2"/>
+  <link name="right_hand_mid_tip"/>
+  <link name="right_hand_ring_link1"/>
+  <link name="right_hand_ring_link2"/>
+  <link name="right_hand_ring_tip"/>
+  <link name="right_hand_pinky_link1"/>
+  <link name="right_hand_pinky_link2"/>
+  <link name="right_hand_pinky_tip"/>
+
+  <joint name="openarm_body_mount" type="fixed">
+    <parent link="world"/><child link="openarm_body_link0"/><origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <joint name="openarm_head_pitch" type="revolute">
+    <parent link="openarm_body_link0"/><child link="openarm_head_pitch_link"/>
+    <origin xyz="0 0 0.82" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="openarm_head_yaw" type="revolute">
+    <parent link="openarm_head_pitch_link"/><child link="openarm_head_yaw_link"/>
+    <origin xyz="0 0 0.06" rpy="0 0 0"/><axis xyz="0 0 1"/>
+  </joint>
+
+  <joint name="openarm_left_mount" type="fixed">
+    <parent link="openarm_body_link0"/><child link="openarm_left_base_link"/><origin xyz="0 0.031 0.698" rpy="0 0 0"/>
+  </joint>
+  <joint name="openarm_left_joint1" type="revolute">
+    <parent link="openarm_left_base_link"/><child link="openarm_left_link1"/><origin xyz="0 0.0625 0" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="openarm_left_joint2" type="revolute">
+    <parent link="openarm_left_link1"/><child link="openarm_left_link2"/><origin xyz="0 0.06 0" rpy="0 0 0"/><axis xyz="-1 0 0"/>
+  </joint>
+  <joint name="openarm_left_joint3" type="revolute">
+    <parent link="openarm_left_link2"/><child link="openarm_left_link3"/><origin xyz="0 0 -0.06625" rpy="0 0 0"/><axis xyz="0 0 -1"/>
+  </joint>
+  <joint name="openarm_left_joint4" type="revolute">
+    <parent link="openarm_left_link3"/><child link="openarm_left_link4"/><origin xyz="0 0 -0.15375" rpy="0 0 0"/><axis xyz="0 -1 0"/>
+  </joint>
+  <joint name="openarm_left_joint5" type="revolute">
+    <parent link="openarm_left_link4"/><child link="openarm_left_link5"/><origin xyz="0 0 -0.0955" rpy="0 0 0"/><axis xyz="0 0 -1"/>
+  </joint>
+  <joint name="openarm_left_joint6" type="revolute">
+    <parent link="openarm_left_link5"/><child link="openarm_left_link6"/><origin xyz="0 0 -0.1205" rpy="0 0 0"/><axis xyz="0 -1 0"/>
+  </joint>
+  <joint name="openarm_left_joint7" type="revolute">
+    <parent link="openarm_left_link6"/><child link="openarm_left_wrist_link"/><origin xyz="0 0 0" rpy="0 0 0"/><axis xyz="1 0 0"/>
+  </joint>
+  <joint name="left_xhand_mount" type="fixed">
+    <parent link="openarm_left_wrist_link"/><child link="left_hand_link"/><origin xyz="0 0 -0.03" rpy="3.141592653589793 0 -1.570796326794897"/>
+  </joint>
+  <joint name="left_hand_thumb_bend_joint" type="revolute">
+    <parent link="left_hand_link"/><child link="left_hand_thumb_bend_link"/><origin xyz="0.0095 -0.0228 0.0305" rpy="0 0 0"/><axis xyz="0 0 1"/>
+  </joint>
+  <joint name="left_hand_thumb_rota_joint1" type="revolute">
+    <parent link="left_hand_thumb_bend_link"/><child link="left_hand_thumb_rota_link1"/><origin xyz="0.0083177 -0.028599 -0.00178" rpy="0 0.2618 0.0407"/><axis xyz="-1 0 0"/>
+  </joint>
+  <joint name="left_hand_thumb_rota_joint2" type="revolute">
+    <parent link="left_hand_thumb_rota_link1"/><child link="left_hand_thumb_rota_link2"/><origin xyz="0 -0.0553 0" rpy="0 0 0"/><axis xyz="-1 0 0"/>
+  </joint>
+  <joint name="left_hand_thumb_rota_joint3" type="fixed">
+    <parent link="left_hand_thumb_rota_link2"/><child link="left_hand_thumb_rota_tip"/><origin xyz="0 -0.0504 0" rpy="0 0 0"/>
+  </joint>
+  <joint name="left_hand_index_bend_joint" type="revolute">
+    <parent link="left_hand_link"/><child link="left_hand_index_bend_link"/><origin xyz="0.0065 -0.0265 0.0899" rpy="0 0 0"/><axis xyz="-1 0 0"/>
+  </joint>
+  <joint name="left_hand_index_joint1" type="revolute">
+    <parent link="left_hand_index_bend_link"/><child link="left_hand_index_rota_link1"/><origin xyz="0 0 0.0178" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_index_joint2" type="revolute">
+    <parent link="left_hand_index_rota_link1"/><child link="left_hand_index_rota_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_index_rota_joint3" type="fixed">
+    <parent link="left_hand_index_rota_link2"/><child link="left_hand_index_tip"/><origin xyz="0 0 0.0425" rpy="0 0 0"/>
+  </joint>
+  <joint name="left_hand_mid_joint1" type="revolute">
+    <parent link="left_hand_link"/><child link="left_hand_mid_link1"/><origin xyz="0.0065 -0.004 0.1082" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_mid_joint2" type="revolute">
+    <parent link="left_hand_mid_link1"/><child link="left_hand_mid_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_mid_joint3" type="fixed">
+    <parent link="left_hand_mid_link2"/><child link="left_hand_mid_tip"/><origin xyz="0 0 0.0425" rpy="0 0 0"/>
+  </joint>
+  <joint name="left_hand_ring_joint1" type="revolute">
+    <parent link="left_hand_link"/><child link="left_hand_ring_link1"/><origin xyz="0.0065 0.016 0.1052" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_ring_joint2" type="revolute">
+    <parent link="left_hand_ring_link1"/><child link="left_hand_ring_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_ring_joint3" type="fixed">
+    <parent link="left_hand_ring_link2"/><child link="left_hand_ring_tip"/><origin xyz="0 0 0.0425" rpy="0 0 0"/>
+  </joint>
+  <joint name="left_hand_pinky_joint1" type="revolute">
+    <parent link="left_hand_link"/><child link="left_hand_pinky_link1"/><origin xyz="0.0065 0.036 0.1022" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_pinky_joint2" type="revolute">
+    <parent link="left_hand_pinky_link1"/><child link="left_hand_pinky_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="left_hand_pinky_joint3" type="fixed">
+    <parent link="left_hand_pinky_link2"/><child link="left_hand_pinky_tip"/><origin xyz="0 0 0.0425" rpy="0 0 0"/>
+  </joint>
+
+  <joint name="openarm_right_mount" type="fixed">
+    <parent link="openarm_body_link0"/><child link="openarm_right_base_link"/><origin xyz="0 -0.031 0.698" rpy="0 0 0"/>
+  </joint>
+  <joint name="openarm_right_joint1" type="revolute">
+    <parent link="openarm_right_base_link"/><child link="openarm_right_link1"/><origin xyz="0 -0.0625 0" rpy="0 0 0"/><axis xyz="0 -1 0"/>
+  </joint>
+  <joint name="openarm_right_joint2" type="revolute">
+    <parent link="openarm_right_link1"/><child link="openarm_right_link2"/><origin xyz="0 -0.06 0" rpy="0 0 0"/><axis xyz="-1 0 0"/>
+  </joint>
+  <joint name="openarm_right_joint3" type="revolute">
+    <parent link="openarm_right_link2"/><child link="openarm_right_link3"/><origin xyz="0 0 -0.06625" rpy="0 0 0"/><axis xyz="0 0 -1"/>
+  </joint>
+  <joint name="openarm_right_joint4" type="revolute">
+    <parent link="openarm_right_link3"/><child link="openarm_right_link4"/><origin xyz="0 0 -0.15375" rpy="0 0 0"/><axis xyz="0 -1 0"/>
+  </joint>
+  <joint name="openarm_right_joint5" type="revolute">
+    <parent link="openarm_right_link4"/><child link="openarm_right_link5"/><origin xyz="0 0 -0.0955" rpy="0 0 0"/><axis xyz="0 0 -1"/>
+  </joint>
+  <joint name="openarm_right_joint6" type="revolute">
+    <parent link="openarm_right_link5"/><child link="openarm_right_link6"/><origin xyz="0 0 -0.1205" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="openarm_right_joint7" type="revolute">
+    <parent link="openarm_right_link6"/><child link="openarm_right_wrist_link"/><origin xyz="0 0 0" rpy="0 0 0"/><axis xyz="1 0 0"/>
+  </joint>
+  <joint name="right_xhand_mount" type="fixed">
+    <parent link="openarm_right_wrist_link"/><child link="right_hand_link"/><origin xyz="0 0 -0.03" rpy="3.141592653589793 0 1.570796326794897"/>
+  </joint>
+  <joint name="right_hand_thumb_bend_joint" type="revolute">
+    <parent link="right_hand_link"/><child link="right_hand_thumb_bend_link"/><origin xyz="0.0095 0.0228 0.0305" rpy="0 0 0"/><axis xyz="0 0 -1"/>
+  </joint>
+  <joint name="right_hand_thumb_rota_joint1" type="revolute">
+    <parent link="right_hand_thumb_bend_link"/><child link="right_hand_thumb_rota_link1"/><origin xyz="0.0083177 0.028599 -0.00178" rpy="0 0.2618 -0.0407"/><axis xyz="1 0 0"/>
+  </joint>
+  <joint name="right_hand_thumb_rota_joint2" type="revolute">
+    <parent link="right_hand_thumb_rota_link1"/><child link="right_hand_thumb_rota_link2"/><origin xyz="0 0.0553 0" rpy="0 0 0"/><axis xyz="1 0 0"/>
+  </joint>
+  <joint name="right_hand_thumb_rota_joint3" type="fixed">
+    <parent link="right_hand_thumb_rota_link2"/><child link="right_hand_thumb_rota_tip"/><origin xyz="0 0.0504 0" rpy="0 0 0"/>
+  </joint>
+  <joint name="right_hand_index_bend_joint" type="revolute">
+    <parent link="right_hand_link"/><child link="right_hand_index_bend_link"/><origin xyz="0.0065 0.0265 0.0899" rpy="0 0 0"/><axis xyz="1 0 0"/>
+  </joint>
+  <joint name="right_hand_index_joint1" type="revolute">
+    <parent link="right_hand_index_bend_link"/><child link="right_hand_index_rota_link1"/><origin xyz="0 0 0.0178" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_index_joint2" type="revolute">
+    <parent link="right_hand_index_rota_link1"/><child link="right_hand_index_rota_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_index_rota_joint3" type="fixed">
+    <parent link="right_hand_index_rota_link2"/><child link="right_hand_index_tip"/><origin xyz="0 0 0.0425" rpy="0 0 0"/>
+  </joint>
+  <joint name="right_hand_mid_joint1" type="revolute">
+    <parent link="right_hand_link"/><child link="right_hand_mid_link1"/><origin xyz="0.0065 0.004 0.1082" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_mid_joint2" type="revolute">
+    <parent link="right_hand_mid_link1"/><child link="right_hand_mid_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_mid_joint3" type="fixed">
+    <parent link="right_hand_mid_link2"/><child link="right_hand_mid_tip"/><origin xyz="0 0 0.04211" rpy="0 0 0"/>
+  </joint>
+  <joint name="right_hand_ring_joint1" type="revolute">
+    <parent link="right_hand_link"/><child link="right_hand_ring_link1"/><origin xyz="0.0065 -0.016 0.1052" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_ring_joint2" type="revolute">
+    <parent link="right_hand_ring_link1"/><child link="right_hand_ring_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_ring_joint3" type="fixed">
+    <parent link="right_hand_ring_link2"/><child link="right_hand_ring_tip"/><origin xyz="0 0 0.0425" rpy="0 0 0"/>
+  </joint>
+  <joint name="right_hand_pinky_joint1" type="revolute">
+    <parent link="right_hand_link"/><child link="right_hand_pinky_link1"/><origin xyz="0.0065 -0.036 0.1022" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_pinky_joint2" type="revolute">
+    <parent link="right_hand_pinky_link1"/><child link="right_hand_pinky_link2"/><origin xyz="0 0 0.0558" rpy="0 0 0"/><axis xyz="0 1 0"/>
+  </joint>
+  <joint name="right_hand_pinky_joint3" type="fixed">
+    <parent link="right_hand_pinky_link2"/><child link="right_hand_pinky_tip"/><origin xyz="0 0 0.0425" rpy="0 0 0"/>
+  </joint>
+</robot>

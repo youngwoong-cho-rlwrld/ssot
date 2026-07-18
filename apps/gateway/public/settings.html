@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SSOT Settings</title>
+  <script>(function(){try{var t=localStorage.getItem('ssot-theme')==='dark'?'dark':'light';var r=document.documentElement;r.dataset.ssotTheme=t;r.classList.toggle('dark',t==='dark');r.setAttribute('data-mantine-color-scheme',t);}catch(e){}})();</script>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon.ico" type="image/png" />
+  <link rel="stylesheet" href="/portal-assets/inter/index.css" />
+  <link rel="stylesheet" href="/portal-assets/theme/tokens.css" />
+  <link rel="stylesheet" href="/portal-assets/theme/header.css" />
+  <link rel="stylesheet" href="/portal-assets/theme/controls.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--ssot-font-sans);
+      background: var(--ssot-bg);
+      color: var(--ssot-text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    main { width: 100%; max-width: 720px; margin: 0 auto; padding: 40px 24px 64px; flex: 1; }
+    h1 { font-size: var(--ssot-text-xl); font-weight: var(--ssot-weight-semibold); letter-spacing: 0.04em; }
+    section { margin-top: 32px; }
+    section + section { margin-top: 28px; border-top: 1px solid var(--ssot-border); padding-top: 28px; }
+    section h2 { font-size: var(--ssot-text-md); font-weight: var(--ssot-weight-semibold); }
+    section .sec-sub { margin-top: 4px; color: var(--ssot-text-soft); font-size: var(--ssot-text-xs); }
+    .field { margin-top: 16px; }
+    label { display: block; font-size: var(--ssot-text-xs); font-weight: var(--ssot-weight-semibold); color: var(--ssot-text-soft); margin-bottom: 6px; }
+    main .ssot-input { width: 100%; }
+    .ssot-input:read-only { background: var(--ssot-surface-muted); color: var(--ssot-text-soft); }
+    .row { display: grid; grid-template-columns: 1fr 1fr 32px; gap: 8px; align-items: center; margin-top: 8px; }
+    .row .ssot-input { min-width: 0; }
+    .mono { font-family: var(--ssot-font-mono); }
+    .sec-foot { margin-top: 18px; display: flex; align-items: center; gap: 12px; }
+    .status { font-size: var(--ssot-text-xs); color: var(--ssot-text-faint); }
+    .status.ok { color: var(--ssot-success); }
+    .status.err { color: var(--ssot-danger); }
+    .cluster { padding: 14px 0; }
+    .cluster + .cluster { border-top: 1px solid var(--ssot-border); }
+    .cluster-head { display: flex; align-items: center; gap: 8px; }
+    .cluster-head .ssot-input { flex: 1; font-weight: var(--ssot-weight-semibold); }
+    .kv-head { font-size: var(--ssot-text-xs); font-weight: var(--ssot-weight-semibold); color: var(--ssot-text-faint); margin-top: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .add-btn { margin-top: 12px; }
+    .del { flex: none; width: 32px; padding: 0; }
+    hr { border: none; border-top: 1px solid var(--ssot-border); margin: 18px 0; }
+    .check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ssot-text-sm); font-weight: var(--ssot-weight-medium); color: var(--ssot-text); margin: 8px 0 0; cursor: pointer; }
+    .check input { margin: 0; }
+    .checks { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <header class="ssot-header">
+    <a class="ssot-brand" href="/">SSOT</a>
+    <span class="ssot-sep">/</span>
+    <span class="ssot-app-name">Settings</span>
+    <span class="ssot-header-spacer"></span>
+    <ssot-theme-toggle></ssot-theme-toggle>
+    <ssot-user></ssot-user>
+  </header>
+  <main>
+    <h1>Settings</h1>
+
+    <!-- Account -->
+    <section id="sec-account">
+      <h2>Account</h2>
+      <div class="field">
+        <label for="acct-email">Email</label>
+        <input type="text" id="acct-email" class="ssot-input" readonly />
+      </div>
+      <div class="field">
+        <label for="acct-username">Username</label>
+        <input type="text" id="acct-username" class="ssot-input" placeholder="defaults to your email local part" />
+      </div>
+      <div class="sec-foot">
+        <button class="ssot-btn ssot-btn-primary" data-save="profile">Save</button>
+        <span class="status" data-status="profile"></span>
+      </div>
+    </section>
+
+    <!-- Train / Eval -->
+    <section id="sec-train-eval">
+      <h2>Train / Eval</h2>
+      <p class="sec-sub">Cluster environment settings, Weights &amp; Biases, and notifications used by the train-eval app.</p>
+
+      <div id="te-clusters"></div>
+      <button class="ssot-btn add-btn" id="te-add-cluster">+ Add cluster</button>
+
+      <hr />
+      <div class="kv-head">Weights &amp; Biases</div>
+      <div class="field">
+        <label for="te-wandb-entity">Entity <span id="te-wandb-status" class="status"></span></label>
+        <input type="text" id="te-wandb-entity" class="ssot-input" readonly placeholder="resolved from your API key" />
+      </div>
+      <div class="field">
+        <label for="te-wandb-project">Project</label>
+        <input type="text" id="te-wandb-project" class="ssot-input" />
+      </div>
+      <div class="field">
+        <label for="te-wandb-key">API key</label>
+        <input type="password" id="te-wandb-key" class="ssot-input" placeholder="leave blank to keep unchanged" />
+      </div>
+
+      <hr />
+      <div class="kv-head">Notifications</div>
+      <label class="check"><input type="checkbox" id="te-notify-enabled" /> Enable Slack notifications</label>
+      <div class="field">
+        <label for="te-slack-webhook">Slack webhook URL</label>
+        <input type="text" id="te-slack-webhook" class="ssot-input mono" placeholder="https://hooks.slack.com/services/... (leave blank to keep saved secret)" />
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="te-notify-submitted" /> Submitted</label>
+        <label class="check"><input type="checkbox" id="te-notify-running" /> Running</label>
+        <label class="check"><input type="checkbox" id="te-notify-completed" /> Completed</label>
+        <label class="check"><input type="checkbox" id="te-notify-failed" /> Failed</label>
+        <label class="check"><input type="checkbox" id="te-notify-cancelled" /> Cancelled</label>
+      </div>
+
+      <div class="sec-foot">
+        <button class="ssot-btn ssot-btn-primary" data-save="train-eval">Save</button>
+        <span class="status" data-status="train-eval"></span>
+      </div>
+    </section>
+
+    <!-- Results Sheet -->
+    <section id="sec-results-sheet">
+      <h2>Results Sheet</h2>
+      <div class="field">
+        <label for="rs-configs-root">Configs root</label>
+        <input type="text" id="rs-configs-root" class="ssot-input mono" placeholder="apps/train-eval/configs/experiments" />
+      </div>
+      <div class="sec-foot">
+        <button class="ssot-btn ssot-btn-primary" data-save="results-sheet">Save</button>
+        <span class="status" data-status="results-sheet"></span>
+      </div>
+    </section>
+
+    <!-- Session Viewer -->
+    <section id="sec-session-viewer">
+      <h2>Session Viewer</h2>
+      <div class="field">
+        <label for="sv-claude-root">Claude sessions root</label>
+        <input type="text" id="sv-claude-root" class="ssot-input mono" placeholder="~/.claude/projects" />
+      </div>
+      <div class="field">
+        <label for="sv-codex-root">Codex sessions root</label>
+        <input type="text" id="sv-codex-root" class="ssot-input mono" placeholder="~/.codex/sessions" />
+      </div>
+      <div class="sec-foot">
+        <button class="ssot-btn ssot-btn-primary" data-save="session-viewer">Save</button>
+        <span class="status" data-status="session-viewer"></span>
+      </div>
+    </section>
+
+    <!-- Sign out -->
+    <section>
+      <div class="sec-foot" style="margin-top:0">
+        <button class="ssot-btn ssot-btn-danger" id="sign-out">Sign out</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/portal-assets/theme/ssot-theme-toggle.js"></script>
+  <script type="module" src="/portal-assets/theme/ssot-user.js"></script>
+  <script src="/settings.js"></script>
+</body>
+</html>

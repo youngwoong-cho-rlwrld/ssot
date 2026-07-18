@@ -1,0 +1,2033 @@
+"""Per-job extended details: phase, paths, wandb url, progress.
+
+Parses metadata out of the job_name (canonical shape
+`{train|resume|eval}_{variant}_{YYYYMMDD}_{HHMMSS}`; prefixed and legacy slurm
+job-name shapes are also tolerated — see job_identity.parse_phase_and_variant
+for the authority), reads variant config locally, and asks the cluster a few
+small questions over SSH (slurm) or kubectl (mlxp) to compute progress.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import shlex
+import shutil
+from typing import Any
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
+
+from pydantic import BaseModel, Field
+
+from .checkpoint_links import find_training_job_for_checkpoint
+from .clusters import load_cluster
+from .data_interface import DataInterfaceSummary, summarize_data_interface_text
+from .eval_completion import (
+    eval_job_completed,
+    eval_shape,
+    eval_shape_from_meta,
+    eval_total,
+    exp_dir_rel_candidates,
+)
+from .eval_harness import harness_for, harness_for_name
+from .job_identity import (
+    parse_comment_metadata,
+    parse_comment_fields,
+    parse_phase_and_variant,
+    phase_variant_from_meta,
+    resolve_phase_and_variant,
+)
+from .jobs import get_job
+from .mlxp_config import get_settings
+from .mlxp_data_pod import ensure_listing_pod
+from .paths import CLUSTER_STAGING_REL
+from .remote_paths import expand_cluster_home, expand_home_path, remote_home, remote_path_expr, remote_shell_path
+from .submission_snapshot import SubmitGitInfo, render_training_config_snapshot, set_scalar
+from .ssh import ssh_run
+from .slurm_meta import read_slurm_meta
+from .training_models import resolve_training_model
+from .train_overrides import (
+    DEFAULT_TRAIN_MAX_STEPS,
+    DEFAULT_TRAIN_NUM_GPUS,
+    DEFAULT_TRAIN_NUM_WORKERS,
+    DEFAULT_TRAIN_SAVE_STEPS,
+)
+from .variant_values import variant_int, variant_int_opt
+from .variants import load_variant
+
+
+from .wandb_config import (
+    WANDB_ENTITY_OVERRIDE,
+    WANDB_WORKSPACE_OVERRIDE,
+    get_project,
+)
+
+# Wandb config:
+#   - run id: WANDB_RUN_ID pinned by submit.py (slurm) / body script
+#     (mlxp) to job_name. Already in hand here.
+#   - entity: wandb.Api().default_entity after `wandb login` on this
+#     laptop. Resolved lazily in _wandb_entity.
+#   - project: captured at submit time in job metadata/config snapshot; if an
+#     older job lacks that field, the current Settings value is the fallback.
+
+
+class Paths(BaseModel):
+    stdout: str
+    stderr: str
+    exp_dir: str
+    ckpt_dir: str | None = None
+    eval_checkpoint: str | None = None
+    eval_dir: str | None = None
+    isaac_logs_glob: str | None = None
+
+
+class Progress(BaseModel):
+    phase: str
+    # train: current step / max steps
+    current_step: int | None = None
+    max_steps: int | None = None
+    # eval: completed runs / total runs
+    completed_runs: int | None = None
+    total_runs: int | None = None
+    current_label: str | None = None     # e.g. "0cm / run 2/3"
+    percent: float | None = None         # 0..100
+
+
+class GpuDeviceUsage(BaseModel):
+    index: int
+    name: str | None = None
+    utilization_gpu_percent: int | None = None
+    used_gb: float
+    total_gb: float
+    used_mib: int
+    total_mib: int
+
+
+class GpuUsage(BaseModel):
+    node: str | None = None
+    utilization_gpu_percent: float | None = None
+    used_gb: float | None = None
+    total_gb: float | None = None
+    devices: list[GpuDeviceUsage] = Field(default_factory=list)
+    error: str | None = None
+
+
+class ConfigSnapshot(BaseModel):
+    path: str | None = None
+    meta_path: str | None = None
+    text: str | None = None
+    extra_args_path: str | None = None
+    extra_args: list[str] = Field(default_factory=list)
+    wandb_project: str | None = None
+    git_repo_path: str | None = None
+    git_repo_label: str | None = None
+    git_branch: str | None = None
+    git_commit: str | None = None
+    git_dirty_at_submit: bool | None = None
+    git_committed_dirty: bool | None = None
+    error: str | None = None
+
+
+class EvalRun(BaseModel):
+    task: str | None = None
+    eval_set: str
+    run: str
+    seed: int | None = None
+    success_count: int | None = None
+    total_episodes: int | None = None
+    success_rate: float | None = None
+    path: str
+
+
+class TrainingJobRef(BaseModel):
+    cluster: str
+    job_id: str
+    job_name: str | None = None
+
+
+class JobDetails(BaseModel):
+    cluster: str
+    job_id: str
+    job_name: str
+    phase: str            # "train" | "resume" | "eval" | "unknown"
+    variant: str | None
+    eval_harness: str | None = None   # "isaac" | "dexjoco" for eval jobs; drives log-tab labels
+    resume_of: str | None = None
+    resubmit_action: str | None = None
+    training_job: TrainingJobRef | None = None
+    train_note: str | None = None
+    state: str
+    elapsed: str
+    wandb_project: str | None = None
+    wandb_url: str | None
+    paths: Paths
+    progress: Progress
+    gpu: GpuUsage | None = None
+    config_snapshot: ConfigSnapshot | None = None
+    data_interface: DataInterfaceSummary | None = None
+    eval_runs: list[EvalRun] = Field(default_factory=list)
+
+
+async def _resolve_eval_harness_name(
+    phase: str, variant: str | None, meta: dict[str, str] | None
+) -> str | None:
+    """Eval-harness name ("isaac"/"dexjoco") for an eval job, else None.
+
+    Prefer the variant's registry-derived harness (``harness_for``); fall back to
+    the recorded meta value when the config isn't available locally (mirrors
+    _compute_progress's resolution).
+    """
+    if phase != "eval":
+        return None
+    if variant:
+        try:
+            return harness_for(await load_variant(variant)).name
+        except (FileNotFoundError, ValueError):
+            pass
+    return harness_for_name((meta or {}).get("eval_harness")).name
+
+
+async def _read_slurm_scontrol_comment(host: str, job_id: str) -> str | None:
+    """Pull the Comment field out of `scontrol show job` (the live
+    controller's view — sacct doesn't archive Comment on this cluster)."""
+    r = await ssh_run(
+        host,
+        f"scontrol show job {job_id} 2>/dev/null | tr ' ' '\\n' | grep -m1 '^Comment='",
+        timeout=10.0,
+    )
+    if r.returncode != 0:
+        return None
+    line = r.stdout.strip()
+    if not line.startswith("Comment="):
+        return None
+    return line[len("Comment="):]
+
+
+async def _resolve_slurm_log_paths(
+    host: str,
+    log_dir: str,
+    job_name: str,
+    job_id: str,
+) -> tuple[str, str, str | None]:
+    """Return stdout/stderr paths and the job-name portion from real logs.
+
+    Historical jobs may not have sidecar metadata, and Slurm accounting can be
+    less reliable than the actual log filenames. The logs all end in
+    `_<job_id>.out|err`, regardless of the job-name convention.
+    """
+    default_stdout = f"{log_dir}/{job_name}_{job_id}.out"
+    default_stderr = f"{log_dir}/{job_name}_{job_id}.err"
+    r = await ssh_run(
+        host,
+        f"ls -1 {shlex.quote(log_dir)}/*_{shlex.quote(job_id)}.out 2>/dev/null | head -1",
+        timeout=10.0,
+    )
+    stdout = r.stdout.strip().splitlines()[0] if r.stdout.strip() else default_stdout
+    if not stdout.endswith(f"_{job_id}.out"):
+        return default_stdout, default_stderr, None
+
+    stderr = f"{stdout[:-4]}.err"
+    leaf = stdout.rsplit("/", 1)[-1]
+    log_job_name = leaf[: -len(f"_{job_id}.out")]
+    return stdout, stderr, log_job_name or None
+
+
+async def _resolve_runtime_exp_dir(
+    host: str,
+    stdout_path: str,
+    phase: str,
+) -> str | None:
+    """Recover the experiment directory the job actually used from stdout."""
+    if phase in ("train", "resume"):
+        patterns = r"Output:[[:space:]]+|output_dir:[[:space:]]+|--output-dir[[:space:]]+"
+    elif phase == "eval":
+        patterns = (
+            r"DONE[[:space:]]+|Saved to .*/results\.json|"
+            r"Running eval -> |SKIP .*results\.json already exists"
+        )
+    else:
+        return None
+
+    r = await ssh_run(
+        host,
+        f"grep -E {shlex.quote(patterns)} {shlex.quote(stdout_path)} 2>/dev/null | tail -20",
+        timeout=10.0,
+    )
+    for line in reversed(r.stdout.splitlines()):
+        if phase in ("train", "resume"):
+            m = re.search(r"Output:\s*(\S+)|output_dir:\s*(\S+)|--output-dir\s+(\S+)", line)
+            if not m:
+                continue
+            ckpt_dir = next((g for g in m.groups() if g), "").strip("'\"")
+            if "/checkpoints" in ckpt_dir:
+                return ckpt_dir.split("/checkpoints", 1)[0]
+        else:
+            m = re.search(r"(?:DONE\s+|Saved to )(\S+)/results\.json", line)
+            if m:
+                result_dir = m.group(1)
+                if "/eval_results/" in result_dir:
+                    return result_dir.split("/eval_results/", 1)[0]
+                return result_dir
+            m = re.search(r"(/\S+?)/eval_results(?:/|\s|$)", line)
+            if m:
+                return m.group(1)
+    return None
+
+
+def _exp_dir_from_meta(meta: dict[str, str]) -> str | None:
+    for key, marker in (
+        ("checkpoint_dir", "/checkpoints"),
+        ("eval_dir", "/eval_results"),
+        ("job_log_dir", "/logs"),
+    ):
+        path = (meta.get(key) or "").strip()
+        if marker in path:
+            return path.split(marker, 1)[0]
+
+    config_path = (meta.get("config_snapshot_path") or "").strip()
+    if config_path and "/" in config_path:
+        return config_path.rsplit("/", 1)[0]
+    return None
+
+
+class JobMetadataPayload(BaseModel):
+    wandb_project: str | None = None
+    config_snapshot: ConfigSnapshot | None = None
+    data_interface: DataInterfaceSummary | None = None
+
+
+class JobGpuPayload(BaseModel):
+    gpu: GpuUsage | None = None
+
+
+class JobEvalRunsPayload(BaseModel):
+    eval_runs: list[EvalRun] = Field(default_factory=list)
+
+
+class JobProgressPayload(BaseModel):
+    cluster: str
+    job_id: str
+    phase: str
+    state: str
+    elapsed: str
+    wandb_url: str | None = None
+    progress: Progress
+
+
+async def get_details(
+    cluster: str,
+    job_id: str,
+    *,
+    include_gpu: bool = False,
+    include_config: bool = False,
+    include_data_interface: bool = False,
+    include_eval_runs: bool = False,
+    include_progress: bool = True,
+    include_training_link: bool = True,
+) -> JobDetails:
+    if cluster != "mlxp":
+        env = await load_cluster(cluster)
+        sacct, slurm_meta = await asyncio.gather(
+            get_job(cluster, job_id),
+            read_slurm_meta(env.ssh_alias, job_id),
+        )
+    else:
+        env = None
+        slurm_meta = {}
+        sacct = await get_job(cluster, job_id)
+
+    job_name = sacct.get("JobName", "")
+    state = sacct.get("State", "")
+    elapsed = sacct.get("Elapsed", "")
+
+    phase, variant = resolve_phase_and_variant(job_name, sacct)
+
+    if cluster == "mlxp":
+        return await _mlxp_details(
+            job_id,
+            job_name,
+            state,
+            elapsed,
+            phase,
+            variant,
+            include_gpu=include_gpu,
+            include_config=include_config,
+            include_data_interface=include_data_interface,
+            include_eval_runs=include_eval_runs,
+            include_progress=include_progress,
+            include_training_link=include_training_link,
+            pod_name=sacct.get("_pod_name") or None,
+            node=sacct.get("NodeList") or None,
+            job_comment=sacct.get("JobComment") or None,
+            train_note=sacct.get("JobTrainNote") or None,
+        )
+
+    assert env is not None
+    log_dir = env.vars["LOG_DIR"]
+    meta_job_name = (slurm_meta.get("job_name") or "").strip()
+    if meta_job_name:
+        job_name = meta_job_name
+    meta_phase, meta_variant = phase_variant_from_meta(slurm_meta)
+    if meta_phase and meta_variant:
+        phase, variant = meta_phase, meta_variant
+
+    # Slurm: if sacct didn't return Comment (slurmdbd doesn't archive it on
+    # this cluster), check scontrol (works for jobs still in the
+    # controller) and then the on-disk .meta sidecar (permanent).
+    if not variant:
+        scontrol_comment = await _read_slurm_scontrol_comment(env.ssh_alias, job_id)
+        if scontrol_comment:
+            p, v = parse_comment_metadata(scontrol_comment)
+            if p and v:
+                phase, variant = p, v
+    if meta_job_name:
+        stdout_path = f"{log_dir}/{meta_job_name}_{job_id}.out"
+        stderr_path = f"{log_dir}/{meta_job_name}_{job_id}.err"
+        log_job_name = meta_job_name
+    else:
+        stdout_path, stderr_path, log_job_name = await _resolve_slurm_log_paths(
+            env.ssh_alias,
+            log_dir,
+            job_name,
+            job_id,
+        )
+    if not variant and log_job_name:
+        p, v = parse_phase_and_variant(log_job_name)
+        if p != "unknown" and v:
+            phase, variant = p, v
+
+    # The per-variant experiment dir on the cluster depends on who submitted:
+    # web-submitted jobs use ~/.train-eval-web/experiments/<variant>; jobs
+    # launched via the bash `./submit` use ~/train-eval-scripts/experiments/<variant>.
+    # Probe both, prefer one that actually exists.
+    exp_dir_from_meta = _exp_dir_from_meta(slurm_meta)
+    if exp_dir_from_meta:
+        exp_dir_remote = exp_dir_from_meta
+    else:
+        exp_dir_task = (
+            asyncio.create_task(_resolve_exp_dir(env.ssh_alias, job_id, variant))
+            if variant
+            else None
+        )
+        runtime_exp_dir_task = asyncio.create_task(
+            _resolve_runtime_exp_dir(env.ssh_alias, stdout_path, phase)
+        )
+        exp_dir_remote = (
+            await exp_dir_task if exp_dir_task else f"$HOME/{CLUSTER_STAGING_REL}/experiments"
+        )
+        runtime_exp_dir = await runtime_exp_dir_task
+        if runtime_exp_dir:
+            exp_dir_remote = runtime_exp_dir
+    ckpt_dir = (
+        slurm_meta.get("checkpoint_dir")
+        or (f"{exp_dir_remote}/checkpoints" if phase in ("train", "resume") else None)
+    )
+    eval_dir = (
+        slurm_meta.get("eval_dir")
+        or (f"{exp_dir_remote}/eval_results" if phase == "eval" else None)
+    )
+    home = await remote_home(cluster)
+    exp_dir_remote = expand_home_path(exp_dir_remote, home) or exp_dir_remote
+    ckpt_dir = expand_home_path(ckpt_dir, home)
+    eval_dir = expand_home_path(eval_dir, home)
+    submitted_eval_checkpoint = slurm_meta.get("checkpoint_path") or None
+    submitted_eval_checkpoint = expand_home_path(submitted_eval_checkpoint, home)
+    eval_checkpoint_task = (
+        asyncio.create_task(_resolve_eval_checkpoint(
+            env.ssh_alias,
+            stdout_path,
+            exp_dir_remote,
+            slurm_meta.get("checkpoint_path"),
+        ))
+        if phase == "eval" and variant and not submitted_eval_checkpoint
+        else None
+    )
+    progress_task = (
+        asyncio.create_task(
+            _compute_progress(
+                cluster,
+                job_id,
+                phase,
+                variant,
+                stdout_path,
+                stderr_path,
+                ckpt_dir,
+                eval_dir,
+                slurm_meta,
+            )
+        )
+        if include_progress
+        else None
+    )
+    eval_runs_task = (
+        asyncio.create_task(_slurm_eval_runs(env.ssh_alias, eval_dir))
+        if include_eval_runs and phase == "eval" and eval_dir
+        else None
+    )
+    active_state = state.upper().startswith(("RUNNING", "PENDING", "CONFIGURING", "COMPLETING"))
+    completion_task = (
+        asyncio.create_task(eval_job_completed(env.ssh_alias, stdout_path, eval_dir, variant, slurm_meta))
+        if include_progress and phase == "eval" and variant and eval_dir and not active_state
+        else None
+    )
+    gpu_task = (
+        asyncio.create_task(
+            _slurm_gpu_usage(
+                env.ssh_alias,
+                job_id,
+                sacct.get("NodeList") or "",
+                state,
+            )
+        )
+        if include_gpu
+        else None
+    )
+
+    eval_checkpoint = submitted_eval_checkpoint or (
+        await eval_checkpoint_task if eval_checkpoint_task else None
+    )
+    eval_checkpoint = expand_home_path(eval_checkpoint, home)
+    isaac_logs_glob = (
+        f"{slurm_meta.get('job_log_dir')}/server_*.log"
+        if phase == "eval" and slurm_meta.get("job_log_dir")
+        else (f"{exp_dir_remote}/logs/{job_id}/server_*.log" if phase == "eval" else None)
+    )
+    isaac_logs_glob = expand_home_path(isaac_logs_glob, home)
+    paths = Paths(
+        stdout=stdout_path,
+        stderr=stderr_path,
+        exp_dir=exp_dir_remote,
+        ckpt_dir=ckpt_dir,
+        eval_checkpoint=eval_checkpoint,
+        eval_dir=eval_dir,
+        isaac_logs_glob=isaac_logs_glob,
+    )
+    training_job_task = (
+        asyncio.create_task(find_training_job_for_checkpoint(cluster, eval_checkpoint))
+        if include_training_link and phase == "eval" and eval_checkpoint
+        else None
+    )
+    config_snapshot = None
+    data_interface = None
+    if include_config or include_data_interface:
+        config_snapshot = await _slurm_config_snapshot(env.ssh_alias, slurm_meta, cluster=cluster)
+        _overlay_train_note(config_snapshot, slurm_meta.get("train_note"))
+    if include_data_interface:
+        data_interface = await _slurm_data_interface_snapshot(
+            env.ssh_alias,
+            slurm_meta,
+            config_snapshot,
+            cluster=cluster,
+            variant=variant,
+        )
+    job_wandb_project = (
+        slurm_meta.get("wandb_project")
+        or slurm_meta.get("submit_wandb_project")
+        or (config_snapshot.wandb_project if config_snapshot else None)
+    )
+
+    wandb_url: str | None = None
+    if include_progress and phase in ("train", "resume"):
+        # submit.py pins WANDB_RUN_ID = job_name via sbatch --export.
+        wandb_url = await _wandb_url(job_name, project=job_wandb_project)
+
+    progress = await progress_task if progress_task else Progress(phase=phase)
+    if completion_task:
+        try:
+            if await completion_task:
+                state = "COMPLETED"
+        except Exception:
+            pass
+    gpu = await gpu_task if gpu_task else None
+    eval_runs = await eval_runs_task if eval_runs_task else []
+    if include_progress:
+        _reconcile_eval_progress_from_runs(progress, eval_runs)
+    training_job_data = await training_job_task if training_job_task else None
+    training_job = TrainingJobRef.model_validate(training_job_data) if training_job_data else None
+
+    return JobDetails(
+        cluster=cluster, job_id=job_id, job_name=job_name,
+        phase=phase, variant=variant,
+        eval_harness=await _resolve_eval_harness_name(phase, variant, slurm_meta),
+        resume_of=slurm_meta.get("resume_of") or None,
+        resubmit_action=slurm_meta.get("resubmit_action") or None,
+        training_job=training_job,
+        train_note=slurm_meta.get("train_note") or None,
+        state=state, elapsed=elapsed,
+        wandb_project=job_wandb_project,
+        wandb_url=wandb_url, paths=paths, progress=progress, gpu=gpu,
+        config_snapshot=config_snapshot,
+        data_interface=data_interface,
+        eval_runs=eval_runs,
+    )
+
+
+async def get_metadata(cluster: str, job_id: str) -> JobMetadataPayload:
+    det = await get_details(
+        cluster,
+        job_id,
+        include_config=True,
+        include_data_interface=True,
+        include_progress=False,
+        include_training_link=False,
+    )
+    return JobMetadataPayload(
+        wandb_project=det.wandb_project,
+        config_snapshot=det.config_snapshot,
+        data_interface=det.data_interface,
+    )
+
+
+async def get_progress(cluster: str, job_id: str) -> JobProgressPayload:
+    det = await get_details(
+        cluster,
+        job_id,
+        include_progress=True,
+        include_training_link=False,
+    )
+    return JobProgressPayload(
+        cluster=det.cluster,
+        job_id=det.job_id,
+        phase=det.phase,
+        state=det.state,
+        elapsed=det.elapsed,
+        wandb_url=det.wandb_url,
+        progress=det.progress,
+    )
+
+
+async def get_gpu(cluster: str, job_id: str) -> JobGpuPayload:
+    det = await get_details(
+        cluster,
+        job_id,
+        include_gpu=True,
+        include_progress=False,
+        include_training_link=False,
+    )
+    return JobGpuPayload(gpu=det.gpu)
+
+
+async def get_eval_runs(cluster: str, job_id: str) -> JobEvalRunsPayload:
+    det = await get_details(
+        cluster,
+        job_id,
+        include_eval_runs=True,
+        include_progress=False,
+        include_training_link=False,
+    )
+    return JobEvalRunsPayload(eval_runs=det.eval_runs)
+
+
+def _reconcile_eval_progress_from_runs(progress: Progress, eval_runs: list[EvalRun]) -> None:
+    if progress.phase != "eval" or not eval_runs:
+        return
+
+    completed = len(eval_runs)
+    if progress.completed_runs is None or completed > progress.completed_runs:
+        progress.completed_runs = completed
+
+    episode_total = sum(row.total_episodes or 0 for row in eval_runs)
+    if episode_total <= 0 and progress.max_steps and progress.total_runs:
+        episode_total = completed * max(1, progress.max_steps // progress.total_runs)
+    if episode_total <= 0:
+        if progress.total_runs:
+            progress.percent = round(100.0 * progress.completed_runs / progress.total_runs, 1)
+            progress.current_label = f"{progress.completed_runs}/{progress.total_runs} result files"
+        return
+
+    current_step = max(progress.current_step or 0, episode_total)
+    if progress.max_steps:
+        progress.current_step = min(current_step, progress.max_steps)
+        progress.percent = round(100.0 * progress.current_step / progress.max_steps, 1)
+        progress.current_label = (
+            _eval_episodes_label(
+                progress.completed_runs, progress.total_runs, progress.current_step, progress.max_steps
+            )
+            if progress.total_runs
+            else f"{progress.current_step}/{progress.max_steps} episodes"
+        )
+
+
+def _eval_episodes_label(completed: int, total: int, current_step: int, max_steps: int) -> str:
+    """Shared label for eval progress measured in episodes (result files + steps)."""
+    return f"{completed}/{total} result files · {current_step}/{max_steps} episodes"
+
+
+def _apply_eval_step_shape(
+    progress: Progress,
+    completed: int,
+    total: int,
+    n_eps: int,
+    current_eps: int,
+) -> None:
+    """Set the unified eval step shape (max_steps/current_step/percent/label).
+
+    When N_EPISODES is known the bar is measured in episodes
+    (max_steps = total_runs · N_EPISODES) so the frontend ETA matches training;
+    otherwise it falls back to completed/total result files. Shared by the slurm
+    and mlxp eval-progress paths so their labels stay identical.
+    """
+    if n_eps > 0:
+        progress.max_steps = total * n_eps
+        progress.current_step = min(current_eps, progress.max_steps)
+        progress.percent = round(100.0 * progress.current_step / progress.max_steps, 1)
+        progress.current_label = _eval_episodes_label(
+            completed, total, progress.current_step, progress.max_steps
+        )
+    else:
+        progress.percent = round(100.0 * completed / total, 1)
+        progress.current_label = f"{completed}/{total} result files"
+
+
+async def _mlxp_details(
+    job_id: str,
+    job_name: str,
+    state: str,
+    elapsed: str,
+    phase: str,
+    variant: str | None,
+    include_gpu: bool = False,
+    include_config: bool = False,
+    include_data_interface: bool = False,
+    include_eval_runs: bool = False,
+    include_progress: bool = True,
+    include_training_link: bool = True,
+    pod_name: str | None = None,
+    node: str | None = None,
+    job_comment: str | None = None,
+    train_note: str | None = None,
+) -> JobDetails:
+    """MLXP runs train via `kubectl apply` on a pod. All paths live on DDN."""
+    settings = get_settings()
+    exp_dir = f"{settings.experiments_dir}/{variant}" if variant else settings.experiments_dir
+    metadata = parse_comment_fields(job_comment)
+    train_note = train_note or metadata.get("train_note") or None
+    if not train_note and not include_progress:
+        train_note = await _mlxp_train_note_from_metadata(metadata)
+    output_namespace = metadata.get("output_namespace") or None
+    ckpt_dir = (
+        metadata.get("checkpoint_dir")
+        or (
+            f"{exp_dir}/checkpoints/{output_namespace or job_name}"
+            if phase in ("train", "resume") else None
+        )
+    )
+    eval_dir = (
+        metadata.get("eval_dir")
+        or (
+            f"{exp_dir}/eval_results/{output_namespace}"
+            if phase == "eval" and output_namespace else
+            (f"{exp_dir}/eval_results" if phase == "eval" else None)
+        )
+    )
+    paths = Paths(
+        stdout=f"kubectl logs -n {settings.namespace} -l job-name={job_id}",
+        stderr=f"kubectl logs -n {settings.namespace} -l job-name={job_id}  (k8s merges stdout+stderr)",
+        exp_dir=exp_dir,
+        ckpt_dir=ckpt_dir,
+        eval_checkpoint=None,
+        eval_dir=eval_dir,
+        isaac_logs_glob=(
+            f"{metadata.get('job_log_dir')}/server_*.log"
+            if phase == "eval" and metadata.get("job_log_dir")
+            else (f"{exp_dir}/logs/{job_id}/server_*.log" if phase == "eval" else None)
+        ),
+    )
+    if phase == "eval":
+        paths.eval_checkpoint = metadata.get("checkpoint_path") or None
+    training_job_task = (
+        asyncio.create_task(find_training_job_for_checkpoint("mlxp", paths.eval_checkpoint))
+        if include_training_link and phase == "eval" and paths.eval_checkpoint
+        else None
+    )
+    config_snapshot = None
+    data_interface = None
+    if include_config or include_data_interface:
+        config_snapshot = await _mlxp_config_snapshot(metadata)
+        _overlay_train_note(config_snapshot, train_note)
+    if include_data_interface:
+        data_interface = await _mlxp_data_interface_snapshot(
+            metadata,
+            config_snapshot,
+            variant=variant,
+        )
+    job_wandb_project = (
+        metadata.get("wandb_project")
+        or metadata.get("submit_wandb_project")
+        or (config_snapshot.wandb_project if config_snapshot else None)
+    )
+    # mlxp body pins WANDB_RUN_ID = job_name (resolved from the Job's
+    # display-name annotation by get_job). The k8s job_id has no wandb
+    # run behind it.
+    wandb_url = (
+        await _wandb_url(job_name, project=job_wandb_project)
+        if include_progress and phase in ("train", "resume")
+        else None
+    )
+    progress = (
+        await _mlxp_progress(job_name, variant, phase, metadata, project=job_wandb_project, job_id=job_id)
+        if include_progress
+        else Progress(phase=phase)
+    )
+    gpu = await _mlxp_gpu_usage(pod_name, node, state) if include_gpu else None
+    eval_runs = (
+        await _mlxp_eval_runs(paths.eval_dir)
+        if include_eval_runs and phase == "eval" and paths.eval_dir
+        else []
+    )
+    training_job_data = await training_job_task if training_job_task else None
+    training_job = TrainingJobRef.model_validate(training_job_data) if training_job_data else None
+
+    return JobDetails(
+        cluster="mlxp", job_id=job_id, job_name=job_name,
+        phase=phase, variant=variant,
+        eval_harness=await _resolve_eval_harness_name(phase, variant, metadata),
+        resume_of=metadata.get("resume_of") or None,
+        resubmit_action=metadata.get("resubmit_action") or None,
+        training_job=training_job,
+        train_note=train_note,
+        state=state, elapsed=elapsed,
+        wandb_project=job_wandb_project,
+        wandb_url=wandb_url, paths=paths, progress=progress, gpu=gpu,
+        config_snapshot=config_snapshot,
+        data_interface=data_interface,
+        eval_runs=eval_runs,
+    )
+
+
+def _meta_bool(value: str | None) -> bool | None:
+    if value is None or value == "":
+        return None
+    return value.strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _overlay_train_note(snapshot: ConfigSnapshot | None, note: str | None) -> None:
+    """Reflect an edited TRAIN_NOTE in the config.sh preview text.
+
+    The note is an editable display label; the authoritative store is the sidecar
+    meta (slurm) / annotation (mlxp), which the edit endpoint updates. Rather than
+    rewrite the submitted snapshot file on disk, overlay the current note onto the
+    preview text so it stays consistent with the header.
+    """
+    if snapshot and snapshot.text and note:
+        snapshot.text = set_scalar(snapshot.text, "TRAIN_NOTE", note)
+
+
+async def _slurm_config_snapshot(
+    host: str,
+    meta: dict[str, str],
+    *,
+    cluster: str | None = None,
+) -> ConfigSnapshot | None:
+    path = meta.get("config_snapshot_path")
+    meta_path = meta.get("config_snapshot_meta_path")
+    rel = meta.get("config_snapshot_rel")
+    extra_args_path = meta.get("submit_extra_args_path")
+    extra_args_rel = meta.get("submit_extra_args_rel")
+    if not path and rel:
+        path = f"$HOME/{rel}"
+    if not path and not extra_args_path and not extra_args_rel:
+        return None
+
+    text: str | None = None
+    error: str | None = None
+    if path:
+        if rel:
+            cmd = f"cat $HOME/{shlex.quote(rel)} 2>/dev/null"
+        else:
+            cmd = f"cat {remote_shell_path(path)} 2>/dev/null"
+        r = await ssh_run(host, cmd, timeout=10.0)
+        if r.returncode == 0:
+            text = r.stdout
+        else:
+            error = (r.stderr or "config snapshot not found").strip()
+
+    extra_args_text = await _slurm_optional_text(host, extra_args_path, extra_args_rel)
+    sidecar_extra_args = _snapshot_extra_args(extra_args_text)
+    if text is None and meta.get("phase") == "train":
+        recovered = await _recover_slurm_training_snapshot(meta, sidecar_extra_args, cluster=cluster)
+        if recovered:
+            text = recovered
+            error = None
+    extra_args = _snapshot_extra_args(text) or sidecar_extra_args
+    if extra_args_path is None and extra_args_rel:
+        extra_args_path = f"$HOME/{extra_args_rel}"
+
+    home = await remote_home(cluster) if cluster else None
+    display_path = expand_home_path(path, home)
+    display_meta_path = expand_home_path(meta_path, home)
+    display_extra_args_path = expand_home_path(extra_args_path, home)
+    display_git_repo_path = expand_home_path(meta.get("submit_git_repo_path"), home)
+
+    return ConfigSnapshot(
+        path=display_path,
+        meta_path=display_meta_path,
+        text=text,
+        extra_args_path=display_extra_args_path,
+        extra_args=extra_args,
+        wandb_project=meta.get("wandb_project")
+        or meta.get("submit_wandb_project")
+        or _snapshot_shell_value(text, "SUBMIT_WANDB_PROJECT"),
+        git_repo_path=display_git_repo_path or None,
+        git_repo_label=meta.get("submit_git_repo_label") or None,
+        git_branch=meta.get("submit_git_branch") or None,
+        git_commit=meta.get("submit_git_commit") or None,
+        git_dirty_at_submit=_meta_bool(meta.get("submit_git_dirty_at_submit")),
+        git_committed_dirty=_meta_bool(meta.get("submit_git_committed_dirty")),
+        error=error,
+    )
+
+
+async def _recover_slurm_training_snapshot(
+    meta: dict[str, str],
+    extra_args: list[str],
+    *,
+    cluster: str | None = None,
+) -> str | None:
+    variant_name = meta.get("variant")
+    job_name = meta.get("job_name")
+    if not variant_name or not job_name:
+        return None
+    try:
+        variant = await load_variant(variant_name)
+        model = resolve_training_model(variant)
+        train_num_gpus = _meta_int(meta, "train_num_gpus") or variant_int(variant, "TRAIN_NUM_GPUS", DEFAULT_TRAIN_NUM_GPUS)
+        train_max_steps = _meta_int(meta, "train_max_steps") or variant_int(variant, "MAX_STEPS", DEFAULT_TRAIN_MAX_STEPS)
+        train_save_steps = _meta_int(meta, "train_save_steps") or variant_int(variant, "SAVE_STEPS", DEFAULT_TRAIN_SAVE_STEPS)
+        train_num_workers = _meta_int(meta, "train_num_workers") or variant_int(variant, "TRAIN_NUM_WORKERS", DEFAULT_TRAIN_NUM_WORKERS)
+        train_action_horizon = _meta_int(meta, "train_action_horizon")
+        train_global_batch_size = _meta_int(meta, "train_global_batch_size")
+        if train_global_batch_size is None:
+            for key in ("TRAIN_GLOBAL_BATCH_SIZE", "GLOBAL_BATCH_SIZE"):
+                try:
+                    parsed = variant_int_opt(variant, key)
+                except ValueError:
+                    continue
+                if parsed is not None:
+                    train_global_batch_size = parsed
+                    break
+        git = _snapshot_git_from_meta(meta)
+        text = render_training_config_snapshot(
+            base_config=variant.raw,
+            variant=variant_name,
+            model=model.family,
+            job_name=job_name,
+            cluster=cluster or meta.get("cluster") or "",
+            partition=meta.get("partition") or meta.get("submit_partition"),
+            node=meta.get("node") or meta.get("submit_node"),
+            extra_args=extra_args,
+            train_num_gpus=train_num_gpus,
+            train_global_batch_size=train_global_batch_size,
+            train_max_steps=train_max_steps,
+            train_save_steps=train_save_steps,
+            train_num_workers=train_num_workers,
+            train_action_horizon=train_action_horizon,
+            wandb_project=meta.get("wandb_project") or meta.get("submit_wandb_project"),
+            git=git,
+        )
+    except Exception:
+        return None
+    warning = (
+        "# Recovered by train-eval-web because the original submission snapshot file is missing.\n"
+        "# Source: Slurm sidecar metadata plus the current local base variant config.\n"
+        "# If the original extra-args sidecar was deleted too, per-job extra args may be absent below.\n\n"
+    )
+    return warning + text
+
+
+def _snapshot_git_from_meta(meta: dict[str, str]) -> SubmitGitInfo | None:
+    repo_path = meta.get("submit_git_repo_path") or meta.get("submit_train_repo_dir")
+    repo_label = meta.get("submit_git_repo_label") or meta.get("model_label")
+    commit = meta.get("submit_git_commit")
+    if not (repo_path or repo_label or commit):
+        return None
+    return SubmitGitInfo(
+        repo_path=repo_path or "",
+        repo_label=repo_label or "",
+        commit=commit or None,
+        commit_subject=meta.get("submit_git_commit_subject") or None,
+        branch=meta.get("submit_git_branch") or None,
+        dirty_before=bool(_meta_bool(meta.get("submit_git_dirty_at_submit"))),
+        committed_dirty=bool(_meta_bool(meta.get("submit_git_committed_dirty"))),
+        dirty_files=[],
+    )
+
+
+async def _slurm_data_interface_snapshot(
+    host: str,
+    meta: dict[str, str],
+    config_snapshot: ConfigSnapshot | None,
+    *,
+    cluster: str,
+    variant: str | None,
+) -> DataInterfaceSummary | None:
+    if not variant:
+        return None
+    source, path = _resolve_remote_modality_path(meta, config_snapshot)
+    if not source and not path:
+        return None
+    if not path:
+        return DataInterfaceSummary(
+            variant=variant,
+            source=source,
+            error="TRAIN_MODALITY_CONFIG is set, but the submitted config snapshot path is unavailable",
+        )
+    text = await _slurm_optional_text(host, path, None)
+    display_path = expand_home_path(path, await remote_home(cluster))
+    if text is None:
+        return DataInterfaceSummary(
+            variant=variant,
+            source=source,
+            path=display_path,
+            error=f"modality.py not found on cluster: {display_path}",
+        )
+    return summarize_data_interface_text(
+        variant_name=variant,
+        source=source,
+        path=display_path,
+        text=text,
+    )
+
+
+def _resolve_remote_modality_path(
+    meta: dict[str, str],
+    config_snapshot: ConfigSnapshot | None,
+) -> tuple[str | None, str | None]:
+    path = (meta.get("train_modality_config") or "").strip() or None
+    if path:
+        return path.rsplit("/", 1)[-1], path
+
+    source = _snapshot_shell_value(config_snapshot.text if config_snapshot else None, "TRAIN_MODALITY_CONFIG")
+    if not source:
+        return None, None
+    if source.startswith("$HOME/") or source.startswith("/") or source.startswith("~/"):
+        return source.rsplit("/", 1)[-1], source
+
+    config_path = config_snapshot.path if config_snapshot else None
+    if not config_path or "/" not in config_path:
+        return source, None
+    return source, f"{config_path.rsplit('/', 1)[0]}/{source}"
+
+
+def _snapshot_shell_value(text: str | None, key: str) -> str | None:
+    if not text:
+        return None
+    match = re.search(rf"^{re.escape(key)}=(.*)$", text, flags=re.MULTILINE)
+    if not match:
+        return None
+    raw = match.group(1).strip()
+    if not raw:
+        return None
+    try:
+        parts = shlex.split(raw, comments=False, posix=True)
+        if parts:
+            return parts[0]
+    except ValueError:
+        pass
+    return raw.strip("'\"") or None
+
+
+def _meta_int(meta: dict[str, str], key: str) -> int | None:
+    raw = meta.get(key)
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+async def _slurm_optional_text(host: str, path: str | None, rel: str | None = None) -> str | None:
+    if not path and not rel:
+        return None
+    if rel:
+        cmd = f"cat $HOME/{shlex.quote(rel)} 2>/dev/null"
+    elif path:
+        cmd = f"cat {remote_shell_path(path)} 2>/dev/null"
+    else:
+        return None
+    r = await ssh_run(host, cmd, timeout=10.0)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _snapshot_extra_args(text: str | None) -> list[str]:
+    if not text:
+        return []
+    match = re.search(r"^SUBMIT_EXTRA_ARGS=\(\n([\s\S]*?)^\)$", text, flags=re.MULTILINE)
+    if not match:
+        return []
+    args: list[str] = []
+    for raw_line in match.group(1).splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            parts = shlex.split(line, comments=False, posix=True)
+        except ValueError:
+            parts = [line.strip("'\"")]
+        args.extend(parts)
+    return args
+
+
+async def _mlxp_config_snapshot(meta: dict[str, str]) -> ConfigSnapshot | None:
+    path = meta.get("config_snapshot_path")
+    if not path:
+        return None
+    meta_path = meta.get("config_snapshot_meta_path")
+
+    text, error = await _mlxp_read_file(path)
+    display_path = await expand_cluster_home("mlxp", path)
+    display_meta_path = await expand_cluster_home("mlxp", meta_path)
+    display_git_repo_path = await expand_cluster_home("mlxp", meta.get("submit_git_repo_path"))
+
+    return ConfigSnapshot(
+        path=display_path,
+        meta_path=display_meta_path,
+        text=text,
+        wandb_project=meta.get("wandb_project")
+        or meta.get("submit_wandb_project")
+        or _snapshot_shell_value(text, "SUBMIT_WANDB_PROJECT"),
+        git_repo_path=display_git_repo_path or None,
+        git_repo_label=meta.get("submit_git_repo_label") or None,
+        git_branch=meta.get("submit_git_branch") or None,
+        git_commit=meta.get("submit_git_commit") or None,
+        git_dirty_at_submit=_meta_bool(meta.get("submit_git_dirty_at_submit")),
+        git_committed_dirty=_meta_bool(meta.get("submit_git_committed_dirty")),
+        error=error,
+    )
+
+
+async def _mlxp_train_note_from_metadata(meta: dict[str, str]) -> str | None:
+    meta_path = meta.get("config_snapshot_meta_path")
+    if not meta_path:
+        return None
+    text, _ = await _mlxp_read_file(meta_path)
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    note = data.get("train_note")
+    if isinstance(note, str) and note.strip():
+        return note.strip()
+    return None
+
+
+async def _mlxp_data_interface_snapshot(
+    meta: dict[str, str],
+    config_snapshot: ConfigSnapshot | None,
+    *,
+    variant: str | None,
+) -> DataInterfaceSummary | None:
+    if not variant:
+        return None
+    source, path = _resolve_remote_modality_path(meta, config_snapshot)
+    if not source and not path:
+        return None
+    if not path:
+        return DataInterfaceSummary(
+            variant=variant,
+            source=source,
+            error="TRAIN_MODALITY_CONFIG is set, but the submitted config snapshot path is unavailable",
+        )
+    text, _ = await _mlxp_read_file(path)
+    display_path = await expand_cluster_home("mlxp", path)
+    if text is None:
+        return DataInterfaceSummary(
+            variant=variant,
+            source=source,
+            path=display_path,
+            error=f"modality.py not found on MLXP: {display_path}",
+        )
+    return summarize_data_interface_text(
+        variant_name=variant,
+        source=source,
+        path=display_path,
+        text=text,
+    )
+
+
+async def _mlxp_exec(
+    *command: str,
+    timeout: float,
+    pod: str | None = None,
+) -> tuple[int, str, str]:
+    """Run `kubectl exec` in an MLXP pod and return (rc, stdout, stderr).
+
+    Centralizes the subprocess create + timeout-guarded communicate + kill-on-
+    timeout/cancel boilerplate that the MLXP detail helpers all share, so none of
+    them can leak an orphaned kubectl child. When `pod` is None the shared
+    listing pod is used; pass an explicit pod (e.g. a job's own pod for GPU
+    sampling) to target it directly. Callers keep their own try/except for the
+    "kubectl unavailable / probe failed" fallbacks.
+    """
+    settings = get_settings()
+    if pod is None:
+        pod = await ensure_listing_pod()
+    proc = await asyncio.create_subprocess_exec(
+        "kubectl", "exec", "-n", settings.namespace, pod, "--", *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except BaseException:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        raise
+    return (
+        proc.returncode or 0,
+        stdout.decode(errors="replace"),
+        stderr.decode(errors="replace"),
+    )
+
+
+async def _mlxp_read_file(path: str) -> tuple[str | None, str | None]:
+    if shutil.which("kubectl") is None:
+        return None, "kubectl not found on PATH"
+    try:
+        rc, stdout, stderr = await _mlxp_exec("cat", path, timeout=12.0)
+        if rc == 0:
+            return stdout, None
+        return None, stderr.strip() or "file not found"
+    except Exception as exc:
+        return None, str(exc)
+
+
+_EVAL_RUNS_SCRIPT = r'''
+import json
+import os
+import re
+from pathlib import Path
+
+
+def int_or_none(value):
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def float_or_none(value):
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def seed_from_run_label(label):
+    m = re.search(r"seed([0-9]+)", label)
+    return int(m.group(1)) if m else None
+
+
+root = Path(os.environ["EVAL_DIR"])
+rows = []
+if root.is_dir():
+    for path in sorted(root.glob("**/results.json"), key=lambda p: str(p)):
+        rel = path.relative_to(root).parts
+        if len(rel) < 3:
+            continue
+        run_label = rel[-2]
+        if not run_label.startswith("run_"):
+            continue
+        eval_set = rel[-3]
+        task = "/".join(rel[:-3]) or None
+        try:
+            data = json.load(open(path))
+        except Exception:
+            continue
+        config = data.get("config") or {}
+        summary = data.get("summary") or {}
+        seed = int_or_none(config.get("seed"))
+        if seed is None:
+            seed = seed_from_run_label(run_label)
+        rows.append({
+            "task": task,
+            "eval_set": eval_set,
+            "run": run_label,
+            "seed": seed,
+            "success_count": int_or_none(summary.get("success_count")),
+            "total_episodes": int_or_none(summary.get("total_episodes") or summary.get("episode_count")),
+            "success_rate": float_or_none(summary.get("success_rate")),
+            "path": str(path),
+        })
+print(json.dumps(rows))
+'''
+
+
+async def _slurm_eval_runs(host: str, eval_dir: str) -> list[EvalRun]:
+    cmd = (
+        f"EVAL_DIR={remote_path_expr(eval_dir)} "
+        "python3 - <<'PY'\n"
+        + _EVAL_RUNS_SCRIPT
+        + "\nPY"
+    )
+    try:
+        r = await ssh_run(host, cmd, timeout=20.0)
+    except Exception:
+        return []
+    if r.returncode != 0:
+        return []
+    try:
+        raw = json.loads(r.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+    return [EvalRun.model_validate(item) for item in raw]
+
+
+async def _mlxp_eval_runs(eval_dir: str) -> list[EvalRun]:
+    if shutil.which("kubectl") is None:
+        return []
+    cmd = (
+        f"EVAL_DIR={remote_path_expr(eval_dir)} "
+        "python3 - <<'PY'\n"
+        + _EVAL_RUNS_SCRIPT
+        + "\nPY"
+    )
+    try:
+        rc, stdout, _ = await _mlxp_exec("bash", "-lc", cmd, timeout=20.0)
+    except Exception:
+        return []
+    if rc != 0:
+        return []
+    try:
+        raw = json.loads(stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+    return [EvalRun.model_validate(item) for item in raw]
+
+
+# Slurm reports "no node assigned" as one of these sentinel strings; treat them
+# all as "no node" when resolving the GPU host.
+_NO_NODE_SENTINELS = {"", "None assigned", "N/A", "(None)"}
+
+# Sample nvidia-smi three times (1s apart) so utilization isn't a single-instant
+# reading. Shared verbatim by the slurm and mlxp GPU helpers.
+GPU_SAMPLE_CMD = (
+    "for i in 1 2 3; do "
+    "nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total "
+    "--format=csv,noheader,nounits; "
+    '[ "$i" = 3 ] || sleep 1; '
+    "done"
+)
+
+
+def _parse_gpu_usage(stdout: str, node: str | None) -> GpuUsage | None:
+    samples: dict[int, dict[str, Any]] = {}
+    for line in stdout.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 3:
+            continue
+        try:
+            index = int(parts[0])
+            if len(parts) >= 5:
+                name = parts[1] or None
+                utilization = int(parts[2])
+                used_mib = int(parts[3])
+                total_mib = int(parts[4])
+            elif len(parts) >= 4:
+                name = None
+                utilization = int(parts[1])
+                used_mib = int(parts[2])
+                total_mib = int(parts[3])
+            else:
+                name = None
+                utilization = None
+                used_mib = int(parts[1])
+                total_mib = int(parts[2])
+        except ValueError:
+            continue
+        sample = samples.setdefault(
+            index,
+            {
+                "name": name,
+                "utilization_values": [],
+                "used_mib": used_mib,
+                "total_mib": total_mib,
+            },
+        )
+        if name:
+            sample["name"] = name
+        if utilization is not None:
+            sample["utilization_values"].append(utilization)
+        sample["used_mib"] = max(int(sample["used_mib"]), used_mib)
+        sample["total_mib"] = total_mib
+    devices: list[GpuDeviceUsage] = []
+    for index in sorted(samples):
+        sample = samples[index]
+        values = sample["utilization_values"]
+        utilization = round(sum(values) / len(values)) if values else None
+        used_mib = int(sample["used_mib"])
+        total_mib = int(sample["total_mib"])
+        devices.append(
+            GpuDeviceUsage(
+                index=index,
+                name=sample["name"],
+                utilization_gpu_percent=utilization,
+                used_mib=used_mib,
+                total_mib=total_mib,
+                used_gb=round(used_mib / 1024, 1),
+                total_gb=round(total_mib / 1024, 1),
+            )
+        )
+    if not devices:
+        return None
+    used_mib_total = sum(d.used_mib for d in devices)
+    total_mib_total = sum(d.total_mib for d in devices)
+    utilization_values = [
+        d.utilization_gpu_percent
+        for d in devices
+        if d.utilization_gpu_percent is not None
+    ]
+    return GpuUsage(
+        node=node,
+        utilization_gpu_percent=(
+            round(sum(utilization_values) / len(utilization_values), 1)
+            if utilization_values else None
+        ),
+        used_gb=round(used_mib_total / 1024, 1),
+        total_gb=round(total_mib_total / 1024, 1),
+        devices=devices,
+    )
+
+
+async def _first_slurm_node(host: str, nodelist: str) -> str | None:
+    node_expr = nodelist.strip()
+    if node_expr in _NO_NODE_SENTINELS:
+        return None
+    r = await ssh_run(
+        host,
+        f"PATH=/opt/slurm/bin:$PATH scontrol show hostnames {shlex.quote(node_expr)} 2>/dev/null | head -1",
+        timeout=8.0,
+    )
+    node = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+    return node or node_expr
+
+
+async def _slurm_gpu_usage(
+    host: str,
+    job_id: str,
+    nodelist: str,
+    state: str,
+) -> GpuUsage:
+    node_expr = nodelist.strip()
+    fallback_node = None if node_expr in _NO_NODE_SENTINELS else node_expr
+    if not state.upper().startswith(("RUNNING", "COMPLETING")):
+        return GpuUsage(node=fallback_node, error="GPU memory is only available while the job is running")
+
+    node = await _first_slurm_node(host, nodelist)
+
+    query = GPU_SAMPLE_CMD
+
+    # Preferred: execute inside the job allocation. This works even when
+    # compute-node SSH is not available directly from the login node.
+    srun_cmd = (
+        f"PATH=/opt/slurm/bin:$PATH timeout 8 "
+        f"srun --jobid={shlex.quote(job_id)} --overlap --ntasks=1 "
+        f"bash -lc {shlex.quote(query)} 2>&1"
+    )
+    r = await ssh_run(host, srun_cmd, timeout=10.0)
+    usage = _parse_gpu_usage(r.stdout, node)
+    if usage:
+        return usage
+
+    # Fallback for clusters where login -> compute SSH is permitted.
+    if node:
+        ssh_cmd = (
+            "timeout 8 ssh -o BatchMode=yes -o ConnectTimeout=5 "
+            "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+            f"{shlex.quote(node)} {shlex.quote(query)} 2>&1"
+        )
+        r = await ssh_run(host, ssh_cmd, timeout=10.0)
+        usage = _parse_gpu_usage(r.stdout, node)
+        if usage:
+            return usage
+
+    err = (r.stderr or r.stdout or "").strip().splitlines()
+    message = err[-1] if err else "GPU memory is unavailable"
+    return GpuUsage(node=node, error=message[:240])
+
+
+async def _mlxp_gpu_usage(
+    pod_name: str | None,
+    node: str | None,
+    state: str,
+) -> GpuUsage:
+    fallback_node = node or pod_name or None
+    if not state.upper().startswith(("RUNNING", "COMPLETING")):
+        return GpuUsage(node=fallback_node, error="GPU memory is only available while the job is running")
+    if not pod_name:
+        return GpuUsage(node=fallback_node, error="MLXP pod is not available yet")
+    if shutil.which("kubectl") is None:
+        return GpuUsage(node=fallback_node, error="kubectl not found on PATH")
+
+    try:
+        rc, stdout, stderr = await _mlxp_exec(
+            "bash", "-lc", GPU_SAMPLE_CMD, timeout=12.0, pod=pod_name,
+        )
+    except Exception as exc:
+        return GpuUsage(node=fallback_node, error=f"MLXP GPU sample failed: {exc}")
+
+    if rc != 0:
+        msg = stderr.strip() or stdout.strip()
+        lines = msg.splitlines()
+        return GpuUsage(
+            node=fallback_node,
+            error=(lines[-1] if lines else "MLXP GPU sample failed")[:240],
+        )
+
+    usage = _parse_gpu_usage(stdout, fallback_node)
+    return usage or GpuUsage(node=fallback_node, error="MLXP GPU sample returned no devices")
+
+
+# GAM (dexjoco-gam family) prints one `[step=NNNNNNN] total=... action_l1=...`
+# line per training step. Leading zeros are stripped by the capture group.
+_TRAIN_LOG_STEP_RE = re.compile(r"\[step=0*(\d+)\]")
+
+
+async def _mlxp_pod_log_step(job_id: str, tail: int = 200) -> int | None:
+    """Latest training step parsed from the job pod's stdout, or None.
+
+    GAM launches train_robot.py without `--wandb`, so it logs nothing to wandb
+    and its only live step signal is the per-step `[step=N]` stdout line. Fetch
+    the pod log tail via the label selector (job-name == k8s job_id) and return
+    the highest step seen. Returns None when kubectl is unavailable, the fetch
+    fails, or no `[step=N]` line is present (e.g. gr00t, which uses wandb and
+    never prints this line). Uses max() so multi-pod aggregation still yields
+    the latest step regardless of kubectl's per-pod output ordering.
+    """
+    if not job_id or shutil.which("kubectl") is None:
+        return None
+    settings = get_settings()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "kubectl", "logs", "-n", settings.namespace,
+            "-l", f"job-name={job_id}", f"--tail={tail}", "--prefix=false",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+        except BaseException:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            raise
+    except Exception:
+        return None
+    matches = _TRAIN_LOG_STEP_RE.findall(stdout.decode(errors="replace"))
+    if not matches:
+        return None
+    return max(int(m) for m in matches)
+
+
+async def _mlxp_progress(
+    run_id: str,
+    variant: str | None,
+    phase: str,
+    metadata: dict[str, str] | None = None,
+    project: str | None = None,
+    job_id: str | None = None,
+) -> Progress:
+    """Progress for an MLXP training job.
+
+    Step sources, in order (first that resolves wins):
+      1. wandb summary `train/global_step` (the true training-loop step),
+         falling back to `global_step` then wandb's built-in `_step` — which
+         counts wandb.log() calls (~10x coarser for gr00t-n16) and is only the
+         last-resort fallback. See _wandb_step for the exact order.
+      2. the training pod's `[step=N]` stdout line — GAM's only live signal,
+         since it trains without --wandb. Harmless for gr00t, which resolves at
+         source 1 and never prints this line. Needs the k8s `job_id`.
+      3. highest checkpoint on DDN (SAVE_STEPS granularity): gr00t's
+         `checkpoint-N` dirs and GAM's `checkpoints/NNNNNNN.pt` files.
+
+    `run_id` is the wandb run id — the job_name (display name) for MLXP; the
+    k8s `job_id` (== the pod's job-name label) is passed separately for the log
+    probe because it has no wandb run behind it.
+    """
+    progress = Progress(phase=phase)
+    if not variant:
+        return progress
+
+    metadata = metadata or {}
+    if phase == "eval":
+        return await _mlxp_eval_progress(variant, metadata, progress)
+
+    try:
+        if metadata.get("train_max_steps"):
+            progress.max_steps = int(metadata["train_max_steps"])
+        else:
+            v = await load_variant(variant)
+            if "MAX_STEPS" in v.vars:
+                progress.max_steps = int(v.vars["MAX_STEPS"])
+    except Exception:
+        pass
+
+    if phase not in ("train", "resume"):
+        return progress
+
+    # 1. wandb — fine-grained (per logging tick).
+    step = await _wandb_step(run_id, project=project)
+    if step is not None:
+        progress.current_step = step
+        if progress.max_steps:
+            progress.percent = round(100.0 * step / progress.max_steps, 1)
+            progress.current_label = f"step {step:,}/{progress.max_steps:,}"
+        else:
+            progress.current_label = f"step {step:,}"
+        return progress
+
+    # 2. training-log step — GAM's only live signal (it trains without --wandb).
+    step = await _mlxp_pod_log_step(job_id) if job_id else None
+    if step is not None:
+        progress.current_step = step
+        if progress.max_steps:
+            progress.percent = round(100.0 * step / progress.max_steps, 1)
+            progress.current_label = f"step {step:,}/{progress.max_steps:,}"
+        else:
+            progress.current_label = f"step {step:,}"
+        return progress
+
+    # 3. highest checkpoint on DDN — coarse (SAVE_STEPS granularity).
+    if shutil.which("kubectl") is None:
+        return progress
+    settings = get_settings()
+    ckpt_root = f"{settings.experiments_dir}/{variant}/checkpoints"
+    checkpoint_dir = metadata.get("checkpoint_dir")
+    output_namespace = metadata.get("output_namespace")
+    ckpt_dirs = [
+        d for d in [
+            checkpoint_dir,
+            f"{ckpt_root}/{output_namespace}" if output_namespace else None,
+            f"{ckpt_root}/{run_id}",
+            f"{ckpt_root}/{run_id}/{run_id}",
+            ckpt_root,
+        ]
+        if d
+    ]
+    dirs = " ".join(shlex.quote(d) for d in ckpt_dirs)
+    # gr00t writes `checkpoint-<N>` dirs; GAM writes `checkpoints/NNNNNNN.pt`
+    # (and sometimes top-level `NNNNNNN.pt`) files. Emit the step number from
+    # both schemes, keep only pure-digit lines, numeric-sort, take the max.
+    cmd = (
+        f"for d in {dirs}; do "
+        'ls -d "$d"/checkpoint-* 2>/dev/null | sed "s:.*checkpoint-::"; '
+        'ls "$d"/checkpoints/*.pt "$d"/*.pt 2>/dev/null | sed "s:.*/::;s:[.]pt::"; '
+        "done | grep -E '^[0-9]+$' | sort -n | tail -1"
+    )
+    try:
+        _, stdout, _ = await _mlxp_exec("bash", "-lc", cmd, timeout=15.0)
+    except Exception:
+        return progress
+
+    latest = stdout.strip()
+    if not latest.isdigit():
+        return progress
+    cur = int(latest)
+    progress.current_step = cur
+    if progress.max_steps:
+        progress.percent = round(100.0 * cur / progress.max_steps, 1)
+        progress.current_label = f"step {cur:,}/{progress.max_steps:,}"
+    else:
+        progress.current_label = f"step {cur:,}"
+    return progress
+
+
+async def _mlxp_eval_progress(
+    variant: str,
+    metadata: dict[str, str],
+    progress: Progress,
+) -> Progress:
+    try:
+        v = await load_variant(variant)
+        eval_sets, n_runs, n_eps, tasks = eval_shape(v, metadata)
+        harness = harness_for(v)
+    except (FileNotFoundError, ValueError):
+        eval_sets, n_runs, n_eps, tasks = eval_shape_from_meta(metadata)
+        harness = harness_for_name(metadata.get("eval_harness"))
+    total = eval_total(eval_sets, n_runs, tasks)
+    progress.total_runs = total or None
+    if total <= 0:
+        return progress
+    if n_eps > 0:
+        progress.max_steps = total * n_eps
+
+    if shutil.which("kubectl") is None:
+        return progress
+    settings = get_settings()
+    _exp = f"{settings.experiments_dir}/{variant}"
+    _ns = metadata.get("output_namespace")
+    eval_dir = metadata.get("eval_dir") or (f"{_exp}/eval_results/{_ns}" if _ns else f"{_exp}/eval_results")
+    job_log_dir = metadata.get("job_log_dir") or f"{_exp}/logs"
+
+    # Run the SAME live probe the Slurm path runs over SSH, but in the data pod
+    # via kubectl exec. This surfaces the mid-run signal (DexJoCo episode_* dirs /
+    # Isaac buffered videos), not just fully-finished runs — MLXP eval jobs
+    # previously sat at 0 until a whole run's results.json landed. eval_dir is an
+    # absolute DDN path, so shell-quote it directly (no $HOME to expand).
+    probe_cmd = harness.progress_probe(
+        eval_dir_expr=shlex.quote(eval_dir),
+        log_dir_q=shlex.quote(job_log_dir),
+        job_id_q=shlex.quote(metadata.get("job_id") or ""),
+    )
+    try:
+        rc, stdout, _ = await _mlxp_exec("bash", "-lc", probe_cmd, timeout=15.0)
+    except Exception:
+        return progress
+    if rc != 0:
+        return progress
+    try:
+        completed, current_eps = harness.parse_progress(stdout, n_eps=n_eps)
+    except ValueError:
+        return progress
+    progress.completed_runs = completed
+    _apply_eval_step_shape(progress, completed, total, n_eps, current_eps)
+    return progress
+
+
+def _append_wandb_workspace(url: str, workspace: str | None) -> str:
+    if not workspace:
+        return url
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.setdefault("nw", workspace)
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+async def _wandb_workspace(entity: str) -> str | None:
+    """Return W&B's browser workspace selector for the entity, if known."""
+    if WANDB_WORKSPACE_OVERRIDE:
+        return WANDB_WORKSPACE_OVERRIDE
+    if entity in _wandb_workspace_cache:
+        return _wandb_workspace_cache[entity] or None
+
+    def _query() -> str | None:
+        try:
+            import wandb
+            api = wandb.Api(timeout=10)
+            viewer = api.viewer
+            username = getattr(viewer, "username", None)
+            if username == entity:
+                return f"nwuser{entity}"
+            teams = getattr(viewer, "teams", None)
+            if callable(teams):
+                teams = teams()
+            if isinstance(teams, dict):
+                teams = [edge.get("node") for edge in teams.get("edges", [])]
+            teams = teams or []
+            for team in teams:
+                name = team.get("name") if isinstance(team, dict) else getattr(team, "name", None)
+                if name == entity:
+                    return f"nwteam{entity}"
+        except Exception:
+            return None
+        return None
+
+    workspace = await asyncio.to_thread(_query)
+    _wandb_workspace_cache[entity] = workspace or ""
+    return workspace
+
+
+_wandb_workspace_cache: dict[str, str] = {}
+
+
+async def _wandb_url(run_id: str, project: str | None = None) -> str | None:
+    entity = await _wandb_entity()
+    if not entity:
+        return None
+    resolved_project = project or get_project()
+    workspace = await _wandb_workspace(entity)
+    fallback = _append_wandb_workspace(
+        f"https://wandb.ai/{quote(entity, safe='')}/{quote(resolved_project, safe='')}/runs/{quote(run_id, safe='')}",
+        workspace,
+    )
+
+    def _query() -> str | None:
+        try:
+            import wandb
+            api = wandb.Api(timeout=10)
+            run = api.run(f"{entity}/{resolved_project}/{run_id}")
+            return _append_wandb_workspace(run.url or fallback, workspace)
+        except Exception as exc:
+            # Hide the link only when the run is CONFIRMED missing (wandb raises
+            # "Could not find run ..." — e.g. GAM trained without --wandb and no
+            # run was ever created). For any other failure (transient API /
+            # network / in-process wandb hiccup) fall back to the constructed
+            # URL, which resolves for runs that DO exist (incl. backfilled ones).
+            # Returning None on every exception wrongly hides valid links when
+            # the backend's wandb call flakes.
+            msg = str(exc).lower()
+            if any(s in msg for s in ("not find", "not found", "does not exist")):
+                return None
+            return fallback
+
+    return await asyncio.to_thread(_query)
+
+
+_wandb_entity_cache: str | None = None
+
+
+async def _wandb_entity() -> str | None:
+    """Resolve the wandb entity once. Order: env override → API default."""
+    global _wandb_entity_cache
+    if WANDB_ENTITY_OVERRIDE:
+        return WANDB_ENTITY_OVERRIDE
+    if _wandb_entity_cache is not None:
+        return _wandb_entity_cache or None
+
+    def _default() -> str:
+        try:
+            import wandb
+            return wandb.Api(timeout=10).default_entity or ""
+        except Exception:
+            return ""
+
+    _wandb_entity_cache = await asyncio.to_thread(_default)
+    return _wandb_entity_cache or None
+
+
+async def _wandb_step(run_id: str, project: str | None = None) -> int | None:
+    """Return the run's latest step (None if API unreachable / run not found)."""
+    entity = await _wandb_entity()
+    if not entity:
+        return None
+    resolved_project = project or get_project()
+
+    def _query() -> int | None:
+        try:
+            import wandb
+            api = wandb.Api(timeout=10)
+            run = api.run(f"{entity}/{resolved_project}/{run_id}")
+            # train/global_step is the actual training-loop step. wandb's
+            # built-in `_step` counts wandb.log() calls, which is
+            # global_step / logging_steps — off by ~10× for gr00t-n16.
+            s = run.summary.get("train/global_step")
+            if s is None:
+                s = run.summary.get("global_step")
+            if s is None:
+                s = run.summary.get("_step")
+            return int(s) if s is not None else None
+        except Exception:
+            return None
+
+    return await asyncio.to_thread(_query)
+
+
+_BODY_SUFFIX_RE = re.compile(r"/lib/(train|eval)_body(?:_n16)?\.sh$")
+
+
+def _latest_logs_dir_script(variant: str) -> str:
+    """Shell snippet that prints the candidate exp dir with newest logs/.
+
+    Keep this as a loop instead of a shell pipeline built with `;`: without
+    grouping, only the last command is piped, which can return
+    "<mtime> <path>" instead of just the path when the first candidate wins.
+    """
+    rels = " ".join(shlex.quote(rel) for rel in exp_dir_rel_candidates(variant))
+    return (
+        "best_mtime=-1; best_path=''; "
+        f"for rel in {rels}; do "
+        'c="$HOME/$rel"; '
+        'if [ -d "$c/logs" ]; then '
+        'm=$(stat -c %Y "$c/logs" 2>/dev/null || echo 0); '
+        'case "$m" in ""|*[!0-9]*) m=0;; esac; '
+        'if [ "$m" -gt "$best_mtime" ]; then '
+        'best_mtime="$m"; best_path="$c"; '
+        "fi; "
+        "fi; "
+        "done; "
+        'printf "%s\\n" "$best_path"'
+    )
+
+
+def _existing_exp_dirs_script(variant: str) -> str:
+    """Shell snippet that prints existing candidate exp dirs, in order."""
+    rels = " ".join(shlex.quote(rel) for rel in exp_dir_rel_candidates(variant))
+    return (
+        f"for rel in {rels}; do "
+        'c="$HOME/$rel"; '
+        'if [ -d "$c" ]; then printf "%s\\n" "$c"; fi; '
+        "done"
+    )
+
+async def _resolve_eval_checkpoint(
+    host: str,
+    stdout_path: str,
+    exp_dir: str,
+    submitted_checkpoint: str | None,
+) -> str | None:
+    """Return the checkpoint path for an eval job.
+
+    Completed/running eval logs are the most accurate source because the body
+    only logs `Checkpoint:` after verifying the directory exists. For pending
+    or pre-log jobs, fall back to the submit sidecar's explicit checkpoint.
+    """
+    stdout_q = shlex.quote(stdout_path)
+    r = await ssh_run(
+        host,
+        f"grep -E 'Checkpoint: ' {stdout_q} 2>/dev/null | tail -1",
+        timeout=10.0,
+    )
+    line = r.stdout.strip()
+    marker = "Checkpoint: "
+    if marker in line:
+        checkpoint = line.split(marker, 1)[1].strip()
+        if checkpoint:
+            return checkpoint
+
+    if submitted_checkpoint:
+        checkpoint = submitted_checkpoint.strip()
+        if checkpoint:
+            return checkpoint
+
+    return None
+
+
+async def _resolve_exp_dir(host: str, job_id: str, variant: str) -> str:
+    """Find the variant's experiment dir on the cluster, per-job.
+
+    Two parallel submission paths write to different roots:
+      - web app  → `~/.train-eval-web/experiments/<v>`
+      - bash CLI → `~/train-eval-scripts/experiments/<v>`
+
+    Whichever the live job is actually using is the one with a fresh
+    `logs/` subdir. We pick by mtime — that handles the case where the
+    scontrol Command path doesn't match the running job's REPO_ROOT
+    (the user can `bash ./submit` from train-eval-scripts but with a
+    body script copied into .train-eval-web, and vice versa).
+    """
+    # Pick the candidate whose logs/ has the most recent mtime. Returns
+    # one line: the winning candidate path, or empty if neither has logs/.
+    r = await ssh_run(host, _latest_logs_dir_script(variant), timeout=10.0)
+    chosen = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    if chosen:
+        return chosen
+
+    # No logs/ in either candidate → derive from scontrol's Command path
+    # (works while the job is in slurm's recent memory).
+    r = await ssh_run(host, f"scontrol show job {job_id} 2>/dev/null | grep -m1 '^   Command='", timeout=10.0)
+    if r.returncode == 0 and r.stdout.strip():
+        line = r.stdout.strip()
+        cmd_path = line.split("=", 1)[1].strip() if "=" in line else ""
+        m = _BODY_SUFFIX_RE.search(cmd_path)
+        if m:
+            repo_root = cmd_path[: m.start()]
+            return f"{repo_root}/experiments/{variant}"
+
+    # Last resort: existence probe.
+    r = await ssh_run(host, _existing_exp_dirs_script(variant), timeout=10.0)
+    lines = r.stdout.strip().splitlines()
+    if lines:
+        return lines[0]
+    return f"$HOME/{exp_dir_rel_candidates(variant)[0]}"
+
+
+_TQDM_STEP_RE = re.compile(r"(\d+)/(\d+)\s*\[")
+
+
+async def _compute_progress(cluster: str, job_id: str, phase: str, variant: str | None,
+                             stdout: str, stderr: str,
+                             ckpt_dir: str | None, eval_dir: str | None,
+                             slurm_meta: dict[str, str] | None = None) -> Progress:
+    progress = Progress(phase=phase)
+    if not variant:
+        return progress
+
+    if phase in ("train", "resume"):
+        host = (await load_cluster(cluster)).ssh_alias
+        # 1) Live-running jobs: parse latest tqdm step from stderr.
+        r = await ssh_run(
+            host,
+            f"tail -c 4096 {stderr} 2>/dev/null | tr '\\r' '\\n' | grep -oE '[0-9]+/[0-9]+ \\[' | tail -1",
+            timeout=10.0,
+        )
+        m = _TQDM_STEP_RE.search(r.stdout or "")
+        if m:
+            cur, total = int(m.group(1)), int(m.group(2))
+            progress.current_step = cur
+            progress.max_steps = total
+            if total > 0:
+                progress.percent = round(100.0 * cur / total, 1)
+            progress.current_label = f"step {cur:,}/{total:,}"
+            return progress
+
+        # 2) Pending / between-runs / pre-tqdm: derive from the highest
+        #    checkpoint dir on disk. Useful for jobs that were preempted and
+        #    are queued for requeue — we still want to show how far they got.
+        max_steps: int | None = None
+        try:
+            meta_max_steps = (slurm_meta or {}).get("train_max_steps")
+            if meta_max_steps:
+                max_steps = int(meta_max_steps)
+            else:
+                v = await load_variant(variant)
+                if "MAX_STEPS" in v.vars:
+                    max_steps = int(v.vars["MAX_STEPS"])
+        except Exception:
+            pass
+        progress.max_steps = max_steps
+
+        if not ckpt_dir:
+            return progress
+        r = await ssh_run(
+            host,
+            f"ls -d {remote_path_expr(ckpt_dir)}/checkpoint-* 2>/dev/null | sed 's:.*checkpoint-::' | sort -n | tail -1",
+            timeout=10.0,
+        )
+        latest = r.stdout.strip()
+        if latest.isdigit():
+            cur = int(latest)
+            progress.current_step = cur
+            if max_steps:
+                progress.percent = round(100.0 * cur / max_steps, 1)
+            progress.current_label = (
+                f"step {cur:,}/{max_steps:,}" if max_steps else f"step {cur:,}"
+            )
+
+    elif phase == "eval":
+        try:
+            v = await load_variant(variant)
+            eval_sets, n_runs, n_eps, tasks = eval_shape(v, slurm_meta)
+            harness = harness_for(v)
+        except FileNotFoundError:
+            eval_sets, n_runs, n_eps, tasks = eval_shape_from_meta(slurm_meta)
+            harness = harness_for_name((slurm_meta or {}).get("eval_harness"))
+        total = eval_total(eval_sets, n_runs, tasks)
+        progress.total_runs = total or None
+
+        if not (eval_dir and total > 0):
+            return progress
+
+        env = await load_cluster(cluster)
+        host = env.ssh_alias
+
+        # Each harness probes its OWN live signal in one SSH round-trip and
+        # returns (finished-run count, current episode count). Isaac reads its
+        # client stdout markers + buffered video artifacts; DexJoCo counts
+        # finished episode_NN_<success|failure> dirs. The step-shape promotion
+        # below is shared — no cross-harness signal mixing.
+        probe_cmd = harness.progress_probe(
+            eval_dir_expr=remote_path_expr(eval_dir),
+            log_dir_q=shlex.quote(env.vars["LOG_DIR"]),
+            job_id_q=shlex.quote(job_id),
+        )
+        r = await ssh_run(host, probe_cmd, timeout=12.0)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout or "eval progress probe failed").strip())
+        try:
+            completed, current_eps = harness.parse_progress(r.stdout, n_eps=n_eps)
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
+        progress.completed_runs = completed
+
+        # Unified step shape so the frontend ETA + bar match training:
+        #   max_steps = total_runs · N_EPISODES; current_step = live episodes.
+        _apply_eval_step_shape(progress, completed, total, n_eps, current_eps)
+    return progress

@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "@ssot/session-viewer-api",
+  "projectType": "application",
+  "targets": {
+    "install": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv sync",
+        "cwd": "apps/session-viewer/backend"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --host ${SESSIONS_API_HOST:-127.0.0.1} --port ${SESSIONS_API_PORT:-8787} --reload",
+        "cwd": "apps/session-viewer/backend"
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --host ${SESSIONS_API_HOST:-127.0.0.1} --port ${SESSIONS_API_PORT:-8787}",
+        "cwd": "apps/session-viewer/backend"
+      }
+    }
+  }
+}

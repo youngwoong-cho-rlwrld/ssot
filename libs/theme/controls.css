@@ -1,0 +1,223 @@
+/*
+ * Canonical SSOT control styles. Two ways to consume:
+ * 1. Plain-CSS apps: use the classes directly (.ssot-btn, .ssot-input,
+ *    .ssot-select) or copy the declarations onto existing selectors.
+ * 2. Framework apps (Mantine, shadcn/Tailwind): do NOT force these classes on
+ *    framework components; instead map the same values (height, radius,
+ *    border, hover, focus) into the framework's theme so every app's buttons,
+ *    selects, and inputs look and behave identically:
+ *    - height var(--ssot-control-h), radius var(--ssot-radius-sm)
+ *    - resting: 1px solid var(--ssot-border-strong), bg var(--ssot-surface)
+ *    - hover: border-color var(--ssot-accent), bg var(--ssot-accent-soft)
+ *    - primary: bg var(--ssot-accent), white text, hover var(--ssot-accent-strong)
+ *    - focus-visible: box-shadow 0 0 0 2px var(--ssot-ring)
+ *    - font: var(--ssot-font-sans) var(--ssot-text-sm) weight 500
+ *    - transition: 120ms ease on color/background/border/box-shadow
+ */
+.ssot-btn,
+.ssot-input,
+.ssot-select {
+  box-sizing: border-box;
+  height: var(--ssot-control-h);
+  padding: 0 12px;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface);
+  color: var(--ssot-text);
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ssot-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: var(--ssot-weight-medium);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ssot-btn:hover:not(:disabled) {
+  border-color: var(--ssot-accent);
+  background: var(--ssot-accent-soft);
+}
+
+.ssot-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ssot-btn-primary {
+  border-color: var(--ssot-accent);
+  background: var(--ssot-accent);
+  color: #ffffff;
+}
+
+.ssot-btn-primary:hover:not(:disabled) {
+  border-color: var(--ssot-accent-strong);
+  background: var(--ssot-accent-strong);
+  color: #ffffff;
+}
+
+.ssot-btn-danger {
+  border-color: var(--ssot-danger);
+  background: var(--ssot-surface);
+  color: var(--ssot-danger);
+}
+
+.ssot-btn-danger:hover:not(:disabled) {
+  background: var(--ssot-danger-soft);
+}
+
+.ssot-btn:focus-visible,
+.ssot-input:focus-visible,
+.ssot-select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.ssot-input:focus,
+.ssot-select:focus {
+  outline: none;
+  border-color: var(--ssot-accent);
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.ssot-input::placeholder {
+  color: var(--ssot-text-faint);
+}
+
+.ssot-select {
+  appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b919e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+/*
+ * Trigger button used by custom listbox components (SsotSelect) that replace
+ * native <select> elements. Same resting/hover/focus behavior as .ssot-select;
+ * "pill" is the compact 24px variant (e.g. urdf joint-group pills).
+ */
+.ssot-select-trigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: var(--ssot-control-h);
+  width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface);
+  color: var(--ssot-text);
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ssot-select-trigger:hover {
+  border-color: var(--ssot-accent);
+}
+
+.ssot-select-trigger:focus-visible,
+.ssot-select-trigger[aria-expanded='true'] {
+  outline: none;
+  border-color: var(--ssot-accent);
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.ssot-select-trigger .ssot-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ssot-select-trigger .ssot-select-arrow {
+  flex: none;
+  color: var(--ssot-text-faint);
+}
+
+.ssot-select-trigger.pill {
+  height: 24px;
+  width: auto;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  font-size: var(--ssot-text-xs);
+}
+
+/*
+ * Canonical select dropdown panel (the OPEN listbox). Native <select> popups
+ * are OS-rendered and cannot be styled, so apps that need a consistent
+ * dropdown render a custom listbox with these classes (matching the shadcn
+ * Select panel in train-eval, which is the reference look):
+ *   <div class="ssot-listbox" role="listbox">
+ *     <div class="ssot-option" role="option" aria-selected="true">
+ *       <span class="ssot-option-check">(checkmark when selected)</span>
+ *       Label
+ *     </div>
+ *   </div>
+ */
+.ssot-listbox {
+  min-width: 100%;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--ssot-border);
+  border-radius: var(--ssot-radius);
+  background: var(--ssot-surface);
+  box-shadow:
+    var(--ssot-shadow),
+    0 8px 24px rgba(16, 24, 40, 0.12);
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  color: var(--ssot-text);
+  z-index: 50;
+}
+
+html[data-ssot-theme='dark'] .ssot-listbox {
+  box-shadow:
+    var(--ssot-shadow),
+    0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.ssot-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 26px;
+  position: relative;
+  border-radius: var(--ssot-radius-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ssot-option:hover,
+.ssot-option[data-highlighted] {
+  background: var(--ssot-accent-soft);
+}
+
+.ssot-option[aria-selected='true'] {
+  color: var(--ssot-accent);
+}
+
+.ssot-option-check {
+  position: absolute;
+  left: 8px;
+  display: inline-flex;
+  width: 14px;
+  color: var(--ssot-accent);
+}

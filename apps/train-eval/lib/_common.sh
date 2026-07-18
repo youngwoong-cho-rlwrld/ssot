@@ -1,0 +1,615 @@
+# Helpers shared by train_body.sh, eval_body.sh and eval_body_dexjoco.sh.
+# Sourced — does not run on its own.
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "${LOG_FILE:-/dev/null}"
+}
+
+# Resolve EXP_DIR/CONFIG_FILE (honoring SUBMIT_EXP_DIR/SUBMIT_CONFIG_FILE
+# overrides, which only the eval submit path exports) and source the variant
+# config into the caller's scope. Shared prologue of all three body scripts.
+# No `local`s here: the sourced config's plain assignments must stay global.
+resolve_exp_and_config() {
+    EXP_DIR="${SUBMIT_EXP_DIR:-$REPO_ROOT/experiments/$VARIANT}"
+    [ -d "$EXP_DIR" ] || { echo "ERROR: experiment dir not found: $EXP_DIR"; exit 1; }
+    # Output root for checkpoints/logs/eval. Defaults to EXP_DIR; the unified
+    # retention path (SUBMIT_OUTPUT_EXP_DIR) overrides it when set by submit.
+    OUT_DIR="${SUBMIT_OUTPUT_EXP_DIR:-$EXP_DIR}"
+    CONFIG_FILE="${SUBMIT_CONFIG_FILE:-$EXP_DIR/config.sh}"
+    [ -f "$CONFIG_FILE" ] || { echo "ERROR: config not found: $CONFIG_FILE"; exit 1; }
+    source "$CONFIG_FILE"
+}
+
+detect_gpu_instance() {
+    if [ -n "${SUBMIT_GPU_INSTANCE:-}" ]; then
+        echo "$SUBMIT_GPU_INSTANCE"
+        return 0
+    fi
+
+    if [ -n "${SLURM_JOB_ID:-}" ] && command -v scontrol >/dev/null 2>&1; then
+        local job_info node_info slurm_gpu
+        job_info="$(scontrol show job "$SLURM_JOB_ID" -o 2>/dev/null || true)"
+        slurm_gpu="$(printf '%s\n' "$job_info" | grep -oE 'gres/gpu:[A-Za-z0-9_.-]+' | head -1 | cut -d: -f2)"
+        if [ -n "$slurm_gpu" ]; then
+            echo "$slurm_gpu"
+            return 0
+        fi
+        if [ -n "${SLURMD_NODENAME:-}" ]; then
+            node_info="$(scontrol show node "$SLURMD_NODENAME" -o 2>/dev/null || true)"
+            slurm_gpu="$(printf '%s\n' "$node_info" | grep -oE 'Gres=[^ ]*gpu:[A-Za-z0-9_.-]+' | head -1 | sed -E 's/.*gpu:([^:, ]+).*/\1/')"
+            if [ -n "$slurm_gpu" ]; then
+                echo "$slurm_gpu"
+                return 0
+            fi
+        fi
+    fi
+
+    local n
+    n="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+    case "$n" in
+        *A100*) echo a100 ;;
+        *H100*) echo h100 ;;
+        *H200*) echo h200 ;;
+        *L40S*) echo l40s ;;
+        *V100*) echo v100 ;;
+        *)      echo unknown ;;
+    esac
+}
+
+find_available_port() {
+    if ! command -v ss >/dev/null 2>&1; then
+        echo "ERROR: ss not found; cannot probe for an available port" >&2
+        exit 1
+    fi
+    local port
+    local attempt
+    for attempt in $(seq 1 100); do
+        port=$((RANDOM % 64511 + 1024))
+        if ! ss -tuln | grep -q ":$port "; then
+            echo $port
+            return 0
+        fi
+    done
+    echo "ERROR: could not find an available port after 100 attempts" >&2
+    exit 1
+}
+
+append_submit_extra_train_args() {
+    if ! declare -p TRAIN_EXTRA_ARGS >/dev/null 2>&1; then
+        TRAIN_EXTRA_ARGS=()
+    fi
+    if [[ -n "${SUBMIT_EXTRA_ARGS_FILE:-}" ]]; then
+        source "$SUBMIT_EXTRA_ARGS_FILE"
+        TRAIN_EXTRA_ARGS+=("${SUBMIT_EXTRA_ARGS[@]}")
+    fi
+}
+
+# Once training has fully completed (checkpoint-<max_steps> exists), strip
+# resume-only trainer state from every checkpoint-step dir, leaving the same
+# deployable "core" files the checkpoint-copy feature keeps: model shards +
+# index, config.json, experiment_cfg/, processor/statistics/embodiment files.
+# Incomplete runs are left untouched — --resume needs this state to continue.
+cleanup_trainer_state() {
+    local run_dir="$1"
+    local max_steps="$2"
+    if [ ! -d "$run_dir/checkpoint-$max_steps" ]; then
+        log "Trainer-state cleanup skipped: $run_dir/checkpoint-$max_steps not found"
+        return 0
+    fi
+    log "Training complete — removing resume-only trainer state under $run_dir"
+    local step_dir
+    for step_dir in "$run_dir"/checkpoint-*/; do
+        [ -d "$step_dir" ] || continue
+        rm -rf "$step_dir"global_step* \
+               "$step_dir"optimizer* \
+               "$step_dir"scheduler.pt \
+               "$step_dir"rng_state_*.pth \
+               "$step_dir"trainer_state.json \
+               "$step_dir"latest \
+               "$step_dir"zero_to_fp32.py || true
+    done
+    log "Trainer-state cleanup done."
+}
+
+pin_training_repo_dir() {
+    local repo_src="$1"
+    local commit="${2:-}"
+    local namespace="${3:-job}"
+
+    if [ -z "$commit" ]; then
+        TRAIN_REPO_DIR="$repo_src"
+        return 0
+    fi
+
+    local safe_namespace worktree_parent worktree current expected
+    safe_namespace="$(printf '%s' "$namespace" | sed -E 's/[^A-Za-z0-9_.-]+/_/g' | sed -E 's/^_+|_+$//g')"
+    safe_namespace="${safe_namespace:-job}"
+    worktree_parent="$REPO_ROOT/.worktrees"
+    worktree="$worktree_parent/$safe_namespace"
+
+    mkdir -p "$worktree_parent"
+    git -c safe.directory="$repo_src" -C "$repo_src" worktree prune || true
+
+    if [ ! -e "$worktree/.git" ]; then
+        if [ -e "$worktree" ]; then
+            log "ERROR: refusing to use non-git worktree path: $worktree"
+            exit 1
+        fi
+        for attempt in 1 2 3 4 5; do
+            if git -c safe.directory="$repo_src" -C "$repo_src" worktree add --detach "$worktree" "$commit"; then
+                break
+            fi
+            rc=$?
+            if [ "$attempt" = "5" ]; then
+                exit "$rc"
+            fi
+            sleep $((attempt * 2))
+        done
+    fi
+
+    current="$(git -c safe.directory="$worktree" -C "$worktree" rev-parse HEAD)"
+    expected="$(git -c safe.directory="$repo_src" -C "$repo_src" rev-parse "$commit^{commit}")"
+    if [ "$current" != "$expected" ]; then
+        log "ERROR: training repo worktree commit mismatch: expected $expected got $current"
+        exit 1
+    fi
+    if [ -d "$repo_src/.venv" ] && [ ! -e "$worktree/.venv" ]; then
+        ln -s "$repo_src/.venv" "$worktree/.venv"
+    fi
+    TRAIN_REPO_DIR="$worktree"
+    log "Pinned training repo: $TRAIN_REPO_DIR ($current)"
+}
+
+finish_eval_launch_phase() {
+    local launched="$1"
+    local failed="$2"
+    local results_path="$3"
+
+    if [ "$failed" -ne 0 ]; then
+        log "ERROR: one or more eval runs failed"
+        exit 1
+    fi
+    if [ "$launched" -eq 0 ] && [ "${EVAL_OVERWRITE_RESULTS:-0}" != "1" ] \
+        && [ "${EVAL_FORCE_AGGREGATE:-0}" != "1" ]; then
+        # EVAL_FORCE_AGGREGATE=1 turns an all-runs-skipped job into an
+        # aggregate-only pass: per-task fan-out jobs fill the namespace with
+        # run results, then one full-task pass combines them into results.json.
+        log "No new eval runs launched; leaving aggregate unchanged: $results_path"
+        exit 0
+    fi
+}
+
+# Emit the final eval completion marker. It MUST be an unprefixed, line-start
+# "DONE  <results_path>" so backend/app/eval_completion.py's `^DONE[[:space:]]`
+# grep matches — a log() timestamp prefix would defeat that anchored grep and
+# the backend would never recognise a nonzero-exit-but-complete eval. Shared by
+# eval_body.sh and eval_body_dexjoco.sh so the contract lives in one place.
+emit_done_marker() {
+    echo "DONE  $1" | tee -a "${LOG_FILE:-/dev/null}"
+}
+
+# ── Shared eval validation helpers (Isaac + DexJoCo harnesses) ────────────────
+# Used by eval_body.sh (both n1.5 and n1.6) and eval_body_dexjoco.sh. The Isaac
+# helpers read/modify caller-scope variables (N_EPISODES, EVAL_SETS, LAST_CKPT,
+# …) because the body scripts source this file into the same shell.
+
+# Validate that $2 is a positive integer; exit 1 with a "<name> must be a
+# positive integer" message otherwise. $1 is the variable name for the message.
+require_positive_int() {
+    local name="$1"
+    local value="$2"
+    if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 1 ]; then
+        echo "ERROR: $name must be a positive integer, got '$value'"
+        exit 1
+    fi
+}
+
+# DexJoCo checkpoint validation: EVAL_CHECKPOINT must be set and the path must
+# exist (file or dir — pi0.5/openpi checkpoints are not always directories).
+# Sets LAST_CKPT. Isaac uses validate_eval_checkpoint (requires a directory).
+require_eval_checkpoint_path() {
+    if [ -z "${EVAL_CHECKPOINT:-}" ]; then
+        echo "ERROR: EVAL_CHECKPOINT is required"; exit 1
+    fi
+    LAST_CKPT="$EVAL_CHECKPOINT"
+    if [ ! -e "$LAST_CKPT" ]; then
+        echo "ERROR: checkpoint path not found: $LAST_CKPT"; exit 1
+    fi
+}
+
+# Resolve the standard eval output layout from EXP_DIR + submit overrides into
+# caller scope and create the dirs. Sets GPU_INSTANCE, EXP_NAME,
+# OUTPUT_NAMESPACE, EVAL_DIR, RESULTS_PATH, JOB_LOG_DIR, LOG_FILE. Shared by
+# eval_body.sh and eval_body_dexjoco.sh. Requires EXP_DIR, VARIANT and LOG_DIR
+# (from the sourced cluster env) to be set.
+# Filter the global TASKS[] to the subset requested via SUBMIT_EVAL_TASKS (a
+# space-separated list of task SHORT labels — the first "|"-field of each entry).
+# No-op when unset. Powers the submit UI's per-task multi-select; preserves the
+# config.sh task order. Call only in multi-task mode, after TASKS is built.
+apply_eval_task_selection() {
+    [ -n "${SUBMIT_EVAL_TASKS:-}" ] || return 0
+    local -a wanted=() selected=()
+    read -r -a wanted <<< "$SUBMIT_EVAL_TASKS"
+    local entry short w
+    for entry in "${TASKS[@]}"; do
+        short="${entry%%|*}"
+        for w in "${wanted[@]}"; do
+            if [ "$short" = "$w" ]; then
+                selected+=("$entry")
+                break
+            fi
+        done
+    done
+    if [ "${#selected[@]}" -eq 0 ]; then
+        log "ERROR: SUBMIT_EVAL_TASKS='$SUBMIT_EVAL_TASKS' matched none of the variant's TASKS"
+        exit 1
+    fi
+    TASKS=("${selected[@]}")
+    log "Task selection: running ${#TASKS[@]} of the variant's tasks (SUBMIT_EVAL_TASKS)"
+}
+
+resolve_eval_output_paths() {
+    GPU_INSTANCE="$(detect_gpu_instance)"
+    EXP_NAME="${SLURM_JOB_NAME:-${VARIANT}_eval_${GPU_INSTANCE}_$(date +%Y%m%d%H%M%S)}"
+    OUTPUT_NAMESPACE="${SUBMIT_OUTPUT_NAMESPACE:-}"
+    if [ -n "${SUBMIT_EVAL_DIR:-}" ]; then
+        EVAL_DIR="$SUBMIT_EVAL_DIR"
+    elif [ -n "$OUTPUT_NAMESPACE" ]; then
+        EVAL_DIR="$OUT_DIR/eval_results/$OUTPUT_NAMESPACE"
+    else
+        EVAL_DIR="$OUT_DIR/eval_results"
+    fi
+    RESULTS_PATH="${SUBMIT_RESULTS_PATH:-$EVAL_DIR/results.json}"
+    JOB_LOG_DIR="$OUT_DIR/logs/${OUTPUT_NAMESPACE:-${SLURM_JOB_ID:-$EXP_NAME}}"
+    mkdir -p "$JOB_LOG_DIR" "$LOG_DIR" "$EVAL_DIR"
+    LOG_FILE="$JOB_LOG_DIR/eval.log"
+}
+
+# ── Shared eval helpers (Isaac harness: eval_body.sh, both n1.5 and n1.6) ──────
+# These are shared by the unified eval_body.sh (n1.5/n1.6 branches selected via
+# MODEL_FAMILY). They read/modify caller-scope variables (PIDS, PORTS, FAILED,
+# EVAL_*, etc.) because eval_body.sh sources this file into the same shell.
+
+# Validate EVAL_CHECKPOINT is set and points at a checkpoint dir; export LAST_CKPT.
+validate_eval_checkpoint() {
+    if [ -z "${EVAL_CHECKPOINT:-}" ]; then
+        log "ERROR: EVAL_CHECKPOINT is required"
+        exit 1
+    fi
+    LAST_CKPT="$EVAL_CHECKPOINT"
+    if [ ! -d "$LAST_CKPT" ]; then
+        log "ERROR: no checkpoint at '$LAST_CKPT'"
+        exit 1
+    fi
+    log "Checkpoint: $LAST_CKPT"
+}
+
+# Apply submit-time overrides then validate N_EPISODES/N_RUNS/EVAL_SETS.
+validate_eval_counts() {
+    if [ -n "${SUBMIT_EVAL_N_EPISODES:-}" ]; then
+        N_EPISODES="$SUBMIT_EVAL_N_EPISODES"
+    fi
+    if [ -n "${SUBMIT_EVAL_N_RUNS:-}" ]; then
+        N_RUNS="$SUBMIT_EVAL_N_RUNS"
+    fi
+    if [ -n "${SUBMIT_EVAL_SETS:-}" ]; then
+        read -r -a EVAL_SETS <<< "$SUBMIT_EVAL_SETS"
+    fi
+    if ! [[ "${N_EPISODES:-}" =~ ^[0-9]+$ ]] || [ "$N_EPISODES" -lt 1 ]; then
+        log "ERROR: N_EPISODES must be a positive integer, got '${N_EPISODES:-}'"
+        exit 1
+    fi
+    if ! [[ "${N_RUNS:-}" =~ ^[0-9]+$ ]] || [ "$N_RUNS" -lt 1 ]; then
+        log "ERROR: N_RUNS must be a positive integer, got '${N_RUNS:-}'"
+        exit 1
+    fi
+    if [[ "${EVAL_SETS+set}" != set ]] || [ "${#EVAL_SETS[@]}" -eq 0 ]; then
+        log "ERROR: EVAL_SETS must contain at least one eval set"
+        exit 1
+    fi
+    log "Eval shape: ${N_RUNS} runs x ${N_EPISODES} episodes; eval_sets=${EVAL_SETS[*]}"
+}
+
+# Background-worker PID pool shared by the eval launch loop. The caller declares
+# PIDS=() and calls init_gpu_slot_pool, then installs cleanup_all + the trap.
+#
+# GPU-slot pool: each concurrent worker holds a distinct logical slot
+# (0..EVAL_PARALLEL_WORKERS-1) which select_cuda_device maps to a distinct GPU.
+# acquire_gpu_slot hands one out; refresh_running_pids returns it when the worker
+# exits. This is why slots are pooled rather than derived from a monotonic launch
+# counter: `launch_idx % gpu_count` co-locates two live workers on one GPU as soon
+# as completion is out of order (worker on slot 1 finishes while slot 0 still runs,
+# then the next launch reuses slot 0's GPU).
+init_gpu_slot_pool() {
+    FREE_SLOTS=()
+    local s
+    for ((s = 0; s < EVAL_PARALLEL_WORKERS; s++)); do
+        FREE_SLOTS+=("$s")
+    done
+    PID_SLOTS=()
+}
+
+# Pop the next free GPU slot into ACQUIRED_SLOT. wait_for_slot guarantees one is
+# available. Sets a global rather than echoing so the pop persists in the
+# caller's shell — a `$(acquire_gpu_slot)` command substitution would mutate
+# FREE_SLOTS only inside the subshell and always hand back the same slot.
+acquire_gpu_slot() {
+    ACQUIRED_SLOT="${FREE_SLOTS[0]}"
+    FREE_SLOTS=("${FREE_SLOTS[@]:1}")
+}
+
+cleanup_all() {
+    [ "${#PIDS[@]}" -eq 0 ] && return 0
+    for pid in "${PIDS[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+}
+
+refresh_running_pids() {
+    local status=0
+    local i
+    local pid
+    local running_pid
+    local is_running
+    local running_pids=()
+    local active_pids=()
+    local active_slots=()
+
+    mapfile -t running_pids < <(jobs -pr)
+    for i in "${!PIDS[@]}"; do
+        pid="${PIDS[$i]}"
+        is_running=0
+        for running_pid in "${running_pids[@]}"; do
+            if [ "$pid" = "$running_pid" ]; then
+                is_running=1
+                break
+            fi
+        done
+        if [ "$is_running" -eq 1 ]; then
+            active_pids+=("$pid")
+            active_slots+=("${PID_SLOTS[$i]}")
+        else
+            # Worker finished — return its GPU slot to the pool, then reap it.
+            FREE_SLOTS+=("${PID_SLOTS[$i]}")
+            if wait "$pid"; then
+                :
+            else
+                local worker_status=$?
+                log "ERROR: eval worker pid $pid exited with status $worker_status"
+                FAILED=1
+                status=1
+            fi
+        fi
+    done
+    PIDS=("${active_pids[@]}")
+    PID_SLOTS=("${active_slots[@]}")
+    return "$status"
+}
+
+# Block until a worker slot is free. Worker failures are recorded (FAILED=1 in
+# refresh_running_pids) but must NOT abort the launch loop: the body scripts
+# run under `set -e`, so returning nonzero here used to kill the whole eval
+# matrix — including every in-flight worker — on the first failed unit.
+# finish_eval_launch_phase still exits 1 at the end when any unit failed;
+# completed units keep their results.json, so a resubmit re-runs only the rest.
+wait_for_slot() {
+    while true; do
+        refresh_running_pids || true
+        if [ "${#PIDS[@]}" -lt "$EVAL_PARALLEL_WORKERS" ]; then
+            return 0
+        fi
+        sleep 2
+    done
+}
+
+wait_for_all() {
+    local status=0
+    while true; do
+        if ! refresh_running_pids; then
+            status=1
+        fi
+        if [ "${#PIDS[@]}" -eq 0 ]; then
+            break
+        fi
+        sleep 2
+    done
+    PIDS=()
+    PID_SLOTS=()
+    return "$status"
+}
+
+find_eval_port() {
+    local port
+    local existing
+    local used
+    while true; do
+        port="$(find_available_port)"
+        used=0
+        for existing in "${PORTS[@]}"; do
+            if [ "$existing" = "$port" ]; then
+                used=1
+                break
+            fi
+        done
+        if [ "$used" -eq 0 ]; then
+            PORTS+=("$port")
+            echo "$port"
+            return 0
+        fi
+    done
+}
+
+select_cuda_device() {
+    local slot="$1"
+    local visible="${CUDA_VISIBLE_DEVICES:-}"
+    local devices
+    if [ -n "$visible" ]; then
+        IFS=',' read -r -a devices <<< "$visible"
+        local count="${#devices[@]}"
+        if [ "$count" -gt 0 ]; then
+            echo "${devices[$((slot % count))]}"
+            return 0
+        fi
+    fi
+    local gpu_count="${TRAIN_NUM_GPUS:-}"
+    if [[ "$gpu_count" =~ ^[0-9]+$ ]] && [ "$gpu_count" -gt 0 ]; then
+        echo "$((slot % gpu_count))"
+    else
+        echo "$slot"
+    fi
+}
+
+# Dump the caller's TASKS array ('short|task_name|instruction' entries) as a
+# JSON list at $2 using interpreter $1 (n1.5 aggregates with `python`,
+# everything else python3 — the per-family interpreter must be preserved).
+# Avoids quoting/escaping free-text instructions through a bash-built python
+# literal. Shared by aggregate_eval_results and eval_body_dexjoco.sh.
+dump_tasks_json() {
+    local interpreter="$1"
+    local out_path="$2"
+    "$interpreter" - "$out_path" "${TASKS[@]}" <<'PYDUMP'
+import json, sys
+out_path = sys.argv[1]
+tasks = []
+for entry in sys.argv[2:]:
+    parts = entry.split('|', 2)
+    tasks.append({
+        'short': parts[0],
+        'task_name': parts[1] if len(parts) > 1 else parts[0],
+        'instruction': parts[2] if len(parts) > 2 else '',
+    })
+with open(out_path, 'w') as f:
+    json.dump(tasks, f)
+PYDUMP
+}
+
+# Aggregate per-run results.json into the experiment-level results.json.
+# $1 = family (n1.5 | n1.6). One shared heredoc; the family selects the stats
+# engine (numpy for n1.5, stdlib statistics for n1.6 — its env has no numpy),
+# the interpreter (python vs python3, preserved for byte-equivalent commands),
+# and the family-specific top-level keys (n1.5: data_config+dataset; n1.6:
+# model_version+modality_config). All other interpolated values are read from
+# caller scope (this file is sourced). Output verified byte-identical to the
+# previous per-family heredocs on fixture trees for all 4 family x task-mode
+# combinations.
+aggregate_eval_results() {
+    local family="$1"
+    local TASKS_JSON EVAL_SETS_STR
+    local PY="python3"
+    [ "$family" = "n1.5" ] && PY="python"
+
+    log "Aggregating results..."
+
+    TASKS_JSON="$EVAL_DIR/.eval_tasks.json"
+    dump_tasks_json "$PY" "$TASKS_JSON"
+
+    EVAL_SETS_STR=$(printf "'%s', " "${EVAL_SETS[@]}")
+    EVAL_SETS_STR="[${EVAL_SETS_STR%, }]"
+
+    "$PY" - <<PYEOF
+import json
+from pathlib import Path
+
+family = '${family}'
+if family == 'n1.5':
+    import numpy as np
+else:
+    import statistics
+
+base = Path('${EVAL_DIR}')
+eval_sets = ${EVAL_SETS_STR}
+n_runs = ${N_RUNS}
+multi_task = bool(${MULTI_TASK})
+
+with open('${TASKS_JSON}') as f:
+    tasks = json.load(f)
+
+def aggregate_task(task_eval_dir):
+    all_results = {}
+    for es in eval_sets:
+        rates = []
+        for i in range(1, n_runs + 1):
+            p = task_eval_dir / es / f'run_{i}' / 'results.json'
+            if p.exists():
+                with open(p) as fh:
+                    rates.append(json.load(fh)['summary']['success_rate'])
+            else:
+                print(f'WARNING: {p} not found')
+        if not rates:
+            continue
+        if family == 'n1.5':
+            arr = np.array(rates)
+            all_results[es] = {
+                'per_run_success_rate': arr.tolist(),
+                'mean_success_rate': float(np.mean(arr)),
+                'std_success_rate': float(np.std(arr)),
+            }
+            print(f'  {es}: {np.mean(arr):.4f} +/- {np.std(arr):.4f}  {arr}')
+        else:
+            mean = statistics.mean(rates)
+            std = statistics.pstdev(rates) if len(rates) > 1 else 0.0
+            all_results[es] = {
+                'per_run_success_rate': rates,
+                'mean_success_rate': mean,
+                'std_success_rate': std,
+            }
+            print(f'  {es}: {mean:.4f} +/- {std:.4f}  {rates}')
+    return all_results
+
+agg = {
+    'experiment': '${EXP_NAME}',
+    'output_namespace': '${OUTPUT_NAMESPACE}',
+    'cluster': '${CLUSTER}',
+    'gpu': '${GPU_INSTANCE}',
+}
+if family == 'n1.5':
+    agg.update({
+        'note': '${TRAIN_NOTE}',
+        'checkpoint': '${LAST_CKPT}',
+        'data_config': '${DATA_CONFIG:-}',
+        'dataset': '${DATA_PATH:-}',
+    })
+else:
+    agg.update({
+        'model_version': '${MODEL_ID:-n1.6}',
+        'note': '${TRAIN_NOTE}',
+        'checkpoint': '${LAST_CKPT}',
+        'modality_config': '${MODALITY_CONFIG_FILE:-}',
+    })
+agg.update({
+    'n_episodes': ${N_EPISODES},
+    'execution_horizon': ${EXECUTION_HORIZON},
+    'max_steps': ${MAX_STEPS},
+    'n_runs': n_runs,
+    'server_workers': ${EVAL_PARALLEL_WORKERS},
+    'requested_num_envs_per_gpu': ${EVAL_REQUESTED_NUM_ENVS_PER_GPU},
+    'num_envs_per_gpu': ${EVAL_NUM_ENVS_PER_GPU},
+    'total_num_envs': ${EVAL_TOTAL_NUM_ENVS},
+    'eval_base_seed': ${EVAL_BASE_SEED},
+    'eval_seed_run_stride': ${EVAL_SEED_RUN_STRIDE},
+    'eval_seed_set_stride': ${EVAL_SEED_SET_STRIDE},
+    'eval_seed_task_stride': ${EVAL_SEED_TASK_STRIDE},
+})
+
+if multi_task:
+    tasks_out = {}
+    for t in tasks:
+        ts = t['short']
+        print(f'=== {ts} ({t["task_name"]}) ===')
+        tasks_out[ts] = {
+            'task_name': t['task_name'],
+            'instruction': t['instruction'],
+            'eval_sets': aggregate_task(base / ts),
+        }
+    agg['tasks'] = tasks_out
+else:
+    agg['task_name'] = tasks[0]['task_name']
+    agg['eval_sets'] = aggregate_task(base)
+
+out = Path('${RESULTS_PATH}')
+out.parent.mkdir(parents=True, exist_ok=True)
+with open(out, 'w') as f:
+    json.dump(agg, f, indent=2)
+print(f'Saved to {out}')
+PYEOF
+}

@@ -1,0 +1,71 @@
+.toolbarButton {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton) !important;
+  border: 1px solid transparent !important;
+  font-size: 14px !important;
+  font-weight: var(--ssot-weight-medium) !important;
+}
+
+.toolbarButton:hover {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton-hover) !important;
+  border: 1px solid transparent !important;
+}
+
+.toolbarButton:focus,
+.toolbarButton:focus-visible,
+.toolbarButton:active {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton) !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+.toolbarButtonActive {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton-active) !important;
+  border: 1px solid var(--border-interactive) !important;
+  font-size: 14px !important;
+  font-weight: var(--ssot-weight-medium) !important;
+}
+
+.toolbarButtonActive:hover {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton-active) !important;
+  border: 1px solid var(--border-interactive) !important;
+}
+
+.toolbarButtonActive:focus,
+.toolbarButtonActive:focus-visible,
+.toolbarButtonActive:active {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton-active) !important;
+  border: 1px solid var(--border-interactive) !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+.popoverButton {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton) !important;
+  font-size: 14px !important;
+  font-weight: var(--ssot-weight-medium) !important;
+}
+
+.popoverButton:hover {
+  background: var(--button-tableButton-hover) !important;
+}
+
+.popoverButtonActive {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton-active) !important;
+  border: 1px solid var(--border-interactive) !important;
+  font-size: 14px !important;
+  font-weight: var(--ssot-weight-medium) !important;
+}
+
+.popoverButtonActive:hover {
+  color: var(--text-primary) !important;
+  background: var(--button-tableButton-hover) !important;
+}

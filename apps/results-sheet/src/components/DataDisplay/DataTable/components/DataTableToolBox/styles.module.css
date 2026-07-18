@@ -1,0 +1,30 @@
+.item {
+  display: flex;
+  padding: 6px 8px;
+  gap: 12px;
+  align-items: center;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  outline: 1px solid rgba(0, 0, 0, 0);
+  transition: color 0.1s ease-in-out, outline 0.1s ease-in-out;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.item > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item:hover {
+  background-color: var(--field-1);
+  outline: 1px solid var(--enmight-gray-2);
+  color: var(--text-primary);
+  box-shadow: 0px 0px 10px 0px var(--enmight-gray-2, #D4D4D8);
+  transition: all 0.1s ease-in-out;
+}
+
+.item {
+  padding: 2px 0px;
+}

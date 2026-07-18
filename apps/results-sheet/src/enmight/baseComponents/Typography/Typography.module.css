@@ -1,0 +1,64 @@
+.root[data-variant='display'][data-size='lg'] {
+  font-size: 56px;
+  font-weight: 700;
+}
+.root[data-variant='display'][data-size='md'] {
+  font-size: 48px;
+  font-weight: 600;
+}
+.root[data-variant='display'][data-size='sm'] {
+  font-size: 38.4px;
+  font-weight: 600;
+}
+
+.root[data-variant='headline'][data-size='lg'] {
+  font-size: 32px;
+  font-weight: 500;
+}
+.root[data-variant='headline'][data-size='md'] {
+  font-size: 27.2px;
+  font-weight: 500;
+}
+.root[data-variant='headline'][data-size='sm'] {
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.root[data-variant='body'][data-size='lg'] {
+  font-size: 20px;
+  font-weight: 400;
+}
+.root[data-variant='body'][data-size='md'] {
+  font-size: 18px;
+  font-weight: 400;
+}
+.root[data-variant='body'][data-size='sm'] {
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.root[data-variant='label'][data-size='lg'] {
+  font-size: 14px;
+  font-weight: 500;
+}
+.root[data-variant='label'][data-size='md'] {
+  font-size: 13px;
+  font-weight: 400;
+}
+.root[data-variant='label'][data-size='sm'] {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.root[data-variant='title'][data-size='lg'] {
+  font-size: 22px;
+  font-weight: 400;
+}
+.root[data-variant='title'][data-size='md'] {
+  font-size: 18px;
+  font-weight: 500;
+}
+.root[data-variant='title'][data-size='sm'] {
+  font-size: 16px;
+  font-weight: 500;
+}

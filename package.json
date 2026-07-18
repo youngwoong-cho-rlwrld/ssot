@@ -1,0 +1,29 @@
+{
+  "name": "ssot",
+  "version": "0.1.0",
+  "description": "SSOT (single source of truth) - one entrypoint for train-eval, results-sheet, urdf-viewer, and session-viewer",
+  "private": true,
+  "scripts": {
+    "dev": "nx run-many -t dev --parallel=10 --output-style=stream",
+    "build": "nx run-many -t build --output-style=stream",
+    "start": "nx run-many -t start --parallel=10 --output-style=stream",
+    "typecheck": "nx run-many -t typecheck --output-style=stream"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "nx": "23.1.0",
+    "prettier": "^3.8.1",
+    "typescript": "~6.0.3"
+  },
+  "workspaces": [
+    "libs/theme",
+    "apps/gateway",
+    "apps/results-sheet",
+    "apps/urdf-viewer",
+    "apps/train-eval/frontend",
+    "apps/session-viewer/frontend"
+  ],
+  "nx": {
+    "includedScripts": []
+  }
+}

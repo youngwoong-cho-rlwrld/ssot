@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SSOT</title>
+  <script>(function(){try{var t=localStorage.getItem('ssot-theme')==='dark'?'dark':'light';var r=document.documentElement;r.dataset.ssotTheme=t;r.classList.toggle('dark',t==='dark');r.setAttribute('data-mantine-color-scheme',t);}catch(e){}})();</script>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon.ico" type="image/png" />
+  <link rel="stylesheet" href="/portal-assets/inter/index.css" />
+  <link rel="stylesheet" href="/portal-assets/theme/tokens.css" />
+  <link rel="stylesheet" href="/portal-assets/theme/header.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--ssot-font-sans);
+      background: var(--ssot-bg);
+      color: var(--ssot-text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    main {
+      width: 100%;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 72px 24px 48px;
+      flex: 1;
+    }
+    h1 {
+      font-size: var(--ssot-text-xl);
+      font-weight: var(--ssot-weight-semibold);
+      letter-spacing: 0.12em;
+    }
+    .apps {
+      margin-top: 40px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    a.card {
+      display: block;
+      background: var(--ssot-surface);
+      border: 1px solid var(--ssot-border);
+      border-radius: var(--ssot-radius);
+      box-shadow: var(--ssot-shadow);
+      padding: 20px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 120ms ease;
+    }
+    a.card:hover { border-color: var(--ssot-accent); }
+    .card-title {
+      font-size: var(--ssot-text-lg);
+      font-weight: var(--ssot-weight-semibold);
+    }
+    .card-desc {
+      margin-top: 8px;
+      font-size: var(--ssot-text-sm);
+      line-height: 1.5;
+      color: var(--ssot-text-soft);
+    }
+    footer {
+      padding: 24px;
+      text-align: center;
+      font-size: var(--ssot-text-xs);
+      color: var(--ssot-text-faint);
+    }
+  </style>
+</head>
+<body>
+  <header class="ssot-header">
+    <a class="ssot-brand" href="/">SSOT</a>
+    <span class="ssot-header-spacer"></span>
+    <ssot-theme-toggle></ssot-theme-toggle>
+    <ssot-user settings-url="/settings" login-url="/auth/login"></ssot-user>
+  </header>
+  <main>
+    <h1>SSOT</h1>
+    <div class="apps" id="apps"></div>
+  </main>
+  <footer>SSOT portal</footer>
+  <script type="module" src="/portal-assets/theme/ssot-theme-toggle.js"></script>
+  <script type="module" src="/portal-assets/theme/ssot-user.js"></script>
+  <script>
+    const apps = __SSOT_APPS_JSON__;
+    const container = document.getElementById('apps');
+    for (const app of apps) {
+      const card = document.createElement('a');
+      card.className = 'card';
+      card.href = app.basePath + '/';
+      const title = document.createElement('div');
+      title.className = 'card-title';
+      title.textContent = app.name;
+      const desc = document.createElement('div');
+      desc.className = 'card-desc';
+      desc.textContent = app.description;
+      card.append(title, desc);
+      container.appendChild(card);
+    }
+  </script>
+</body>
+</html>

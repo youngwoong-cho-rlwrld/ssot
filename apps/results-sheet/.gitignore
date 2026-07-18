@@ -1,0 +1,6 @@
+node_modules
+.next
+tsconfig.tsbuildinfo
+npm-debug.log*
+.omc
+.agent-context

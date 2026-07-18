@@ -1,0 +1,18 @@
+{
+  "name": "@ssot/theme",
+  "version": "0.1.0",
+  "description": "SSOT shared design tokens, fonts, and header styles",
+  "private": true,
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5"
+  },
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./header.css": "./header.css",
+    "./controls.css": "./controls.css",
+    "./ssot-user.js": "./ssot-user.js",
+    "./ssot-theme-toggle.js": "./ssot-theme-toggle.js",
+    "./assets/*": "./assets/*",
+    "./package.json": "./package.json"
+  }
+}

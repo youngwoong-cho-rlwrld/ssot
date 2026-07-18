@@ -1,0 +1,91 @@
+/*
+ * SSOT design tokens - the single source of truth for look & feel.
+ * Every app maps its own theme system (Tailwind, Mantine, hand-written CSS)
+ * onto these variables instead of hardcoding values.
+ *
+ * Theming: light is the default (white background). Dark mode is activated by
+ * html[data-ssot-theme="dark"], set by the shared <ssot-theme-toggle> element
+ * (libs/theme/ssot-theme-toggle.js) and persisted in localStorage("ssot-theme").
+ * The toggle also syncs html.classList "dark" (Tailwind class variant) and
+ * data-mantine-color-scheme (Mantine) so framework-level dark styles follow.
+ */
+:root {
+  /* Typography. Inter Variable is self-hosted via @fontsource-variable/inter
+     (import '@fontsource-variable/inter' in each app entry). */
+  --ssot-font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont,
+    'Segoe UI', system-ui, sans-serif;
+  --ssot-font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+
+  /* Type scale - use these instead of per-app ad-hoc sizes.
+     body text 14px / UI controls + secondary text 13px / captions 12px.
+     Weights: 400 body, 500 buttons/labels, 600 headings. */
+  --ssot-text-xs: 12px;
+  --ssot-text-sm: 13px;
+  --ssot-text-md: 14px;
+  --ssot-text-lg: 16px;
+  --ssot-text-xl: 20px;
+  --ssot-weight-normal: 400;
+  --ssot-weight-medium: 500;
+  --ssot-weight-semibold: 600;
+
+  /* Neutrals (light: white background) */
+  --ssot-bg: #ffffff;
+  --ssot-surface: #ffffff;
+  --ssot-surface-muted: #f6f7f9;
+  --ssot-text: #1c2130;
+  --ssot-text-soft: #5a6172;
+  --ssot-text-faint: #8b919e;
+  --ssot-border: #e4e7ec;
+  --ssot-border-strong: #d3d8e0;
+
+  /* Accent (indigo-blue: 3 of the 4 source apps already used a blue accent) */
+  --ssot-accent: #4f6ef7;
+  --ssot-accent-strong: #3b55d9;
+  --ssot-accent-soft: #eef2ff;
+  --ssot-ring: rgba(79, 110, 247, 0.3);
+
+  /* Status */
+  --ssot-success: #2f9d7e;
+  --ssot-success-soft: #e3f5ec;
+  --ssot-danger: #c2413f;
+  --ssot-danger-soft: #fdeeed;
+  --ssot-warning: #d97706;
+  --ssot-warning-soft: #fef3e2;
+
+  /* Shape */
+  --ssot-radius: 8px;
+  --ssot-radius-sm: 6px;
+  --ssot-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --ssot-header-h: 48px;
+  --ssot-control-h: 32px;
+
+  color-scheme: light;
+}
+
+html[data-ssot-theme='dark'] {
+  --ssot-bg: #111318;
+  --ssot-surface: #1a1d24;
+  --ssot-surface-muted: #16181e;
+  --ssot-text: #e6e8ee;
+  --ssot-text-soft: #a0a6b3;
+  --ssot-text-faint: #6b7180;
+  --ssot-border: #2a2e38;
+  --ssot-border-strong: #363b47;
+
+  --ssot-accent: #6b85ff;
+  --ssot-accent-strong: #8ba0ff;
+  --ssot-accent-soft: #212842;
+  --ssot-ring: rgba(107, 133, 255, 0.35);
+
+  --ssot-success: #3fbf9a;
+  --ssot-success-soft: #152b24;
+  --ssot-danger: #e06663;
+  --ssot-danger-soft: #331a19;
+  --ssot-warning: #e79242;
+  --ssot-warning-soft: #302113;
+
+  --ssot-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}

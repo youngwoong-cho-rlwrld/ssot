@@ -1,0 +1,14 @@
+{
+  "sessions": {
+    "019e4cc5-dc14-7d00-be69-657a66da28d6": {
+      "ordinary_no_progress_guard": {
+        "fingerprint": "ordinary|it was the mlxp transfer/data pod we created/used for checkpoint access. purpose: - mount mlxp ddn pvc at `/data` - read checkpoints/source files from mlxp - support copy operations like mlxp → local/skt/kakao - avoid execing into training job pods directly it was on `h200-03-w-3a18` because the mlxp transfer-pod runbook requires that node via node affinity. it stayed around because it was a long-lived utility pod, not a training/eval job.",
+        "first_seen_at": "2026-05-23T14:08:28.485Z",
+        "last_seen_at": "2026-05-23T14:08:28.485Z",
+        "repeat_count": 1,
+        "last_turn_id": "019e552a-59b6-72c1-8ea6-97e47b5df9e9",
+        "last_thread_id": null
+      }
+    }
+  }
+}

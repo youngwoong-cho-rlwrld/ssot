@@ -1,0 +1,16 @@
+{
+  "name": "@ssot/gateway",
+  "version": "0.1.0",
+  "description": "SSOT entrypoint: portal page + reverse proxy mounting every app on one origin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.mjs",
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "@ssot/theme": "*",
+    "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5"
+  }
+}

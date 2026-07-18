@@ -1,0 +1,3184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot name="ALLEX">
+  <joint name="L_Elbow_Joint" type="revolute">
+    <origin xyz="-0.3255 0.0000002 -0.0300002" rpy="1.5707961 0.0000002 1.5707964"/>
+    <parent link="L_Upperarm_link"/>
+    <child link="L_Elbow_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-2.8797933" upper="0.0872665" effort="140." velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Index_DIP_Joint" type="revolute">
+    <origin xyz="0. 0.0019932 -0.0188952" rpy="-0. 0. -0."/>
+    <parent link="L_Hand_Index_Middle"/>
+    <child link="L_Hand_Index_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7104227" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="L_Index_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="L_Index_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 -0. -0.0061246" rpy="-0.3490662 0.0000002 -1.5707967"/>
+    <parent link="L_Hand_Index_Roll"/>
+    <child link="L_Hand_Index_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Index_PIP_Joint" type="revolute">
+    <origin xyz="0. -0. -0.052" rpy="-0. -0. 0."/>
+    <parent link="L_Hand_Index_Proximal"/>
+    <child link="L_Hand_Index_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Index_Roll_Joint" type="revolute">
+    <origin xyz="-0.0140331 0.0327203 -0.0433875" rpy="0.1666664 -0.3339832 -0.1298047"/>
+    <parent link="ALLEX_Left_Hand_base"/>
+    <child link="L_Hand_Index_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Little_DIP_Joint" type="revolute">
+    <origin xyz="-0. 0.0019932 -0.0188952" rpy="0. 0. 0.0000001"/>
+    <parent link="L_Hand_Little_Middle"/>
+    <child link="L_Hand_Little_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.4486233" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="L_Little_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="L_Little_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 0. -0.0061246" rpy="-0.349066 -0.0000001 -1.5707961"/>
+    <parent link="L_Hand_Little_Roll"/>
+    <child link="L_Hand_Little_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Little_PIP_Joint" type="revolute">
+    <origin xyz="-0. 0. -0.052" rpy="0.0000001 -0. -0. "/>
+    <parent link="L_Hand_Little_Proximal"/>
+    <child link="L_Hand_Little_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Little_Roll_Joint" type="revolute">
+    <origin xyz="-0.0140328 -0.033055 -0.0433875" rpy="-0.1666663 -0.333983 0.129815 "/>
+    <parent link="ALLEX_Left_Hand_base"/>
+    <child link="L_Hand_Little_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Middle_DIP_Joint" type="revolute">
+    <origin xyz="-0.0000001 0.0019932 -0.0188951" rpy="-0. 0. -0.0000001"/>
+    <parent link="L_Hand_Middle_Middle"/>
+    <child link="L_Hand_Middle_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.4486233" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="L_Middle_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="L_Middle_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 0. -0.0061246" rpy="-0.3490654 -0.0000044 -1.570792 "/>
+    <parent link="L_Hand_Middle_Roll"/>
+    <child link="L_Hand_Middle_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Middle_PIP_Joint" type="revolute">
+    <origin xyz="-0.0000003 0. -0.052 " rpy="0.0000001 0. 0. "/>
+    <parent link="L_Hand_Middle_Proximal"/>
+    <child link="L_Hand_Middle_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Middle_Roll_Joint" type="revolute">
+    <origin xyz="-0.0151823 0.0108331 -0.0453042" rpy="0.0559164 -0.3473804 -0.0436832"/>
+    <parent link="ALLEX_Left_Hand_base"/>
+    <child link="L_Hand_Middle_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Ring_DIP_Joint" type="revolute">
+    <origin xyz="0. 0.0019932 -0.0188952" rpy="-0. -0. -0."/>
+    <parent link="L_Hand_Ring_Middle"/>
+    <child link="L_Hand_Ring_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.4486233" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="L_Ring_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="L_Ring_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 -0. -0.0061246" rpy="-0.3490657 0.0000017 -1.5707979"/>
+    <parent link="L_Hand_Ring_Roll"/>
+    <child link="L_Hand_Ring_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Ring_PIP_Joint" type="revolute">
+    <origin xyz="0.0000001 0. -0.0519999" rpy="0.0000001 -0. 0.0000001"/>
+    <parent link="L_Hand_Ring_Proximal"/>
+    <child link="L_Hand_Ring_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Ring_Roll_Joint" type="revolute">
+    <origin xyz="-0.0151822 -0.0111678 -0.0453042" rpy="-0.0559164 -0.3473807 0.0436935"/>
+    <parent link="ALLEX_Left_Hand_base"/>
+    <child link="L_Hand_Ring_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Shoulder_Pitch_Joint" type="revolute">
+    <origin xyz="0.0710988 -0.0415 0.1359703" rpy="0.0000001 -0.2617994 0.0000025"/>
+    <parent link="Waist_Pitch_Upper_link"/>
+    <child link="L_Shoulder_Pitch_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-3.3161256" upper="1.7453293" effort="120." velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Shoulder_Roll_Joint" type="revolute">
+    <origin xyz="0.121 0.135 0. " rpy="-0.2617991 -0.0000007 -1.5707986"/>
+    <parent link="L_Shoulder_Pitch_link"/>
+    <child link="L_Shoulder_Roll_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.0872665" upper="3.7524579" effort="120." velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Shoulder_Yaw_Joint" type="revolute">
+    <origin xyz="0.136 0.0000007 0.0320001" rpy="0.2064312 -1.5707961 -0.2064312"/>
+    <parent link="L_Shoulder_Roll_link"/>
+    <child link="L_Upperarm_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-3.3161256" upper="1.7453293" effort="120." velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Thumb_CMC_Joint" type="revolute">
+    <origin xyz="0.0323434 0.0139985 -0. " rpy="-2.9544559 1.5707946 -0.0813392"/>
+    <parent link="L_Hand_Thumb_Yaw"/>
+    <child link="L_Hand_Thumb_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Thumb_IP_Joint" type="revolute">
+    <origin xyz="0. -0.022 -0.0000001" rpy="0. -0. 0."/>
+    <parent link="L_Hand_Thumb_Middle"/>
+    <child link="L_Hand_Thumb_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.2217305" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="L_Thumb_MCP_Joint" multiplier="0.77" offset="0.0"/>
+  </joint>
+  <joint name="L_Thumb_MCP_Joint" type="revolute">
+    <origin xyz="-0. -0.0501372 0.0137937" rpy="-0. 0. -0."/>
+    <parent link="L_Hand_Thumb_Proximal"/>
+    <child link="L_Hand_Thumb_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.5707963" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Thumb_Yaw_Joint" type="revolute">
+    <origin xyz="0.0142959 0.0210529 0.0311289" rpy="2.186909 1.4011042 2.1937535"/>
+    <parent link="ALLEX_Left_Hand_base"/>
+    <child link="L_Hand_Thumb_Yaw"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="2.6179939" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Wrist_Pitch_Joint" type="revolute">
+    <origin xyz="0.0135 0.0000001 -0.025 " rpy="0. -0. 1.5707961"/>
+    <parent link="L_Wrist_Roll_link"/>
+    <child link="L_Wrist_Pitch_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-1.3962634" upper="1.3962634" effort="35." velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Wrist_Roll_Joint" type="revolute">
+    <origin xyz="-0.264 -0. 0.0084998" rpy="-0.0365473 1.5707961 -0.0365473"/>
+    <parent link="L_Forearm_link"/>
+    <child link="L_Wrist_Roll_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.8726646" upper="0.8726646" effort="35." velocity="17453.2925199"/>
+  </joint>
+  <joint name="L_Wrist_Yaw_Joint" type="revolute">
+    <origin xyz="-0.0000003 0.045 -0.0550002" rpy="-0.1627157 -1.5707961 -1.4080803"/>
+    <parent link="L_Elbow_link"/>
+    <child link="L_Forearm_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-4.7996554" upper="0.6108652" effort="80." velocity="17453.2925199"/>
+  </joint>
+  <joint name="Neck_Pitch_Joint" type="revolute">
+    <origin xyz="0. -0.008 0.2549998" rpy="-0. 0. -0."/>
+    <parent link="Waist_Pitch_Upper_link"/>
+    <child link="Neck_Pitch_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.7853982" upper="0.7853982" effort="10000000." velocity="17453.2925199"/>
+  </joint>
+  <joint name="Neck_Yaw_Joint" type="revolute">
+    <origin xyz="0. 0.0000005 0.0930001" rpy="0. -1.5707961 -1.5707961"/>
+    <parent link="Neck_Pitch_link"/>
+    <child link="Neck_Yaw_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-1.5707963" upper="1.5707963" effort="10000000." velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Elbow_Joint" type="revolute">
+    <origin xyz="-0.3255 0.0000002 -0.0299998" rpy="1.5707961 0.0000002 1.5707964"/>
+    <parent link="R_Upperarm_link"/>
+    <child link="R_Elbow_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-2.8797933" upper="0.0872665" effort="140." velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Index_DIP_Joint" type="revolute">
+    <origin xyz="-0. 0.0019932 -0.0188952" rpy="0. -0. -0."/>
+    <parent link="R_Hand_Index_Middle"/>
+    <child link="R_Hand_Index_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.4486233" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="R_Index_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="R_Index_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 0. -0.0061245" rpy="-0.3490659 -0.0000001 -1.5707961"/>
+    <parent link="R_Hand_Index_Roll"/>
+    <child link="R_Hand_Index_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Index_PIP_Joint" type="revolute">
+    <origin xyz="-0. 0. -0.052" rpy="-0.0000001 0. 0.0000001"/>
+    <parent link="R_Hand_Index_Proximal"/>
+    <child link="R_Hand_Index_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Index_Roll_Joint" type="revolute">
+    <origin xyz="-0.0140329 -0.033055 -0.0433875" rpy="-0.1666661 -0.3339816 0.1298149"/>
+    <parent link="ALLEX_Right_Hand_base"/>
+    <child link="R_Hand_Index_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Little_DIP_Joint" type="revolute">
+    <origin xyz="0. 0.0019932 -0.0188952" rpy="0. 0. 0.0000001"/>
+    <parent link="R_Hand_Little_Middle"/>
+    <child link="R_Hand_Little_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.4486233" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="R_Little_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="R_Little_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 -0. -0.0061246" rpy="-0.3490661 0.0000003 -1.5707964"/>
+    <parent link="R_Hand_Little_Roll"/>
+    <child link="R_Hand_Little_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Little_PIP_Joint" type="revolute">
+    <origin xyz="0. 0. -0.052" rpy="0. 0. -0."/>
+    <parent link="R_Hand_Little_Proximal"/>
+    <child link="R_Hand_Little_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Little_Roll_Joint" type="revolute">
+    <origin xyz="-0.0140332 0.0327203 -0.0433875" rpy="0.1666662 -0.3339818 -0.1298047"/>
+    <parent link="ALLEX_Right_Hand_base"/>
+    <child link="R_Hand_Little_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Middle_DIP_Joint" type="revolute">
+    <origin xyz="0. 0.0019932 -0.0188952" rpy="-0. -0. -0."/>
+    <parent link="R_Hand_Middle_Middle"/>
+    <child link="R_Hand_Middle_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.4486233" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="R_Middle_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="R_Middle_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 -0. -0.0061246" rpy="-0.3490656 0.0000017 -1.5707979"/>
+    <parent link="R_Hand_Middle_Roll"/>
+    <child link="R_Hand_Middle_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Middle_PIP_Joint" type="revolute">
+    <origin xyz="0.0000001 0. -0.052 " rpy="0. -0. 0.0000001"/>
+    <parent link="R_Hand_Middle_Proximal"/>
+    <child link="R_Hand_Middle_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Middle_Roll_Joint" type="revolute">
+    <origin xyz="-0.0151823 -0.0111678 -0.0453043" rpy="-0.0559164 -0.3473794 0.0436935"/>
+    <parent link="ALLEX_Right_Hand_base"/>
+    <child link="R_Hand_Middle_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Ring_DIP_Joint" type="revolute">
+    <origin xyz="-0.0000001 0.0019932 -0.0188952" rpy="-0. 0. -0."/>
+    <parent link="R_Hand_Ring_Middle"/>
+    <child link="R_Hand_Ring_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.4486233" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="R_Ring_PIP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="R_Ring_MCP_Joint" type="revolute">
+    <origin xyz="-0.003817 -0. -0.0061246" rpy="-0.3490652 -0.0000043 -1.5707918"/>
+    <parent link="R_Hand_Ring_Roll"/>
+    <child link="R_Hand_Ring_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.1745329" upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Ring_PIP_Joint" type="revolute">
+    <origin xyz="-0.0000003 0. -0.052 " rpy="0.0000001 0. -0. "/>
+    <parent link="R_Hand_Ring_Proximal"/>
+    <child link="R_Hand_Ring_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.7453293" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Ring_Roll_Joint" type="revolute">
+    <origin xyz="-0.0151824 0.0108331 -0.0453043" rpy="0.0559163 -0.347379 -0.0436831"/>
+    <parent link="ALLEX_Right_Hand_base"/>
+    <child link="R_Hand_Ring_Roll"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="0.5235988" effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Shoulder_Pitch_Joint" type="revolute">
+    <origin xyz="-0.0710988 -0.0415 0.1359703" rpy="-0.0000001 0.2617994 0.0000025"/>
+    <parent link="Waist_Pitch_Upper_link"/>
+    <child link="R_Shoulder_Pitch_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-3.3161256" upper="1.7453293" effort="120." velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Shoulder_Roll_Joint" type="revolute">
+    <origin xyz="-0.121 0.135 0.0000001" rpy="0.261799 0.0000007 -1.5707988"/>
+    <parent link="R_Shoulder_Pitch_link"/>
+    <child link="R_Shoulder_Roll_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-3.7524579" upper="0.0872665" effort="120." velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Shoulder_Yaw_Joint" type="revolute">
+    <origin xyz="0.136 0.0000007 0.032 " rpy="-0.0531624 -1.5707961 0.0531624"/>
+    <parent link="R_Shoulder_Roll_link"/>
+    <child link="R_Upperarm_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-1.7453293" upper="3.3161256" effort="120." velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Thumb_CMC_Joint" type="revolute">
+    <origin xyz="0.0323434 -0.0139986 -0.0000001" rpy="-3.0753782 -1.5707952 -2.939331 "/>
+    <parent link="R_Hand_Thumb_Yaw"/>
+    <child link="R_Hand_Thumb_Proximal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.5707963" effort="3.4000001" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Thumb_IP_Joint" type="revolute">
+    <origin xyz="-0. -0.022 -0. " rpy="0. -0. -0."/>
+    <parent link="R_Hand_Thumb_Middle"/>
+    <child link="R_Hand_Thumb_Distal"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.2217305" effort="1.4" velocity="17453.2925199"/>
+    <mimic joint="R_Thumb_MCP_Joint" multiplier="0.98" offset="0.0"/>
+  </joint>
+  <joint name="R_Thumb_MCP_Joint" type="revolute">
+    <origin xyz="0. -0.0501372 0.0137937" rpy="0.0000005 0. 0. "/>
+    <parent link="R_Hand_Thumb_Proximal"/>
+    <child link="R_Hand_Thumb_Middle"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="1.5707963" effort="1.4" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Thumb_Yaw_Joint" type="revolute">
+    <origin xyz="0.0142961 -0.0210527 0.0311288" rpy="-2.1869142 1.401104 -2.1937482"/>
+    <parent link="ALLEX_Right_Hand_base"/>
+    <child link="R_Hand_Thumb_Yaw"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-2.6179939" upper="0." effort="0.5" velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Wrist_Pitch_Joint" type="revolute">
+    <origin xyz="0.0135 0.0000001 -0.025 " rpy="0. 0. 1.5707961"/>
+    <parent link="R_Wrist_Roll_link"/>
+    <child link="R_Wrist_Pitch_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-1.3962634" upper="1.3962634" effort="35." velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Wrist_Roll_Joint" type="revolute">
+    <origin xyz="-0.264 -0. 0.0085001" rpy="-0.0210493 1.5707961 -0.0210493"/>
+    <parent link="R_Forearm_link"/>
+    <child link="R_Wrist_Roll_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.8726646" upper="0.8726646" effort="35." velocity="17453.2925199"/>
+  </joint>
+  <joint name="R_Wrist_Yaw_Joint" type="revolute">
+    <origin xyz="-0.0000003 0.045 -0.0550001" rpy="-0.1746142 -1.5707961 -1.3961818"/>
+    <parent link="R_Elbow_link"/>
+    <child link="R_Forearm_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.6108652" upper="4.7996554" effort="80." velocity="17453.2925199"/>
+  </joint>
+  <!-- <joint name="Waist_Pitch_Dummy_Joint" type="revolute">
+    <origin xyz="0.15 0. 0.04" rpy="1.5707961 0.0000002 1.5707964"/>
+    <parent link="Waist_Yaw_link"/>
+    <child link="Waist_Pitch_Back_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="1.0471976" effort="10000000." velocity="17453.2925199"/>
+    <mimic joint="Waist_Pitch_Lower_Joint" multiplier="1.0" offset="0.0"/>
+  </joint> -->
+  <joint name="Waist_Pitch_Lower_Joint" type="revolute">
+    <origin xyz="0.12 0. -0.06" rpy="1.5707961 0.0000002 1.5707964"/>
+    <parent link="Waist_Yaw_link"/>
+    <child link="Waist_Pitch_Lower_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.5235988" upper="1.0471976" effort="10000000." velocity="17453.2925199"/>
+  </joint>
+  <joint name="Waist_Pitch_Upper_Joint" type="revolute">
+    <origin xyz="0. 0. 0.32" rpy="0. 0. -0."/>
+    <parent link="Waist_Pitch_Lower_link"/>
+    <child link="Waist_Pitch_Upper_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-1.0471976" upper="0.5235988" effort="10000000." velocity="17453.2925199"/>
+    <mimic joint="Waist_Pitch_Lower_Joint" multiplier="1.0" offset="0.0"/>
+  </joint>
+  <joint name="Waist_Yaw_Joint" type="revolute">
+    <origin xyz="0. 0. 0.8396594" rpy="0. -1.5707961 0. "/>
+    <parent link="Waist_Base"/>
+    <child link="Waist_Yaw_link"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-1.5707963" upper="1.5707963" effort="10000000." velocity="17453.2925199"/>
+  </joint>
+  <joint name="joints_Camera_Body" type="fixed">
+    <origin xyz="0.05 0. -0.1 " rpy="0.0108617 1.5707961 0.0108617"/>
+    <parent link="Neck_Yaw_link"/>
+    <child link="ALLEX_Camera_Body"/>
+  </joint>
+  <joint name="joints_Left_Hand_Palm" type="fixed">
+    <origin xyz="-0. -0. 0." rpy="-0. 0. -1.570796"/>
+    <parent link="L_Wrist_Pitch_link"/>
+    <child link="ALLEX_Left_Hand_Palm"/>
+  </joint>
+  <joint name="joints_Left_Hand_base" type="fixed">
+    <origin xyz="0.0000001 0. -0.09 " rpy="0. 0. -0."/>
+    <parent link="ALLEX_Left_Hand_Palm"/>
+    <child link="ALLEX_Left_Hand_base"/>
+  </joint>
+  <joint name="joints_Right_Hand_Palm" type="fixed">
+    <origin xyz="-0. 0. 0." rpy="-0. 0.0000001 -1.570796 "/>
+    <parent link="R_Wrist_Pitch_link"/>
+    <child link="ALLEX_Right_Hand_Palm"/>
+  </joint>
+  <joint name="joints_Right_Hand_base" type="fixed">
+    <origin xyz="-0.0000001 0. -0.09 " rpy="-0. -0. -0."/>
+    <parent link="ALLEX_Right_Hand_Palm"/>
+    <child link="ALLEX_Right_Hand_base"/>
+  </joint>
+  <joint name="rootJoint_Waist_Base" type="fixed">
+    <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+    <parent link="ALLEX"/>
+    <child link="Waist_Base"/>
+  </joint>
+  <link name="ALLEX"/>
+  <link name="ALLEX_Camera_Body"/>
+  <link name="ALLEX_Left_Hand_Palm">
+    <inertial>
+      <origin xyz="-0.0084631 -0.000239 -0.0812462" rpy="0. 0. 0."/>
+      <mass value="0.553111"/>
+      <inertia ixx="0.0006181" ixy="0.0000066" ixz="-0.0000623" iyy="0.000425" iyz="-0.0000034" izz="0.0003759"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_visuals_ALLEX_Left_Hand_Palm_Thumb1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_visuals_ALLEX_Left_Hand_Palm_Thumb3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_visuals_ALLEX_Left_Hand_Palm_Thumb2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_visuals_ALLEX_Left_Hand_Palm.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_ALLEX_Left_Hand_Palm.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Thumb1_ALLEX_Left_Hand_Palm_Thumb1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Pad1_ALLEX_Left_Hand_Palm_Pad1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Pad2_ALLEX_Left_Hand_Palm_Pad2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Thumb2_ALLEX_Left_Hand_Palm_Thumb2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Thumb3_ALLEX_Left_Hand_Palm_Thumb3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_ALLEX_Left_Hand_Palm.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Thumb1_ALLEX_Left_Hand_Palm_Thumb1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Pad1_ALLEX_Left_Hand_Palm_Pad1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Pad2_ALLEX_Left_Hand_Palm_Pad2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Thumb2_ALLEX_Left_Hand_Palm_Thumb2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0.0000001" rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Palm_collisions_ALLEX_Left_Hand_Palm_Thumb3_ALLEX_Left_Hand_Palm_Thumb3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="ALLEX_Left_Hand_base"/>
+  <link name="ALLEX_Right_Hand_Palm">
+    <inertial>
+      <origin xyz="-0.0084631 0.000239 -0.0812462" rpy="0. 0. 0."/>
+      <mass value="0.553111"/>
+      <inertia ixx="0.0006181" ixy="-0.0000066" ixz="-0.0000623" iyy="0.000425" iyz="0.0000034" izz="0.0003759"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_visuals_ALLEX_Right_Hand_Palm_Thumb3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_visuals_ALLEX_Right_Hand_Palm_Thumb2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_visuals_ALLEX_Right_Hand_Palm_Thumb1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_visuals_ALLEX_Right_Hand_Palm.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_ALLEX_Right_Hand_Palm.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Thumb3_ALLEX_Right_Hand_Palm_Thumb3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Pad1_ALLEX_Right_Hand_Palm_Pad1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Pad2_ALLEX_Right_Hand_Palm_Pad2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Thumb1_ALLEX_Right_Hand_Palm_Thumb1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Thumb2_ALLEX_Right_Hand_Palm_Thumb2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_ALLEX_Right_Hand_Palm.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Thumb3_ALLEX_Right_Hand_Palm_Thumb3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Pad1_ALLEX_Right_Hand_Palm_Pad1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Pad2_ALLEX_Right_Hand_Palm_Pad2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Thumb1_ALLEX_Right_Hand_Palm_Thumb1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Palm_collisions_ALLEX_Right_Hand_Palm_Thumb2_ALLEX_Right_Hand_Palm_Thumb2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="ALLEX_Right_Hand_base"/>
+  <link name="L_Elbow_link">
+    <inertial>
+      <origin xyz="0.000668 0.000567 -0.0240815" rpy="0. 0. 0."/>
+      <mass value="0.455094"/>
+      <inertia ixx="0.0003698" ixy="-0.0000176" ixz="-0.0001091" iyy="0.0006214" iyz="-0.0000079" izz="0.0004746"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. -0.0000001" rpy="-0. 0. -1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/L_Elbow_link_visuals_ALLEX_Left_Elbow_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0.0000001" rpy="-0. 0. -1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/L_Elbow_link_collisions_ALLEX_Left_Elbow_Frame_ALLEX_Left_Elbow_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. -0. -0.0000001" rpy="-0. 0. -1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/L_Elbow_link_collisions_ALLEX_Left_Elbow_Frame_ALLEX_Left_Elbow_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Forearm_link">
+    <inertial>
+      <origin xyz="-0.010634 0.0001514 -0.1006714" rpy="0. 0. 0."/>
+      <mass value="2.18716"/>
+      <inertia ixx="0.0109997" ixy="0.0000031" ixz="-0.0000511" iyy="0.0117375" iyz="-0.0000139" izz="0.0022912"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Forearm_Base_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/L_Forearm_link_visuals_ALLEX_Left_Forearm_Lower_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Forearm_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/L_Forearm_link_visuals_ALLEX_Left_Forearm_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/L_Forearm_link_collisions_ALLEX_Left_Forearm_Lower_Cover_ALLEX_Left_Forearm_Lower_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/L_Forearm_link_collisions_ALLEX_Left_Forearm_Cover_ALLEX_Left_Forearm_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/L_Forearm_link_collisions_ALLEX_Left_Forearm_Lower_Cover_ALLEX_Left_Forearm_Lower_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0.0365473 1.5707961 -0.0365473"/>
+      <geometry>
+        <mesh filename="./meshes/L_Forearm_link_collisions_ALLEX_Left_Forearm_Cover_ALLEX_Left_Forearm_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Index_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Index_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. 0.0000001" rpy="0. 0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. 0.0000001" rpy="0. 0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. 0.0000001" rpy="0. 0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. 0.0000001" rpy="0. 0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. 0.0000001" rpy="0. 0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. -0. 0.0000001" rpy="0. 0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. -0. 0.0000001" rpy="0. 0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Index_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02387"/>
+      <inertia ixx="0.0000063" ixy="-0." ixz="0.000001" iyy="0.0000066" iyz="-0." izz="0.0000011"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707965"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Index_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Index_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Little_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Little_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Little_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02175"/>
+      <inertia ixx="0.0000058" ixy="-0." ixz="0.0000009" iyy="0.0000061" iyz="-0." izz="0.000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="-0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Little_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Little_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Middle_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. -0. -0." rpy="-0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Middle_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. 0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Middle_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02387"/>
+      <inertia ixx="0.0000063" ixy="-0." ixz="0.000001" iyy="0.0000066" iyz="-0." izz="0.0000011"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Middle_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="-0. 0.0000002 0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="-0. 0.0000002 0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="-0. 0.0000002 0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Middle_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Ring_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Ring_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0.0000001" rpy="0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Ring_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02387"/>
+      <inertia ixx="0.0000063" ixy="-0." ixz="0.000001" iyy="0.0000066" iyz="-0." izz="0.0000011"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0.0000001" rpy="0. -0.0000001 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Ring_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 -0. "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Ring_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Thumb_Distal">
+    <inertial>
+      <origin xyz="0.0000034 0.0057247 0.0026534" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="-0." ixz="0." iyy="0.0000001" iyz="-0." izz="0.0000004"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Distal_visuals_ALLEX_Left_Hand_Thumb_Distal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Distal_visuals_ALLEX_Left_Hand_Thumb_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Distal_collisions_ALLEX_Left_Hand_Thumb_Distal_Frame_ALLEX_Left_Hand_Thumb_Distal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Distal_collisions_ALLEX_Left_Hand_Thumb_Distal_Pad_ALLEX_Left_Hand_Thumb_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Distal_collisions_ALLEX_Left_Hand_Thumb_Distal_Frame_ALLEX_Left_Hand_Thumb_Distal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Distal_collisions_ALLEX_Left_Hand_Thumb_Distal_Pad_ALLEX_Left_Hand_Thumb_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Thumb_Middle">
+    <inertial>
+      <origin xyz="0.0000005 0.0067795 -0.0017695" rpy="0. 0. 0."/>
+      <mass value="0.009931"/>
+      <inertia ixx="0.0000008" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000009"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_visuals_ALLEX_Left_Hand_Thumb_Middle_Link.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_visuals_ALLEX_Left_Hand_Thumb_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_visuals_ALLEX_Left_Hand_Thumb_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_collisions_ALLEX_Left_Hand_Thumb_Middle_Frame_ALLEX_Left_Hand_Thumb_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_collisions_ALLEX_Left_Hand_Thumb_Middle_Pad_ALLEX_Left_Hand_Thumb_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_collisions_ALLEX_Left_Hand_Thumb_Middle_Link_ALLEX_Left_Hand_Thumb_Middle_Link.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_collisions_ALLEX_Left_Hand_Thumb_Middle_Frame_ALLEX_Left_Hand_Thumb_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_collisions_ALLEX_Left_Hand_Thumb_Middle_Pad_ALLEX_Left_Hand_Thumb_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="-0.0000001 0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Middle_collisions_ALLEX_Left_Hand_Thumb_Middle_Link_ALLEX_Left_Hand_Thumb_Middle_Link.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Thumb_Proximal">
+    <inertial>
+      <origin xyz="-0.0000591 0.0150217 0.0077333" rpy="0. 0. 0."/>
+      <mass value="0.0272315"/>
+      <inertia ixx="0.0000082" ixy="-0." ixz="0." iyy="0.0000023" iyz="-0.0000013" izz="0.0000067"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Thumb_Proximal_Link2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Hand_Thumb_Proximal_Link1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_visuals_ALLEX_Left_Hand_Thumb_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_visuals_ALLEX_Left_Hand_Thumb_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_visuals_ALLEX_Left_Hand_Thumb_Proximal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_collisions_ALLEX_Left_Hand_Thumb_Proximal_Frame_ALLEX_Left_Hand_Thumb_Proximal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_collisions_ALLEX_Left_Hand_Thumb_Proximal_Cover_ALLEX_Left_Hand_Thumb_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_collisions_ALLEX_Left_Hand_Thumb_Proximal_Pad_ALLEX_Left_Hand_Thumb_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_collisions_ALLEX_Left_Hand_Thumb_Proximal_Frame_ALLEX_Left_Hand_Thumb_Proximal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_collisions_ALLEX_Left_Hand_Thumb_Proximal_Cover_ALLEX_Left_Hand_Thumb_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0. -3.1415925"/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Proximal_collisions_ALLEX_Left_Hand_Thumb_Proximal_Pad_ALLEX_Left_Hand_Thumb_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Hand_Thumb_Yaw">
+    <inertial>
+      <origin xyz="-0.000007 0.0027478 -0.019329 " rpy="0. 0. 0."/>
+      <mass value="0.0327894"/>
+      <inertia ixx="0.0000104" ixy="-0." ixz="0." iyy="0.0000097" iyz="0.0000026" izz="0.0000023"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.050632 -1.5707963 0.050632 "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Yaw_visuals_ALLEX_Left_Hand_Thumb_Pitch_Pivot.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="-0.050632 -1.5707963 0.050632 "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Yaw_collisions_ALLEX_Left_Hand_Thumb_Pitch_Pivot_ALLEX_Left_Hand_Thumb_Pitch_Pivot.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="-0.050632 -1.5707963 0.050632 "/>
+      <geometry>
+        <mesh filename="./meshes/L_Hand_Thumb_Yaw_collisions_ALLEX_Left_Hand_Thumb_Pitch_Pivot_ALLEX_Left_Hand_Thumb_Pitch_Pivot.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Shoulder_Pitch_link">
+    <inertial>
+      <origin xyz="-0.1136583 0.0508507 0.0002439" rpy="0. 0. 0."/>
+      <mass value="0.91799"/>
+      <inertia ixx="0.0029992" ixy="0.0013598" ixz="-0.000033" iyy="0.0059156" iyz="0.0000105" izz="0.0061909"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. 0." rpy="-0. 0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Shoulder_Pitch_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+  </link>
+  <link name="L_Shoulder_Roll_link">
+    <inertial>
+      <origin xyz="0.0706354 0.0000087 0.0219001" rpy="0. 0. 0."/>
+      <mass value="2.50032"/>
+      <inertia ixx="0.0086327" ixy="-0.0000473" ixz="-0.0034931" iyy="0.0132642" iyz="-0.000002" izz="0.0088852"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Shoulder_Yaw_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/L_Shoulder_Roll_link_collisions_ALLEX_Left_Shoulder_Yaw_Frame_Collision_1_ALLEX_Left_Shoulder_Yaw_Frame_Collision_1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/L_Shoulder_Roll_link_collisions_ALLEX_Left_Shoulder_Yaw_Frame_Collision_2_ALLEX_Left_Shoulder_Yaw_Frame_Collision_2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. 0.0000001" rpy="0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/L_Shoulder_Roll_link_collisions_ALLEX_Left_Shoulder_Yaw_Frame_Collision_1_ALLEX_Left_Shoulder_Yaw_Frame_Collision_1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. 0.0000001" rpy="0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/L_Shoulder_Roll_link_collisions_ALLEX_Left_Shoulder_Yaw_Frame_Collision_2_ALLEX_Left_Shoulder_Yaw_Frame_Collision_2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Upperarm_link">
+    <inertial>
+      <origin xyz="-0.0088092 0.0000957 -0.1242344" rpy="0. 0. 0."/>
+      <mass value="2.6547999"/>
+      <inertia ixx="0.0330365" ixy="-0.0000034" ixz="0.0018542" iyy="0.0331841" iyz="0.0000377" izz="0.0046381"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0.0147252 1.5707961 0.0147252"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Upperarm_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.01 0. 0. " rpy="0.0147252 1.5707961 0.0147252"/>
+      <geometry>
+        <mesh filename="./meshes/L_Upperarm_link_collisions_ALLEX_Left_Upperarm_Cover_Collision1_ALLEX_Left_Upperarm_Cover_Collision1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0.0147252 1.5707961 0.0147252"/>
+      <geometry>
+        <mesh filename="./meshes/L_Upperarm_link_collisions_ALLEX_Left_Upperarm_Cover_Collision2_ALLEX_Left_Upperarm_Cover_Collision2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0.0147252 1.5707961 0.0147252"/>
+      <geometry>
+        <mesh filename="./meshes/L_Upperarm_link_collisions_ALLEX_Left_Upperarm_Cover_Collision3_ALLEX_Left_Upperarm_Cover_Collision3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0.01 0. 0. " rpy="0.0147252 1.5707961 0.0147252"/>
+      <geometry>
+        <mesh filename="./meshes/L_Upperarm_link_collisions_ALLEX_Left_Upperarm_Cover_Collision1_ALLEX_Left_Upperarm_Cover_Collision1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0.0147252 1.5707961 0.0147252"/>
+      <geometry>
+        <mesh filename="./meshes/L_Upperarm_link_collisions_ALLEX_Left_Upperarm_Cover_Collision2_ALLEX_Left_Upperarm_Cover_Collision2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0.0147252 1.5707961 0.0147252"/>
+      <geometry>
+        <mesh filename="./meshes/L_Upperarm_link_collisions_ALLEX_Left_Upperarm_Cover_Collision3_ALLEX_Left_Upperarm_Cover_Collision3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="L_Wrist_Pitch_link">
+    <inertial>
+      <origin xyz="-0.0152168 -0. -0.0165298" rpy="0. 0. 0."/>
+      <mass value="0.0573989"/>
+      <inertia ixx="0.0000511" ixy="0." ixz="-0.0000025" iyy="0.0000143" iyz="0." izz="0.0000502"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. 0." rpy="-0. 0. -1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Wrist_Pitch_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+  </link>
+  <link name="L_Wrist_Roll_link">
+    <inertial>
+      <origin xyz="0.0102659 0.0000008 -0.0189817" rpy="0. 0. 0."/>
+      <mass value="0.0430963"/>
+      <inertia ixx="0.0000221" ixy="0." ixz="0.0000017" iyy="0.0000066" iyz="-0." izz="0.0000195"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Left_Wrist_Roll_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+  </link>
+  <link name="Neck_Pitch_link">
+    <inertial>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0." ixz="0." iyy="0.001" iyz="0." izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/Neck_Pitch_link_visuals_ALLEX_Neck_Pitch_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/Neck_Pitch_link_collisions_ALLEX_Neck_Pitch_Cover_ALLEX_Neck_Pitch_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/Neck_Pitch_link_collisions_ALLEX_Neck_Pitch_Cover_ALLEX_Neck_Pitch_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="Neck_Yaw_link">
+    <inertial>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0." ixz="0." iyy="0.001" iyz="0." izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0.0108617 1.5707961 0.0108617"/>
+      <geometry>
+        <mesh filename="./meshes/Neck_Yaw_link_visuals_ALLEX_Neck_Yaw_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0.0108617 1.5707961 0.0108617"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Face.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0.0108617 1.5707961 0.0108617"/>
+      <geometry>
+        <mesh filename="./meshes/Neck_Yaw_link_collisions_ALLEX_Neck_Yaw_Cover_ALLEX_Neck_Yaw_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0.0108617 1.5707961 0.0108617"/>
+      <geometry>
+        <mesh filename="./meshes/Neck_Yaw_link_collisions_ALLEX_Neck_Yaw_Cover_ALLEX_Neck_Yaw_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Elbow_link">
+    <inertial>
+      <origin xyz="0.000668 0.000567 -0.0240815" rpy="0. 0. 0."/>
+      <mass value="0.455094"/>
+      <inertia ixx="0.0003698" ixy="-0.0000176" ixz="-0.0001091" iyy="0.0006214" iyz="-0.0000079" izz="0.0004746"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0.0000001" rpy="-0. 0. -1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Elbow_link_visuals_ALLEX_Right_Elbow_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0.0000001" rpy="-0. 0. -1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Elbow_link_collisions_ALLEX_Right_Elbow_Frame_ALLEX_Right_Elbow_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0.0000001" rpy="-0. 0. -1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Elbow_link_collisions_ALLEX_Right_Elbow_Frame_ALLEX_Right_Elbow_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Forearm_link">
+    <inertial>
+      <origin xyz="-0.010634 0.0001514 -0.1006714" rpy="0. 0. 0."/>
+      <mass value="2.18716"/>
+      <inertia ixx="0.0109997" ixy="0.0000031" ixz="-0.0000511" iyy="0.0117375" iyz="-0.0000139" izz="0.0022912"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/R_Forearm_link_visuals_ALLEX_Right_Forearm_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Forearm_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/R_Forearm_link_visuals_ALLEX_Right_Forearm_Lower_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Forearm_Base_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.001" rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/R_Forearm_link_collisions_ALLEX_Right_Forearm_Lower_Cover_ALLEX_Right_Forearm_Lower_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/R_Forearm_link_collisions_ALLEX_Right_Forearm_Cover_ALLEX_Right_Forearm_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0.001" rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/R_Forearm_link_collisions_ALLEX_Right_Forearm_Lower_Cover_ALLEX_Right_Forearm_Lower_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="-0.0240122 1.5707961 -0.0240122"/>
+      <geometry>
+        <mesh filename="./meshes/R_Forearm_link_collisions_ALLEX_Right_Forearm_Cover_ALLEX_Right_Forearm_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Index_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Index_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Index_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02387"/>
+      <inertia ixx="0.0000063" ixy="-0." ixz="0.000001" iyy="0.0000066" iyz="-0." izz="0.0000011"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. 0.0000001 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Index_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Index_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Little_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Little_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. -0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Little_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02175"/>
+      <inertia ixx="0.0000058" ixy="-0." ixz="0.0000009" iyy="0.0000061" iyz="-0." izz="0.000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Little_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. 0." rpy="-0. -0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Little_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Middle_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. -0. 0." rpy="0. -0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Middle_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="-0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="-0. 0. 1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Middle_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02387"/>
+      <inertia ixx="0.0000063" ixy="-0." ixz="0.000001" iyy="0.0000066" iyz="-0." izz="0.0000011"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Frame2_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Frame2_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.5707964"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Middle_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Middle_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Ring_Distal">
+    <inertial>
+      <origin xyz="-0.0026353 -0.0000035 -0.0060007" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="-0." iyy="0.0000003" iyz="-0." izz="0.0000001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Distal_visuals_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Distal_visuals_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Frame1_ALLEX_Hand_Distal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. -0. 1.570796"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Distal_collisions_ALLEX_Hand_Distal_Pad_ALLEX_Hand_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Ring_Middle">
+    <inertial>
+      <origin xyz="-0.0017178 0.0000019 -0.0060135" rpy="0. 0. 0."/>
+      <mass value="0.00977"/>
+      <inertia ixx="0.0000007" ixy="-0." ixz="-0.0000001" iyy="0.0000007" iyz="0." izz="0.0000003"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Middle_visuals_ALLEX_Hand_Middle_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Middle_visuals_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Middle_visuals_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Frame1_ALLEX_Hand_Middle_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0. 0. 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Middle_collisions_ALLEX_Hand_Middle_Pad_ALLEX_Hand_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Ring_Proximal">
+    <inertial>
+      <origin xyz="-0.0058316 0.0000422 -0.0192119" rpy="0. 0. 0."/>
+      <mass value="0.02387"/>
+      <inertia ixx="0.0000063" ixy="-0." ixz="0.000001" iyy="0.0000066" iyz="-0." izz="0.0000011"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Frame2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_visuals_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Frame1_ALLEX_Hand_Proximal_Frame1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Cover_ALLEX_Hand_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="0. -0.0000001 1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Proximal_collisions_ALLEX_Hand_Proximal_Pad_ALLEX_Hand_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Ring_Roll">
+    <inertial>
+      <origin xyz="-0.0013151 0.000325 -0.0017498" rpy="0. 0. 0."/>
+      <mass value="0.00611"/>
+      <inertia ixx="0.0000001" ixy="-0." ixz="-0." iyy="0.0000001" iyz="-0." izz="0.0000002"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Roll_visuals_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0." rpy="-0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. 0." rpy="-0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Ring_Roll_collisions_ALLEX_Hand_Proximal_Roll_ALLEX_Hand_Proximal_Roll.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Thumb_Distal">
+    <inertial>
+      <origin xyz="0.0000034 -0.0057247 0.0026534" rpy="0. 0. 0."/>
+      <mass value="0.00504"/>
+      <inertia ixx="0.0000003" ixy="0." ixz="0." iyy="0.0000001" iyz="0." izz="0.0000004"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Distal_visuals_ALLEX_Right_Hand_Thumb_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Distal_visuals_ALLEX_Right_Hand_Thumb_Distal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Distal_collisions_ALLEX_Right_Hand_Thumb_Distal_Frame_ALLEX_Right_Hand_Thumb_Distal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Distal_collisions_ALLEX_Right_Hand_Thumb_Distal_Pad_ALLEX_Right_Hand_Thumb_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Distal_collisions_ALLEX_Right_Hand_Thumb_Distal_Frame_ALLEX_Right_Hand_Thumb_Distal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. -0." rpy="-0. 0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Distal_collisions_ALLEX_Right_Hand_Thumb_Distal_Pad_ALLEX_Right_Hand_Thumb_Distal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Thumb_Middle">
+    <inertial>
+      <origin xyz="0.0000005 -0.0067795 -0.0017695" rpy="0. 0. 0."/>
+      <mass value="0.009931"/>
+      <inertia ixx="0.0000008" ixy="-0." ixz="-0." iyy="0.0000003" iyz="0." izz="0.0000009"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Thumb_Middle_Link.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Middle_visuals_ALLEX_Right_Hand_Thumb_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Middle_visuals_ALLEX_Right_Hand_Thumb_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Middle_collisions_ALLEX_Right_Hand_Thumb_Middle_Frame_ALLEX_Right_Hand_Thumb_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Middle_collisions_ALLEX_Right_Hand_Thumb_Middle_Pad_ALLEX_Right_Hand_Thumb_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Middle_collisions_ALLEX_Right_Hand_Thumb_Middle_Frame_ALLEX_Right_Hand_Thumb_Middle_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Middle_collisions_ALLEX_Right_Hand_Thumb_Middle_Pad_ALLEX_Right_Hand_Thumb_Middle_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Thumb_Proximal">
+    <inertial>
+      <origin xyz="-0.0000591 -0.0150217 0.0077333" rpy="0. 0. 0."/>
+      <mass value="0.0272315"/>
+      <inertia ixx="0.0000082" ixy="0." ixz="0." iyy="0.0000023" iyz="0.0000013" izz="0.0000067"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Thumb_Proximal_Link2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Hand_Thumb_Proximal_Link1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_visuals_ALLEX_Right_Hand_Thumb_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_visuals_ALLEX_Right_Hand_Thumb_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_visuals_ALLEX_Right_Hand_Thumb_Proximal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_collisions_ALLEX_Right_Hand_Thumb_Proximal_Frame_ALLEX_Right_Hand_Thumb_Proximal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_collisions_ALLEX_Right_Hand_Thumb_Proximal_Cover_ALLEX_Right_Hand_Thumb_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_collisions_ALLEX_Right_Hand_Thumb_Proximal_Pad_ALLEX_Right_Hand_Thumb_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_collisions_ALLEX_Right_Hand_Thumb_Proximal_Frame_ALLEX_Right_Hand_Thumb_Proximal_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_collisions_ALLEX_Right_Hand_Thumb_Proximal_Cover_ALLEX_Right_Hand_Thumb_Proximal_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="0.0000005 0. 0. "/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Proximal_collisions_ALLEX_Right_Hand_Thumb_Proximal_Pad_ALLEX_Right_Hand_Thumb_Proximal_Pad.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Hand_Thumb_Yaw">
+    <inertial>
+      <origin xyz="-0.000007 -0.0027478 -0.019329 " rpy="0. 0. 0."/>
+      <mass value="0.0327894"/>
+      <inertia ixx="0.0000104" ixy="0." ixz="0." iyy="0.0000097" iyz="-0.0000026" izz="0.0000023"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0.0899996 -1.5707961 -0.0899996"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Yaw_visuals_ALLEX_Right_Hand_Thumb_Pitch_Pivot.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0." rpy="0.0899996 -1.5707961 -0.0899996"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Yaw_collisions_ALLEX_Right_Hand_Thumb_Pitch_Pivot_ALLEX_Right_Hand_Thumb_Pitch_Pivot.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0." rpy="0.0899996 -1.5707961 -0.0899996"/>
+      <geometry>
+        <mesh filename="./meshes/R_Hand_Thumb_Yaw_collisions_ALLEX_Right_Hand_Thumb_Pitch_Pivot_ALLEX_Right_Hand_Thumb_Pitch_Pivot.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Shoulder_Pitch_link">
+    <inertial>
+      <origin xyz="-0.1136583 -0.0508507 -0.0002439" rpy="0. 0. 0."/>
+      <mass value="0.91799"/>
+      <inertia ixx="0.0029992" ixy="-0.0013598" ixz="0.000033" iyy="0.0059156" iyz="0.0000105" izz="0.0061909"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. -1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Shoulder_Pitch_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+  </link>
+  <link name="R_Shoulder_Roll_link">
+    <inertial>
+      <origin xyz="0.0706354 0.0000087 0.0219001" rpy="0. 0. 0."/>
+      <mass value="2.50032"/>
+      <inertia ixx="0.0086327" ixy="-0.0000473" ixz="-0.0034931" iyy="0.0132642" iyz="-0.000002" izz="0.0088852"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="-0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Shoulder_Yaw_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="-0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Shoulder_Roll_link_collisions_ALLEX_Right_Shoulder_Yaw_Frame_Collision_1_ALLEX_Right_Shoulder_Yaw_Frame_Collision_1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="-0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Shoulder_Roll_link_collisions_ALLEX_Right_Shoulder_Yaw_Frame_Collision_2_ALLEX_Right_Shoulder_Yaw_Frame_Collision_2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. 0.0000001" rpy="-0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Shoulder_Roll_link_collisions_ALLEX_Right_Shoulder_Yaw_Frame_Collision_1_ALLEX_Right_Shoulder_Yaw_Frame_Collision_1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0. -0. 0.0000001" rpy="-0. -0. -0."/>
+      <geometry>
+        <mesh filename="./meshes/R_Shoulder_Roll_link_collisions_ALLEX_Right_Shoulder_Yaw_Frame_Collision_2_ALLEX_Right_Shoulder_Yaw_Frame_Collision_2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Upperarm_link">
+    <inertial>
+      <origin xyz="-0.0088092 0.0000957 -0.1242344" rpy="0. 0. 0."/>
+      <mass value="2.6547999"/>
+      <inertia ixx="0.0330365" ixy="-0.0000034" ixz="0.0018542" iyy="0.0331841" iyz="0.0000377" izz="0.0046381"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0.0057918 1.5707961 0.0057918"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Upperarm_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.01 0. 0. " rpy="0.0057918 1.5707961 0.0057918"/>
+      <geometry>
+        <mesh filename="./meshes/R_Upperarm_link_collisions_ALLEX_Right_Upperarm_Cover_Collision1_ALLEX_Right_Upperarm_Cover_Collision1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0.0057918 1.5707961 0.0057918"/>
+      <geometry>
+        <mesh filename="./meshes/R_Upperarm_link_collisions_ALLEX_Right_Upperarm_Cover_Collision2_ALLEX_Right_Upperarm_Cover_Collision2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="0.0057918 1.5707961 0.0057918"/>
+      <geometry>
+        <mesh filename="./meshes/R_Upperarm_link_collisions_ALLEX_Right_Upperarm_Cover_Collision3_ALLEX_Right_Upperarm_Cover_Collision3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0.01 0. 0. " rpy="0.0057918 1.5707961 0.0057918"/>
+      <geometry>
+        <mesh filename="./meshes/R_Upperarm_link_collisions_ALLEX_Right_Upperarm_Cover_Collision1_ALLEX_Right_Upperarm_Cover_Collision1.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0.0057918 1.5707961 0.0057918"/>
+      <geometry>
+        <mesh filename="./meshes/R_Upperarm_link_collisions_ALLEX_Right_Upperarm_Cover_Collision2_ALLEX_Right_Upperarm_Cover_Collision2.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0. 0. 0." rpy="0.0057918 1.5707961 0.0057918"/>
+      <geometry>
+        <mesh filename="./meshes/R_Upperarm_link_collisions_ALLEX_Right_Upperarm_Cover_Collision3_ALLEX_Right_Upperarm_Cover_Collision3.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="R_Wrist_Pitch_link">
+    <inertial>
+      <origin xyz="-0.0152168 -0. -0.0165298" rpy="0. 0. 0."/>
+      <mass value="0.0573989"/>
+      <inertia ixx="0.0000511" ixy="0." ixz="-0.0000025" iyy="0.0000143" iyz="0." izz="0.0000502"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0. 0. 0." rpy="-0. 0.0000001 -1.570796 "/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Wrist_Pitch_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+  </link>
+  <link name="R_Wrist_Roll_link">
+    <inertial>
+      <origin xyz="0.0102659 0.0000008 -0.0189817" rpy="0. 0. 0."/>
+      <mass value="0.0430963"/>
+      <inertia ixx="0.0000221" ixy="0." ixz="0.0000017" iyy="0.0000066" iyz="-0." izz="0.0000195"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Right_Wrist_Roll_Frame.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+  </link>
+  <link name="Waist_Base">
+    <inertial>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <mass value="3."/>
+      <inertia ixx="0.001" ixy="0." ixz="0." iyy="0.001" iyz="0." izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0.7756594" rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Base_visuals_ALLEX_Base.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0.7684707" rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/Base_ALLEX_Base.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0.7684707" rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="./meshes/Base_ALLEX_Base.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- <link name="Waist_Pitch_Back_link">
+    <inertial>
+      <origin xyz="-0.012 0. 0.15 " rpy="0. 0. 0."/>
+      <mass value="1."/>
+      <inertia ixx="0.00266" ixy="0." ixz="0." iyy="0.00266" iyz="0." izz="0.00075"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="0. 0. -1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Waist_Back_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. -0. 0.0000001" rpy="0. 0. -1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Waist_Back_Link.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+  </link> -->
+  <link name="Waist_Pitch_Lower_link">
+    <inertial>
+      <origin xyz="-0.01 0. 0.15" rpy="0. 0. 0."/>
+      <mass value="2."/>
+      <inertia ixx="0.0012" ixy="0." ixz="0." iyy="0.0012" iyz="0." izz="0.0006"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. -1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Waist_Front_Link.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. -1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Pitch_Lower_link_visuals_ALLEX_Waist_Front_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0176847" rpy="0. 0. -1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Pitch_Lower_link_collisions_ALLEX_Waist_Front_Cover_ALLEX_Waist_Front_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0.0176847" rpy="0. 0. -1.5707963"/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Pitch_Lower_link_collisions_ALLEX_Waist_Front_Cover_ALLEX_Waist_Front_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="Waist_Pitch_Upper_link">
+    <inertial>
+      <origin xyz="-0.015 0. 0.084" rpy="0. 0. 0."/>
+      <mass value="4.4000001"/>
+      <inertia ixx="0.01" ixy="0." ixz="0." iyy="0.01" iyz="0." izz="0.01"/>
+    </inertial>
+    <visual>
+      <origin xyz="0. 0. -0.0000002" rpy="0. -0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Chest_Light.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000002" rpy="0. -0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/ALLEX_Chest_Neck_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000002" rpy="0. -0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Pitch_Upper_link_visuals_ALLEX_Chest_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. -0.0000002" rpy="0. -0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Pitch_Upper_link_collisions_ALLEX_Chest_Cover_ALLEX_Chest_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. -0.0000002" rpy="0. -0. -1.5707961"/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Pitch_Upper_link_collisions_ALLEX_Chest_Cover_ALLEX_Chest_Cover.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="Waist_Yaw_link">
+    <inertial>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <mass value="2."/>
+      <inertia ixx="0.001" ixy="0." ixz="0." iyy="0.001" iyz="0." izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.0000001 0. 0. " rpy="0. 1.5707961 0. "/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Yaw_link_visuals_ALLEX_Waist_Yaw_Pitch_Act.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.0000001 0. 0. " rpy="0. 1.5707961 0. "/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Yaw_link_visuals_ALLEX_Waist_Yaw.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.0000001 0. 0. " rpy="0. 1.5707961 0. "/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Yaw_link_collisions_ALLEX_Waist_Yaw_Pitch_Act_ALLEX_Waist_Yaw_Pitch_Act.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.0000001 0. 0. " rpy="0. 1.5707961 0. "/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Yaw_link_collisions_ALLEX_Waist_Yaw_ALLEX_Waist_Yaw.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0.0000001 0. 0. " rpy="0. 1.5707961 0. "/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Yaw_link_collisions_ALLEX_Waist_Yaw_Pitch_Act_ALLEX_Waist_Yaw_Pitch_Act.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="-0.0000001 0. 0. " rpy="0. 1.5707961 0. "/>
+      <geometry>
+        <mesh filename="./meshes/Waist_Yaw_link_collisions_ALLEX_Waist_Yaw_ALLEX_Waist_Yaw.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+</robot>

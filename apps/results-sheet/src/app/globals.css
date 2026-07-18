@@ -1,0 +1,1129 @@
+:root {
+  --enmight-green-0: #f4faf8;
+  --enmight-green-1: #d7ebe4;
+  --enmight-green-2: #b3dace;
+  --enmight-green-3: #49bf91;
+  --enmight-green-4: #17966c;
+  --enmight-green-5: #008861;
+  --enmight-green-6: #006c4c;
+  --enmight-green-7: #005139;
+  --enmight-green-8: #00452f;
+  --enmight-green-9: #002c1d;
+
+  --point-yellow-0: #fff8f4;
+  --point-yellow-1: #ffdcbb;
+  --point-yellow-2: #fbba73;
+  --point-yellow-3: #ffb869;
+  --point-yellow-4: #ffb054;
+  --point-yellow-5: #fe9737;
+  --point-yellow-6: #ff621f;
+  --point-yellow-7: #e04820;
+  --point-yellow-8: #ab3e21;
+  --point-yellow-9: #845416;
+
+  --enmight-red-0: #ffaaaa;
+  --enmight-red-1: #ff6d6d;
+  --enmight-red-2: #ff4444;
+  --enmight-red-3: #fe002e;
+  --enmight-red-4: #f8002d;
+  --enmight-red-5: #d91e3f;
+  --enmight-red-6: #c51837;
+  --enmight-red-7: #ba0425;
+  --enmight-red-8: #a90e29;
+  --enmight-red-9: #8f0c24;
+
+  --enmight-gray-0: #f4f4f5;
+  --enmight-gray-1: #e4e4e7;
+  --enmight-gray-2: #d4d4d8;
+  --enmight-gray-3: #adadb5;
+  --enmight-gray-4: #95959e;
+  --enmight-gray-5: #6f6f77;
+  --enmight-gray-6: #4d4d57;
+  --enmight-gray-7: #3b3b43;
+  --enmight-gray-8: #252528;
+  --enmight-gray-9: #18181b;
+
+  --enmight-blue-0: #e7f5ff;
+  --enmight-blue-1: #d0ebff;
+  --enmight-blue-2: #a5d8ff;
+  --enmight-blue-3: #74c0fc;
+  --enmight-blue-4: #4dabf7;
+  --enmight-blue-5: #339af0;
+  --enmight-blue-6: #228be6;
+  --enmight-blue-7: #0176db;
+  --enmight-blue-8: #1971c2;
+  --enmight-blue-9: #1864ab;
+
+  /* Neutral + accent chrome mapped onto SSOT tokens (tokens.css). The enmight
+     ramps above and the table/chart palettes below stay untouched: those are
+     data-visualization colors, not UI chrome. */
+  --background: var(--ssot-bg);
+  --surface: var(--ssot-surface);
+  --text: var(--ssot-text);
+  --text-muted: var(--ssot-text-soft);
+  --border: var(--ssot-border);
+  --accent: var(--ssot-accent);
+
+  --background-lightgreen: var(--ssot-accent-soft);
+  --background-hover: var(--enmight-gray-0);
+  --background-active: color-mix(in srgb, var(--enmight-gray-4), transparent 50%);
+  --background-selected: color-mix(in srgb, var(--enmight-gray-4), transparent 80%);
+  --background-selected-hover: color-mix(in srgb, var(--enmight-gray-4), transparent 68%);
+  --background-white-level-0: #fff;
+  --background-white-level-1: #fff;
+  --background-white-level-2: #fff;
+  --background-gray-0-level-0: var(--enmight-gray-0);
+  --background-gray-0-level-1: var(--enmight-gray-0);
+  --background-gray-0-level-2: var(--enmight-gray-0);
+  --background-gray-1-level-1: var(--enmight-gray-1);
+  --background-gray-1-level-2: var(--enmight-gray-1);
+  --background-green-0-level-1: var(--ssot-accent-soft);
+  --background-green-0-level-2: var(--ssot-accent-soft);
+  --background-green-5-level-1: var(--ssot-accent);
+  --background-green-5-level-2: var(--ssot-accent);
+  --background-inverse: var(--enmight-gray-7);
+  --background-inverse-hover: var(--enmight-gray-6);
+  --background-primary: var(--ssot-accent);
+
+  --border-interactive: var(--ssot-accent);
+  --border-subtle: var(--ssot-border);
+  --border-subtle-2: var(--ssot-border);
+  --border-subtle-selected: var(--ssot-border-strong);
+  --border-strong: var(--ssot-border-strong);
+  --border-inverse: var(--enmight-gray-9);
+  --border-disabled: var(--ssot-border);
+  --border-tableButton: var(--ssot-accent);
+  --border-error: var(--enmight-red-5);
+
+  --button-primary: var(--ssot-accent);
+  --button-primary-hover: var(--ssot-accent-strong);
+  --button-primary-active: var(--ssot-accent-strong);
+  --button-secondary: var(--enmight-gray-7);
+  --button-secondary-hover: var(--enmight-gray-8);
+  --button-secondary-active: var(--enmight-gray-9);
+  --button-tertiary: #fff;
+  --button-tertiary-hover: var(--ssot-accent-soft);
+  --button-tertiary-active: var(--ssot-accent-soft);
+  --button-tableButton: #fff;
+  --button-tableButton-hover: var(--enmight-gray-0);
+  --button-tableButton-active: var(--ssot-accent-soft);
+  --button-danger-primary: var(--enmight-red-5);
+  --button-danger-secondary: var(--enmight-red-4);
+  --button-danger-hover: var(--enmight-red-6);
+  --button-danger-active: var(--enmight-red-6);
+  --button-separator: var(--enmight-gray-1);
+  --button-disabled: var(--enmight-gray-4);
+  --button-paginationButton: #fff;
+  --button-paginationButton-disabled: var(--enmight-gray-0);
+  --button-paginationButton-hover: var(--ssot-accent-soft);
+
+  --field-background: #fff;
+  --field-disabled: var(--enmight-gray-2);
+  --field-hover: var(--enmight-gray-1);
+  --field-1: #fff;
+
+  --text-primary: var(--ssot-text);
+  --text-secondary: var(--ssot-text-soft);
+  --text-placeholder: var(--ssot-text-faint);
+  --text-disabled: var(--ssot-text-faint);
+  --text-onColor: #fff;
+  --text-onColor-disabled: color-mix(in srgb, #fff, transparent 30%);
+  --text-tableButton: var(--ssot-accent);
+  --text-help: var(--ssot-text-soft);
+  --text-error: var(--enmight-red-5);
+  --text-green: var(--ssot-accent);
+  --text-green-light: var(--ssot-accent-soft);
+  --text-tooltip: #fff;
+
+  --table-color-lemon: #fff3a5;
+  --table-color-peach: #ffdcbb;
+  --table-color-orange: #ff9d74;
+  --table-color-apple: #ec7272;
+  --table-color-lavender: #f2e7ff;
+  --table-color-pink: #ffb6d3;
+  --table-color-dullish-pink: #dcb2ce;
+  --table-color-cool-blue: #99afff;
+  --table-color-enmight-light: #d7ebe4;
+  --table-color-neon-green: #c7ffbf;
+  --table-color-grass-green: #b7de8d;
+  --table-color-vivid-green: #49bf91;
+  --table-color-light-teal: #c1fff2;
+  --table-color-skyblue: #d0ebff;
+  --table-color-darker-blue: #74c0fc;
+  --table-color-purple: #c89dff;
+
+  --datatable-header: var(--enmight-gray-0);
+  --pagination-button-background: var(--enmight-gray-0);
+}
+
+/* Dark mode. The token-derived semantic vars above (surface/text/border/accent
+   families) already flip through tokens.css; only the values hardcoded to white
+   or fixed light greys need dark equivalents so the non-DataTable chrome (agent
+   and chart panels, status bars) reads correctly. The DataTable keeps its light
+   palette via the .tableShell pin below. */
+html[data-ssot-theme='dark'] {
+  --background-white-level-0: var(--ssot-surface);
+  --background-white-level-1: var(--ssot-surface);
+  --background-white-level-2: var(--ssot-surface);
+  --background-gray-0-level-0: var(--ssot-surface-muted);
+  --background-gray-0-level-1: var(--ssot-surface-muted);
+  --background-gray-0-level-2: var(--ssot-surface-muted);
+  --background-gray-1-level-1: var(--ssot-surface-muted);
+  --background-gray-1-level-2: var(--ssot-surface-muted);
+
+  --button-tertiary: var(--ssot-surface);
+  --button-tableButton: var(--ssot-surface);
+  --button-tableButton-hover: var(--ssot-surface-muted);
+  --button-paginationButton: var(--ssot-surface);
+
+  --field-background: var(--ssot-surface);
+  --field-1: var(--ssot-surface);
+  --field-hover: var(--ssot-surface-muted);
+}
+
+/* DataTable stays in its original light palette even in dark mode (its color
+   system is intentionally left as-is). The table subtree is the only thing
+   inside .tableShell, so re-declaring the light token values and the flipped
+   chrome vars here pins the whole table back to light without touching any
+   DataTable source file. */
+html[data-ssot-theme='dark'] .tableShell {
+  color-scheme: light;
+
+  --ssot-bg: #ffffff;
+  --ssot-surface: #ffffff;
+  --ssot-surface-muted: #f6f7f9;
+  --ssot-text: #1c2130;
+  --ssot-text-soft: #5a6172;
+  --ssot-text-faint: #8b919e;
+  --ssot-border: #e4e7ec;
+  --ssot-border-strong: #d3d8e0;
+  --ssot-accent: #4f6ef7;
+  --ssot-accent-strong: #3b55d9;
+  --ssot-accent-soft: #eef2ff;
+  --ssot-ring: rgba(79, 110, 247, 0.3);
+  --ssot-success: #2f9d7e;
+  --ssot-success-soft: #e3f5ec;
+  --ssot-danger: #c2413f;
+  --ssot-danger-soft: #fdeeed;
+  --ssot-warning: #d97706;
+  --ssot-warning-soft: #fef3e2;
+
+  --background-white-level-0: #fff;
+  --background-white-level-1: #fff;
+  --background-white-level-2: #fff;
+  --background-gray-0-level-0: var(--enmight-gray-0);
+  --background-gray-0-level-1: var(--enmight-gray-0);
+  --background-gray-0-level-2: var(--enmight-gray-0);
+  --background-gray-1-level-1: var(--enmight-gray-1);
+  --background-gray-1-level-2: var(--enmight-gray-1);
+  --button-tertiary: #fff;
+  --button-tableButton: #fff;
+  --button-tableButton-hover: var(--enmight-gray-0);
+  --button-paginationButton: #fff;
+  --field-background: #fff;
+  --field-1: #fff;
+  --field-hover: var(--enmight-gray-1);
+}
+
+::-webkit-scrollbar {
+  height: 4px;
+  width: 4px;
+  top: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ssot-surface-muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ssot-border-strong);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ssot-text-faint);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--ssot-font-sans);
+  font-variant-ligatures: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.page {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 24px 28px;
+}
+
+.status {
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.resultsWorkspace {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.panelResizing,
+body.panelResizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.panelResizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 8;
+  width: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: col-resize;
+  padding: 0;
+  touch-action: none;
+}
+
+.panelResizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 4px;
+  background: transparent;
+}
+
+.panelResizeHandle:hover::after,
+.panelResizeHandle:focus-visible::after {
+  background: var(--border-interactive);
+}
+
+.resultsWorkspaceResizingAgent .panelResizeHandleRight::after,
+.resultsWorkspaceResizingChart .panelResizeHandleLeft::after {
+  background: var(--border-interactive);
+}
+
+.panelResizeHandle:focus {
+  outline: none;
+}
+
+.panelResizeHandleLeft {
+  left: -14px;
+}
+
+.panelResizeHandleRight {
+  right: -14px;
+}
+
+.agentPanelStatusButton,
+.agentPanelClose,
+.agentSendButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: var(--button-tableButton);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.agentPanelStatusButton:hover,
+.agentPanelClose:hover,
+.agentSendButton:hover:not(:disabled) {
+  background: var(--button-tableButton-hover);
+}
+
+.agentStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.agentStatusDot-connected {
+  background: var(--enmight-green-5);
+}
+
+.agentStatusDot-disconnected {
+  background: var(--enmight-red-5);
+}
+
+.agentStatusDot-configuring {
+  background: var(--point-yellow-5);
+}
+
+.agentPanel {
+  position: relative;
+  flex: 0 0 var(--panel-width, min(400px, 28vw));
+  display: flex;
+  flex-direction: column;
+  min-width: var(--panel-min-width, 340px);
+  max-width: var(--panel-max-width, 440px);
+  min-height: 0;
+  border-right: 1px solid var(--border-subtle-2);
+  background: var(--background-white-level-0);
+  padding-right: 12px;
+}
+
+.agentPanelHeader,
+.agentModalHeader {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 8px 10px;
+}
+
+.agentPanelTitle,
+.agentModalTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: var(--ssot-weight-semibold);
+}
+
+.agentPanelTitleGroup {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.agentPanelStatusButton {
+  height: 24px;
+  gap: 6px;
+  padding: 0 7px;
+}
+
+.agentPanelStatusButton span:last-child {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: var(--ssot-weight-semibold);
+  line-height: 1;
+}
+
+.agentPanelClose {
+  width: 26px;
+  height: 26px;
+}
+
+.agentMessages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.agentMessage {
+  border-radius: 4px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.agentMessage + .agentMessage {
+  margin-top: 8px;
+}
+
+.agentMessage-user {
+  background: var(--background-white-level-0);
+}
+
+.agentMessage-assistant {
+  background: var(--background-green-0-level-1);
+}
+
+.agentMessage-system {
+  background: var(--background-gray-0-level-1);
+}
+
+.agentMessageRole {
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-semibold);
+  text-transform: uppercase;
+}
+
+.agentMarkdown {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.35;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.agentMarkdown p {
+  margin: 0 0 7px 0;
+}
+
+.agentMarkdown ul,
+.agentMarkdown ol {
+  margin: 0 0 7px 18px;
+  padding: 0;
+}
+
+.agentMarkdown li + li {
+  margin-top: 3px;
+}
+
+.agentMarkdown strong {
+  font-weight: 700;
+}
+
+.agentMarkdown code {
+  border-radius: 3px;
+  background: var(--background-gray-0-level-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  padding: 1px 3px;
+}
+
+.agentMarkdown a {
+  color: var(--text-green);
+  text-decoration: none;
+}
+
+.agentMarkdown a:hover {
+  text-decoration: underline;
+}
+
+.agentMarkdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agentMarkdownCode {
+  margin: 0 0 7px 0;
+  overflow: auto;
+  max-width: 100%;
+  border-radius: 4px;
+  background: var(--background-gray-0-level-1);
+  padding: 7px;
+}
+
+.agentMarkdownCode code {
+  background: transparent;
+  padding: 0;
+}
+
+.agentLoading {
+  display: flex;
+  align-items: center;
+  padding: 8px 9px;
+}
+
+.agentLoadingSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-subtle-2);
+  border-top-color: var(--border-interactive);
+  border-radius: 999px;
+  animation: agentSpin 0.75s linear infinite;
+}
+
+@keyframes agentSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.agentExamplePrompts {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid var(--border-subtle);
+  padding: 8px;
+}
+
+.agentExamplePrompts button {
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  background: var(--button-tableButton);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.25;
+  padding: 6px 7px;
+  text-align: left;
+}
+
+.agentExamplePrompts button:hover {
+  background: var(--button-tableButton-hover);
+  color: var(--text-primary);
+}
+
+.agentExamplePrompts button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.agentInputBar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  border-top: 1px solid var(--border-subtle);
+  padding: 8px;
+}
+
+.agentInputBar textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--field-background);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ssot-text-sm);
+  line-height: 1.35;
+  outline: none;
+  padding: 7px 8px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.agentInputBar textarea:hover {
+  border-color: var(--ssot-accent);
+}
+
+.agentInputBar textarea:focus {
+  border-color: var(--ssot-accent);
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.agentSendButton {
+  align-self: flex-end;
+  width: 30px;
+  height: 30px;
+}
+
+.agentSendButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.agentModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 18px;
+}
+
+.agentModal {
+  width: min(540px, 100%);
+  border: 1px solid var(--border-subtle-2);
+  border-radius: 4px;
+  background: var(--background-white-level-0);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.agentModalStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 4px 14px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.agentModalDetail {
+  padding: 5px 14px 0 14px;
+  font-size: var(--ssot-text-xs);
+  line-height: 1.3;
+}
+
+.agentModalDetail-connected,
+.agentModalDetail-configuring {
+  color: var(--text-secondary);
+}
+
+.agentModalDetail-disconnected {
+  color: var(--text-error);
+}
+
+.agentModalHelp {
+  padding: 6px 14px 2px 14px;
+  color: var(--text-disabled);
+  font-size: var(--ssot-text-xs);
+  line-height: 1.3;
+}
+
+.agentModalHelp ol {
+  margin: 0 0 6px 16px;
+  padding: 0;
+}
+
+.agentModalHelp li + li {
+  margin-top: 3px;
+}
+
+.agentModalHelp code {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--background-gray-0-level-1);
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: var(--ssot-text-xs);
+  line-height: 1.25;
+  padding: 5px 6px;
+}
+
+.agentConfigField {
+  display: block;
+  padding: 10px 14px 0 14px;
+}
+
+.agentConfigField span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: var(--ssot-weight-semibold);
+}
+
+.agentConfigField input {
+  width: 100%;
+  height: var(--ssot-control-h);
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--field-background);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--ssot-text-sm);
+  outline: none;
+  padding: 0 12px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.agentConfigField input:hover {
+  border-color: var(--ssot-accent);
+}
+
+.agentConfigField input:focus {
+  border-color: var(--ssot-accent);
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.agentModalActions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+  padding: 12px 14px;
+}
+
+.agentModalButton {
+  height: 32px;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 12px;
+}
+
+.agentModalButtonSubtle {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.agentModalButtonSubtle:hover {
+  background: var(--button-tableButton-hover);
+}
+
+.agentModalButtonPrimary {
+  background: var(--button-primary);
+  color: var(--text-onColor);
+}
+
+.agentModalButtonPrimary:hover {
+  background: var(--button-primary-hover);
+}
+
+.tableShell {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chartPanel {
+  position: relative;
+  flex: 0 0 var(--panel-width, min(760px, 52vw));
+  min-width: var(--panel-min-width, 520px);
+  max-width: var(--panel-max-width, 1080px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border-subtle-2);
+  background: var(--background-white-level-0);
+  padding-left: 12px;
+}
+
+.chartPanelHeader {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 8px;
+}
+
+.chartChipArea {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chartChipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 26px;
+  overflow: hidden;
+}
+
+.chartChipListExpanded {
+  max-height: 104px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.chartChip {
+  display: inline-flex;
+  align-items: center;
+  max-width: none;
+  height: 24px;
+  border: 1px solid var(--border-subtle-2);
+  border-radius: 4px;
+  background: var(--background-gray-0-level-1);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  overflow: hidden;
+  padding: 0 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartChip.resultSyncActive,
+.chartChip.resultSyncSelected {
+  border-color: var(--border-interactive);
+  background: var(--button-tableButton-active);
+}
+
+.chartChipToggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--button-tableButton);
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.chartChipToggle:hover {
+  background: var(--button-tableButton-hover);
+}
+
+/* Compact sizing for the chart-header grouping/type selects. The canonical
+   look (border, hover-accent, focus ring, value/arrow layout) and the open
+   dropdown come from .ssot-select-trigger + .ssot-listbox (controls.css); these
+   overrides just shrink the trigger to fit the dense chart toolbar. */
+.chartTypeSelect.ssot-select-trigger {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  height: 24px;
+  width: auto;
+  padding: 0 6px 0 8px;
+  font-size: var(--ssot-text-xs);
+}
+
+.chartPanelClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--button-tableButton);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.chartPanelClose:hover {
+  background: var(--button-tableButton-hover);
+}
+
+.chartPanelBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0 0 0;
+}
+
+.taskChart {
+  border: 1px solid var(--border-subtle-2);
+  border-radius: 4px;
+  background: var(--background-white-level-0);
+}
+
+.taskChart + .taskChart {
+  margin-top: 8px;
+}
+
+.taskChartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 6px 8px;
+}
+
+.taskChartTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: var(--ssot-weight-semibold);
+  line-height: 1.2;
+}
+
+.taskChartScroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.taskChart svg text {
+  font-family: inherit;
+}
+
+.resultSyncBar {
+  cursor: pointer;
+}
+
+.resultSyncHasActive .resultSyncBar {
+  opacity: 0.24;
+  stroke: transparent;
+  stroke-width: 0;
+}
+
+.resultSyncHasActive .resultSyncBar.resultSyncActive {
+  opacity: 1;
+  stroke: var(--text-primary);
+  stroke-width: 1;
+}
+
+.resultSyncTableRow.resultSyncActive td::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  background-color: var(--background-hover);
+  mix-blend-mode: multiply;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.resultSyncTableRow.resultSyncSelected td::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  background-color: var(--background-selected);
+  mix-blend-mode: multiply;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.resultSyncTableRow.resultSyncSelected.resultSyncActive td::after {
+  background-color: var(--background-selected-hover);
+  opacity: 0.6;
+}
+
+.chartTooltipFloat {
+  position: fixed;
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.chartTooltip {
+  min-width: 140px;
+  max-width: 260px;
+  border: 1px solid var(--border-subtle-2);
+  border-radius: 4px;
+  background: var(--background-white-level-0);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  padding: 7px 9px;
+}
+
+.chartTooltipTitle {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: var(--ssot-weight-semibold);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartTooltipValue {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chartTooltipRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.chartTooltipRow:first-of-type {
+  margin-top: 6px;
+}
+
+.chartTooltipDot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.chartTooltipRowLabel {
+  overflow: hidden;
+  max-width: 150px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartTooltipRowValue {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statusError {
+  border-color: var(--ssot-danger);
+  background: var(--ssot-danger-soft);
+  color: var(--ssot-danger);
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 16px;
+  }
+
+  .resultsWorkspace {
+    display: block;
+    overflow: hidden;
+  }
+
+  .tableShell {
+    height: 100%;
+  }
+
+  .resultsWorkspacePanelOpen .tableShell {
+    display: none;
+  }
+
+  .agentPanel {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 100%;
+    border-right: 0;
+    padding-right: 0;
+  }
+
+  .chartPanel {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 100%;
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .panelResizeHandle {
+    display: none;
+  }
+}

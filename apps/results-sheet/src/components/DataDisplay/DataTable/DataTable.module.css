@@ -1,0 +1,138 @@
+.outerContainer {
+  position: relative;
+  width: 100%;
+  overflow: auto;
+  padding-bottom: 1px;
+}
+
+.tableViewportShell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.bottomShadow {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  transition: box-shadow 0.4s;
+}
+
+.bottomShadow[data-visible] {
+  box-shadow: inset 0 -5px 8px rgb(0 0 0 / 10%);
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.tr {
+  padding: 0;
+}
+
+.tbody .td {
+  background-color: var(--background-white-level-0);
+  position: relative;
+}
+
+.tbody .tr.boldRow td {
+  font-weight: 700;
+}
+
+.th {
+  position: relative;
+  box-shadow: inset 0 1px 0 var(--border-subtle-2), 0 1px 0 var(--border-subtle-2), inset -1px 0 0 var(--border-subtle-2), -1px 0 0 var(--border-subtle-2);
+}
+
+.headerDragHandle {
+  opacity: 0;
+}
+
+.th:hover .headerDragHandle,
+.headerDragHandle:focus-within {
+  opacity: 1;
+}
+
+.th:first-child {
+  border-left: 1px solid var(--border-subtle-2);
+}
+
+.td {
+  position: relative;
+  padding: 0px 10px;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 1px 0 var(--border-subtle-2), 0 1px 0 var(--border-subtle-2), inset -1px 0 0 var(--border-subtle-2), -1px 0 0 var(--border-subtle-2);
+  overflow: auto;
+}
+
+.td > div {
+  position: relative;
+  z-index: 1;
+}
+
+.cellContent {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  user-select: text;
+}
+
+.td:first-child {
+  border-left: 1px solid var(--border-subtle-2);
+}
+
+.resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 8px;
+  background: var(--border-strong);
+  border-color: var(--border-strong);
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+
+.resizer:hover {
+  opacity: 1;
+}
+
+.isResizing {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 8px;
+  background: var(--border-strong);
+  border-color: var(--border-strong);
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  opacity: 1;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+
+.table th,
+.table td {
+  user-select: none;
+}

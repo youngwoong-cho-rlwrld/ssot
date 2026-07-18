@@ -1,0 +1,48 @@
+/*
+ * Shared SSOT header bar. Every app renders this at the top:
+ *
+ *   <header class="ssot-header">
+ *     <a class="ssot-brand" href="{portal url, default '/'}">SSOT</a>
+ *     <span class="ssot-sep">/</span>
+ *     <span class="ssot-app-name">{app name}</span>
+ *     <span class="ssot-header-spacer"></span>
+ *     {optional app-specific actions}
+ *   </header>
+ */
+.ssot-header {
+  height: var(--ssot-header-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  background: var(--ssot-surface);
+  border-bottom: 1px solid var(--ssot-border);
+  font-family: var(--ssot-font-sans);
+  font-size: 13px;
+}
+
+.ssot-brand {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ssot-text);
+  text-decoration: none;
+}
+
+.ssot-brand:hover {
+  color: var(--ssot-accent);
+}
+
+.ssot-sep {
+  color: var(--ssot-text-faint);
+  user-select: none;
+}
+
+.ssot-app-name {
+  color: var(--ssot-text-soft);
+  font-weight: 500;
+}
+
+.ssot-header-spacer {
+  flex: 1;
+}
