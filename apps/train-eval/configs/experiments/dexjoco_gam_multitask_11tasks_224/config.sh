@@ -61,6 +61,8 @@ DEXJOCO_IMAGE_SIZE=224
 DEXJOCO_EMBODIMENT_TAG=dexjoco_single_arm
 DEXJOCO_EMBODIMENT_TAG_BIMANUAL=dexjoco_dual_arm
 EVAL_NUM_GPUS=4
+# Concurrent sim workers per GPU (~12G VRAM each; 2 fits L40S 48G safely).
+N_ENVS_PER_GPU=2
 N_EPISODES=50
 N_RUNS=3
 EVAL_SETS=(rand_obj)
