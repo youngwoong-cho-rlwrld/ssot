@@ -156,10 +156,24 @@ class GamDexJoCoPolicy:
             os.environ.get("GAM_SERVER_RESET_STATE_L2", "3.5")
         )
         self.policy.reset_episode()
+        # Delta-action checkpoints (branch dexjoco-delta-actions, stats key
+        # *_delta): the model outputs observation-anchored deltas
+        # delta_k = a_{t+k}^abs - p44(t). Reconstruct absolute targets by
+        # adding the 44-dim proprio projection of the request's own state
+        # (quat wxyz -> rotvec per arm inside dexjoco_dual_proprio_to_p44).
+        # Past-action feedback stays in DELTA space — that is the action
+        # space training saw.
+        stats_key = str(self.info.get("action_stats_key") or "")
+        self._delta_mode = stats_key.endswith("_delta")
+        self._proprio_to_p44 = None
+        if self._delta_mode:
+            from robot.data.dexjoco_lerobot import dexjoco_dual_proprio_to_p44
+            self._proprio_to_p44 = dexjoco_dual_proprio_to_p44
         logger.info(
-            "GAM policy loaded from %s (model_n_dims=%d proprio_dim=%d d_out=%d chunk_size=%s stats_key=%s)",
+            "GAM policy loaded from %s (model_n_dims=%d proprio_dim=%d d_out=%d chunk_size=%s stats_key=%s delta_mode=%s)",
             ckpt_file, self.model_n_dims, self.proprio_dim, self.d_out,
             self.info.get("chunk_size"), self.info.get("action_stats_key"),
+            self._delta_mode,
         )
 
     def _prep_state(self, state) -> np.ndarray:
@@ -239,6 +253,13 @@ class GamDexJoCoPolicy:
         # closest server-side approximation.
         self._prev_returned_chunk = act_full
         out = act_full[:, : self.d_out]  # slice dual layout -> single-arm block when needed
+        if self._delta_mode:
+            # Anchor is the CURRENT request's raw 46-dim state (pre-padding),
+            # matching the loader's per-chunk observation-frame anchoring.
+            p44 = self._proprio_to_p44(
+                np.asarray(obs["state"], dtype=np.float32).reshape(-1)
+            ).astype(np.float32)
+            out = out + p44[None, : out.shape[1]]
         return {"actions": np.ascontiguousarray(out, dtype=np.float32)}
 
 
