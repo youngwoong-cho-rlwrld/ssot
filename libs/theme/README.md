@@ -40,6 +40,10 @@ Then map the app's existing theme layer onto the `--ssot-*` variables:
 <script>(function(){try{var t=localStorage.getItem('ssot-theme')==='dark'?'dark':'light';var r=document.documentElement;r.dataset.ssotTheme=t;r.classList.toggle('dark',t==='dark');r.setAttribute('data-mantine-color-scheme',t);}catch(e){}})();</script>
 ```
 
+- In Next.js (or any SSR layout that hydrates), add `suppressHydrationWarning`
+  to `<html>` so the attributes this snippet writes before hydration don't
+  trigger a hydration mismatch warning.
+
 ## Typography
 
 One family (Inter Variable), one scale. Use the tokens, not ad-hoc px:
