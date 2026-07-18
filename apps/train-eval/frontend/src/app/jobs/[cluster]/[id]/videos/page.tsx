@@ -209,7 +209,7 @@ function RunCard({
   const inFlight = episodes.length - doneCount;
   const countLabel =
     episodes.length > 0
-      ? `${doneCount} episodes${inFlight ? ` (+${inFlight} in progress)` : ""} · ${section.videos.length} videos`
+      ? `${doneCount} complete${inFlight ? ` / ${inFlight} in progress` : ""}`
       : `${section.videos.length} videos`;
 
   return (
