@@ -205,11 +205,13 @@ function RunCard({
   }
 
   const { episodes, flat } = groupEpisodes(section.videos);
-  const doneCount = episodes.filter((ep) => ep.outcome !== "temp").length;
-  const inFlight = episodes.length - doneCount;
+  // In-flight episode_*_temp videos are unplayable half-written mp4s — count
+  // them in the label but don't render their tiles.
+  const doneEpisodes = episodes.filter((ep) => ep.outcome !== "temp");
+  const inFlight = episodes.length - doneEpisodes.length;
   const countLabel =
     episodes.length > 0
-      ? `${doneCount} complete${inFlight ? ` / ${inFlight} in progress` : ""}`
+      ? `${doneEpisodes.length} complete${inFlight ? ` / ${inFlight} in progress` : ""}`
       : `${section.videos.length} videos`;
 
   return (
@@ -265,7 +267,7 @@ function RunCard({
               ))}
             </div>
           )}
-          {episodes.map((ep) => (
+          {doneEpisodes.map((ep) => (
             <div key={ep.key} className="mt-4 first:mt-0">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-mono">episode {ep.index}</span>
