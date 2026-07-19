@@ -13,17 +13,8 @@ frontend/.next/
 frontend/.env.local
 frontend/.env
 
-# Variant configs are per-user / per-experiment; only the _sample/ template
-# ships in git so newcomers have a starting reference.
-configs/experiments/*
-!configs/experiments/_sample/
-!configs/experiments/_sample/**
-# DexJoCo rollout configs are a cross-repository runtime contract. Keep their
-# shell defaults—and GAM's model-facing YAML—reviewable and immutable in Git.
-!configs/experiments/dexjoco_*/
-configs/experiments/dexjoco_*/*
-!configs/experiments/dexjoco_*/config.sh
-!configs/experiments/dexjoco_gam_*/gam_config.yaml
+# SSOT tracks the full experiment list (configs + model-facing sidecars);
+# only the per-run .versions snapshots stay local.
 configs/experiments/*/.versions/
 configs/experiments/*/.versions/**
 
