@@ -1,29 +1,32 @@
-# Experiment: dexjoco_gam_kpbottleneck_v2_bimanual_5tasks_224
-# DexJoCo bimanual multitask GAM fine-tune at 224x224 with the keypoint action
-# bottleneck (commit aed7a32): action tokens predict a 126-D hand-keypoint
-# trajectory (42 points x 3, front-camera frame) decoded to joint actions.
-# Datasets are the keypoint-augmented copies (*_kp) of the 5 bimanual tasks.
+# Experiment: dexjoco_gam_delta_c8_bimanual_5tasks_224
+# DexJoCo bimanual multitask GAM fine-tune, 224x224 — DELTA-ACTION retrain.
+# Fixes the hold-collapse of dexjoco_gam_bimanual_5tasks_224 (see
+# docs/gam-dexjoco-zero-success-debug-2026-07-19.md): observation-anchored
+# delta-action targets (action_frame=base_delta), chunk_size 8 (paper C=8),
+# delta-space normalizer key dexjoco_dual_arm_delta, velocity loss ON.
 
 # ----- model -----
 MODEL_ID=dexjoco-gam
-TRAIN_GIT_COMMIT=e47b919f75d9b3e4918f6d80ea2f029e00cb8779
-# GAM training config (second file, owned by the GAM-port workstream). Lists
-# datasets/weights/dims and the action chunk size; consumed via GAM_CONFIG_YAML.
+# gam repo branch dexjoco-delta-actions (base 6b71f21 + delta-action impl,
+# b8837ed stats-pooling fix, 5b340e3 foreign-ckpt step-counter reset — the
+# pretrained-gam.pt init carries train_steps=235000 which otherwise ends a
+# 30k-step run at step 0).
+TRAIN_GIT_COMMIT=5b340e328664ce43730ada9866f21c7a2603d91b
 TRAIN_MODALITY_CONFIG=gam_config.yaml
-TRAIN_ACTION_HORIZON=16
-TRAIN_NOTE="DexJoCo 5-task bimanual GAM + keypoint bottleneck v2 (normalized kp targets, non-detached co-adaptation lambda 0.25 w warmup, anchor 0.5; commit e47b919)"
+TRAIN_ACTION_HORIZON=8
+TRAIN_NOTE="DexJoCo 5-task bimanual GAM delta-action retrain: base_delta targets, C=8, delta stats key, lambda_vel=1.0 - fixes hold-collapse of the absolute-target run"
 
 # ----- datasets -----
-export DATA_DIR="$HOME/workspace/dexjoco_n16/src_v30/dexjoco_lerobot_datasets_kp"
+export DATA_DIR="$HOME/workspace/dexjoco_n16/src_v30/dexjoco_lerobot_datasets"
 
 # Informational for GAM: the authoritative dataset list/weights/dims live in
 # gam_config.yaml. GAM's train wrapper does not read these bash arrays.
 TRAIN_DATASET_NAMES=(
-    bimanual_assembly_kp
-    bimanual_hanoi_kp
-    bimanual_microwave_cook_kp
-    bimanual_photograph_kp
-    bimanual_unlock_ipad_kp
+    bimanual_assembly
+    bimanual_hanoi
+    bimanual_microwave_cook
+    bimanual_photograph
+    bimanual_unlock_ipad
 )
 
 # ----- tasks -----
@@ -38,7 +41,7 @@ TASKS=(
 # ----- training -----
 MAX_STEPS=30000
 SAVE_STEPS=10000
-TRAIN_NUM_GPUS=4
+TRAIN_NUM_GPUS=8
 TRAIN_GLOBAL_BATCH_SIZE=512
 
 # ----- eval (DexJoCo MuJoCo harness) -----
@@ -47,16 +50,16 @@ DEXJOCO_IMAGE_SIZE=224
 DEXJOCO_EMBODIMENT_TAG=dexjoco_dual_arm
 DEXJOCO_EMBODIMENT_TAG_BIMANUAL=dexjoco_dual_arm
 EVAL_NUM_GPUS=4
-# Concurrent sim workers per GPU. Each worker owns whole (task, eval_set,
-# run) units with its own policy server (~12G VRAM each), so keep
-# N_ENVS_PER_GPU * 12G under the card's VRAM (H200 143G: <=10; L40S 48G:
-# <=3). Sims are CPU-bound; the backend scales the job's CPU/memory
-# request with this automatically. 4/GPU x 4 GPUs covers all 15 units
-# (5 tasks x 3 runs) of this experiment simultaneously.
+# Concurrent sim workers per GPU (~12G VRAM each): 4 sized for H200
+# (rlwrld-gpu); drop to 2 for L40S 48G partitions.
 N_ENVS_PER_GPU=4
 N_EPISODES=50
 N_RUNS=3
 EVAL_SETS=(rand_obj)
+# SKT clients die silently in node-correlated windows; 900s no-progress
+# detection (vs 2400s default) turns each death into a ~15min retry
+# instead of ~40min. Server load+warmup is ~6min, so ample margin.
+DEXJOCO_NO_PROGRESS_TIMEOUT_SECONDS=900
 DEXJOCO_INFERENCE_MODE=blocking_overlap
-DEXJOCO_ACTION_HORIZON=16
+DEXJOCO_ACTION_HORIZON=8
 DEXJOCO_REPLAN_RATIO=0.5

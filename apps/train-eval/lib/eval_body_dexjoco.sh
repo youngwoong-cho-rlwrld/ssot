@@ -230,6 +230,17 @@ if ! [[ "$EVAL_GPU_COUNT" =~ ^[0-9]+$ ]] || [ "$EVAL_GPU_COUNT" -lt 1 ]; then
     exit 1
 fi
 
+# Concurrent sim workers per GPU. Each worker still owns whole
+# (task, eval_set, run) units — its own server, port, and output dir — so
+# co-located workers share only the physical GPU (select_cuda_device maps
+# slot % gpu_count). MuJoCo clients are CPU/render-bound and the policy
+# server leaves the GPU mostly idle, so >1 raises eval throughput.
+N_ENVS_PER_GPU="${SUBMIT_N_ENVS_PER_GPU:-${N_ENVS_PER_GPU:-1}}"
+if ! [[ "$N_ENVS_PER_GPU" =~ ^[0-9]+$ ]] || [ "$N_ENVS_PER_GPU" -lt 1 ]; then
+    log "ERROR: N_ENVS_PER_GPU must be a positive integer, got '$N_ENVS_PER_GPU'"
+    exit 1
+fi
+
 FAILED=0
 EVAL_LAUNCHED=0
 WORKER_PIDS=()
@@ -450,6 +461,13 @@ run_client_once() {
     previous_signature=""
 
     while kill -0 "$client_pid" 2>/dev/null; do
+        # kill -0 succeeds on zombies, so a client that died silently (e.g.
+        # SIGKILLed by the node) would otherwise sit here until the full
+        # no-progress timeout. Detect the zombie and collect it immediately.
+        if [ "$(awk '/^State:/{print $2}' "/proc/$client_pid/status" 2>/dev/null)" = "Z" ]; then
+            log "  client pid=$client_pid exited (zombie); collecting status early"
+            break
+        fi
         sleep "$DEXJOCO_WATCHDOG_POLL_SECONDS"
         now="$(date +%s)"
         signature="$(find "$out_dir" -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1);$(find "$out_dir" 2>/dev/null | wc -l)"
@@ -562,7 +580,10 @@ run_unit_on_worker() {
         cleanup_server
         ACTIVE_SERVER_KEY=""
         if [ "$attempt" -eq 1 ]; then
-            log "  retrying failed unit with a fresh server (gpu_slot=$gpu_slot rc=$client_rc)"
+            # SKT client deaths cluster in node-time-correlated windows; a
+            # short delay before the retry avoids re-entering the same window.
+            log "  retrying failed unit with a fresh server (gpu_slot=$gpu_slot rc=$client_rc, delay=${DEXJOCO_UNIT_RETRY_DELAY_SECONDS:-60}s)"
+            sleep "${DEXJOCO_UNIT_RETRY_DELAY_SECONDS:-60}"
             continue
         fi
         log "ERROR: eval unit failed twice (task=${CUR_TASK_TAG:-$DEXJOCO_TASK} family=$FAMILY run=$RUN_IDX rc=$client_rc)"
@@ -678,7 +699,7 @@ for task_entry in "${TASKS[@]}"; do
 done
 
 EVAL_LAUNCHED="${#UNIT_FAMILY[@]}"
-EVAL_PARALLEL_WORKERS="$EVAL_GPU_COUNT"
+EVAL_PARALLEL_WORKERS=$((EVAL_GPU_COUNT * N_ENVS_PER_GPU))
 if [ "$EVAL_PARALLEL_WORKERS" -gt "$EVAL_LAUNCHED" ]; then
     EVAL_PARALLEL_WORKERS="$EVAL_LAUNCHED"
 fi
@@ -722,9 +743,9 @@ if [ "$EVAL_LAUNCHED" -gt 0 ]; then
         done
     fi
 
-    log "MuJoCo eval: $EVAL_LAUNCHED units across $EVAL_PARALLEL_WORKERS persistent GPU workers"
+    log "MuJoCo eval: $EVAL_LAUNCHED units across $EVAL_PARALLEL_WORKERS persistent workers ($EVAL_GPU_COUNT GPUs x $N_ENVS_PER_GPU envs/GPU)"
     for ((slot = 0; slot < EVAL_PARALLEL_WORKERS; slot++)); do
-        log "  gpu_slot=$slot queued_units=${WORKER_LOADS[$slot]}"
+        log "  worker_slot=$slot gpu=$((slot % EVAL_GPU_COUNT)) queued_units=${WORKER_LOADS[$slot]}"
         run_gpu_worker "$slot" "${WORKER_QUEUE_FILES[$slot]}" &
         WORKER_PIDS+=("$!")
     done
@@ -765,7 +786,7 @@ python3 - \
     "$EVAL_DIR" "$RESULTS_PATH" "$N_RUNS" "$N_EPISODES" "$EVAL_BASE_SEED" \
     "$EXP_NAME" "$OUTPUT_NAMESPACE" "$CLUSTER" "$GPU_INSTANCE" \
     "$LAST_CKPT" "$DEXJOCO_TASK" "$DEXJOCO_SERVER_TYPE" "${TRAIN_NOTE:-}" \
-    "$EVAL_PARALLEL_WORKERS" "$MULTI_TASK" "$TASKS_JSON" \
+    "$EVAL_PARALLEL_WORKERS" "$N_ENVS_PER_GPU" "$MULTI_TASK" "$TASKS_JSON" \
     "${EVAL_SETS[@]}" <<'PYEOF'
 import json, sys
 from pathlib import Path
@@ -773,10 +794,11 @@ from pathlib import Path
 (eval_dir, results_path, n_runs, n_episodes, base_seed,
  exp_name, output_namespace, cluster, gpu,
  checkpoint, task_name, server_type, note,
- server_workers, multi_task, tasks_json) = sys.argv[1:17]
-eval_sets = sys.argv[17:]
+ server_workers, num_envs_per_gpu, multi_task, tasks_json) = sys.argv[1:18]
+eval_sets = sys.argv[18:]
 n_runs = int(n_runs)
 server_workers = int(server_workers)
+num_envs_per_gpu = int(num_envs_per_gpu)
 multi_task = multi_task == '1'
 base = Path(eval_dir)
 with open(tasks_json) as f:
@@ -825,7 +847,7 @@ agg = {
     'n_episodes': int(n_episodes),
     'n_runs': n_runs,
     'server_workers': server_workers,
-    'num_envs_per_gpu': 1,
+    'num_envs_per_gpu': num_envs_per_gpu,
     'total_num_envs': server_workers,
     'eval_base_seed': int(base_seed),
 }

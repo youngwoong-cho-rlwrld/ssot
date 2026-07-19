@@ -13,6 +13,7 @@ import {
   type VideoListing,
 } from "@/lib/api";
 import { formatPct } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/loading-state";
 import { evalRunSlug, jobDetailHref } from "@/lib/job-links";
@@ -49,15 +50,18 @@ function videoBasename(episode: string): string {
   return i >= 0 ? episode.slice(i + 1) : episode;
 }
 
-// DexJoCo writes one directory per episode (episode_NN_success|failure[_reason])
-// holding one mp4 per camera; Isaac writes flat videos/ep*.mp4. Group cameras
-// of one episode together; Isaac videos land in the ungrouped bucket.
-const EPISODE_DIR_RE = /^episode_(\d+)_(success|failure)(?:_(.+))?$/;
+// DexJoCo writes one directory per episode (episode_NN_success|failure[_reason],
+// episode_NN_temp while in flight) holding one mp4 per camera; Isaac writes
+// flat videos/ep*.mp4. Group cameras of one episode together; Isaac videos
+// land in the ungrouped bucket.
+const EPISODE_DIR_RE = /^episode_(\d+)_(success|failure|temp)(?:_(.+))?$/;
+
+type EpisodeOutcome = "success" | "failure" | "temp";
 
 type EpisodeGroup = {
   key: string; // episode dir relative to run_dir
   index: string;
-  outcome: "success" | "failure";
+  outcome: EpisodeOutcome;
   reason: string | null;
   videos: VideoFile[];
 };
@@ -82,7 +86,7 @@ function groupEpisodes(videos: VideoFile[]): {
       g = {
         key,
         index: m[1],
-        outcome: m[2] as "success" | "failure",
+        outcome: m[2] as EpisodeOutcome,
         reason: m[3] ? m[3].replace(/_/g, " ") : null,
         videos: [],
       };
@@ -138,18 +142,12 @@ function buildSections(
   return sections;
 }
 
-function OutcomeBadge({ outcome }: { outcome: "success" | "failure" }) {
-  return (
-    <span
-      className={
-        outcome === "success"
-          ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-          : "rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-400"
-      }
-    >
-      {outcome}
-    </span>
-  );
+function OutcomeBadge({ outcome }: { outcome: EpisodeOutcome }) {
+  const variant =
+    outcome === "success" ? "success"
+    : outcome === "failure" ? "danger"
+    : "warning";
+  return <Badge variant={variant}>{outcome === "temp" ? "in progress" : outcome}</Badge>;
 }
 
 function VideoTile({
@@ -204,10 +202,14 @@ function RunCard({
   }
 
   const { episodes, flat } = groupEpisodes(section.videos);
+  // In-flight episode_*_temp videos are unplayable half-written mp4s — count
+  // them in the label but don't render their tiles.
+  const doneEpisodes = episodes.filter((ep) => ep.outcome !== "temp");
+  const inFlight = episodes.length - doneEpisodes.length;
   const countLabel =
     episodes.length > 0
-      ? `${episodes.length} episodes · ${section.videos.length} videos`
-      : `${section.videos.length} episodes`;
+      ? `${doneEpisodes.length} complete${inFlight ? ` / ${inFlight} in progress` : ""}`
+      : `${section.videos.length} videos`;
 
   return (
     <Card
@@ -262,7 +264,7 @@ function RunCard({
               ))}
             </div>
           )}
-          {episodes.map((ep) => (
+          {doneEpisodes.map((ep) => (
             <div key={ep.key} className="mt-4 first:mt-0">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-mono">episode {ep.index}</span>

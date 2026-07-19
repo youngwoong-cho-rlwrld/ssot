@@ -17,9 +17,12 @@ Multi-embodiment mapping (a 44-D multitask model served for a single-arm task,
 This mirrors the dataset's single_to_dual padding (see dexjoco/DEXJOCO_INTEGRATION.md).
 
 The model is built with the GAM repo's ``load_stage1_policy`` (run with
-PYTHONPATH=$GAM_DIR/src). Each request is stateless: the rollout closure's
-episode history is reset and one model step (== chunk_size env actions) is
-returned, matching the GR00T server's per-call action chunk.
+PYTHONPATH=$GAM_DIR/src). One model step (== chunk_size env actions) is
+returned per request, matching the GR00T server's per-call action chunk.
+Unlike the GR00T server, GAM is an autoregressive world model trained with
+multi-step history (H 1..7) and past-action conditioning, so the server keeps
+the rollout closure's episode state ACROSS requests (committing one history
+anchor per request) and resets it only at detected episode boundaries.
 
 The websocket/msgpack/healthz/worker-thread protocol is copied verbatim from the
 GR00T server so the harness client and eval_body_dexjoco.sh need no changes.
@@ -128,11 +131,49 @@ class GamDexJoCoPolicy:
         )
         # One model step per call == chunk_size env actions == the GR00T-style
         # action chunk; the harness executes the whole chunk open-loop.
+        # active_action_horizon=1 + rollout_decode_horizon=1 (above) stay: they
+        # control only the AR decode/execute length (eval_libero_unified.py
+        # :3139-3149), which is exactly one model step per request here. The
+        # history window is governed separately by stage1_history_horizon.
         self.policy.active_action_horizon = 1
+
+        # --- Episode state across requests ---
+        # The closure accumulates history only via its commit protocol: a bare
+        # policy() call stages pending_history but never commits it, so every
+        # call would see prev_count=0 / H_eff=1 (eval_libero_unified.py:2995,
+        # :3018, :3454). We commit one anchor per request and reset only at
+        # episode boundaries, restoring the trained multi-step regime.
+        self._last_state: np.ndarray | None = None      # boundary detection
+        self._prev_returned_chunk: np.ndarray | None = None  # executed-action feedback
+        # Measured on bimanual_microwave_cook probes (job 162856, 2026-07-19):
+        # in-episode consecutive-request deltas reach ~2.5 during early-episode
+        # fast motion (typical 0.02-0.9), while a true env reset jumps 5.6-6.3.
+        # 3.5 sits between the observed in-episode max and boundary min with
+        # ~1.6x margin each way. A missed boundary contaminates at most the
+        # history horizon (7 commits); a spurious reset degrades one step to
+        # the old memoryless behavior.
+        self._reset_state_l2_threshold = float(
+            os.environ.get("GAM_SERVER_RESET_STATE_L2", "3.5")
+        )
+        self.policy.reset_episode()
+        # Delta-action checkpoints (branch dexjoco-delta-actions, stats key
+        # *_delta): the model outputs observation-anchored deltas
+        # delta_k = a_{t+k}^abs - p44(t). Reconstruct absolute targets by
+        # adding the 44-dim proprio projection of the request's own state
+        # (quat wxyz -> rotvec per arm inside dexjoco_dual_proprio_to_p44).
+        # Past-action feedback stays in DELTA space — that is the action
+        # space training saw.
+        stats_key = str(self.info.get("action_stats_key") or "")
+        self._delta_mode = stats_key.endswith("_delta")
+        self._proprio_to_p44 = None
+        if self._delta_mode:
+            from robot.data.dexjoco_lerobot import dexjoco_dual_proprio_to_p44
+            self._proprio_to_p44 = dexjoco_dual_proprio_to_p44
         logger.info(
-            "GAM policy loaded from %s (model_n_dims=%d proprio_dim=%d d_out=%d chunk_size=%s stats_key=%s)",
+            "GAM policy loaded from %s (model_n_dims=%d proprio_dim=%d d_out=%d chunk_size=%s stats_key=%s delta_mode=%s)",
             ckpt_file, self.model_n_dims, self.proprio_dim, self.d_out,
             self.info.get("chunk_size"), self.info.get("action_stats_key"),
+            self._delta_mode,
         )
 
     def _prep_state(self, state) -> np.ndarray:
@@ -157,14 +198,69 @@ class GamDexJoCoPolicy:
             "front": np.asarray(obs["base"], dtype=np.uint8),
             "state": self._prep_state(obs["state"]),
         }
-        # Stateless: clear rollout history so every call is a fresh H_eff=1 step.
-        self.policy.reset_episode()
+
+        # Episode boundary detection. The DexJoCo client keeps ONE websocket
+        # for all episodes and sends no episode index or reset flag
+        # (eval_dexjoco_openpi.py:594-607; get_obs() -> base/wrist/state/prompt
+        # only), and the prompt is constant across episodes of a task — the
+        # only usable boundary signal is the proprio jump to the home pose.
+        cur_state = closure_obs["state"]
+        delta = (
+            float(np.linalg.norm(cur_state - self._last_state))
+            if self._last_state is not None
+            else float("inf")
+        )
+        self._req_count = getattr(self, "_req_count", 0) + 1
+        if delta > self._reset_state_l2_threshold:
+            self.policy.reset_episode()  # also clears the KV/shallow caches
+            self._prev_returned_chunk = None
+            self._commit_count = 0
+            logger.info(
+                "episode boundary: req=%d state_l2=%.3f (threshold %.3f)",
+                self._req_count, delta, self._reset_state_l2_threshold,
+            )
+        elif self._req_count % 20 == 0:
+            logger.info(
+                "in-episode: req=%d state_l2=%.3f commits=%d",
+                self._req_count, delta, getattr(self, "_commit_count", 0),
+            )
+        self._last_state = cur_state
+
+        # Commit the PREVIOUS request's staged observation as one history
+        # anchor, feeding back the chunk the client executed open-loop.
+        # override_pending_action_chunk expects raw [K, model_n_dims];
+        # commit_observation for a GAM model must be called with exactly 1
+        # (model steps, not env actions) — anything else wipes history
+        # (eval_libero_unified.py:4020, :4040-4049, reference loop :5553-5575).
+        if self._prev_returned_chunk is not None:
+            self.policy.override_pending_action_chunk(
+                torch.from_numpy(self._prev_returned_chunk)
+            )
+            self.policy.commit_observation(1)
+            self._commit_count = getattr(self, "_commit_count", 0) + 1
+
         with torch.no_grad():
             act = self.policy(closure_obs, prompt)
-        act = np.asarray(act.reshape(-1, self.model_n_dims).float().cpu().numpy(), dtype=np.float32)
-        horizon = int(self.info.get("chunk_size") or act.shape[0])
-        act = act[:horizon, : self.d_out]  # one chunk; slice dual layout -> single-arm block when needed
-        return {"actions": np.ascontiguousarray(act, dtype=np.float32)}
+        act_full = np.asarray(
+            act.reshape(-1, self.model_n_dims).float().cpu().numpy(), dtype=np.float32
+        )
+        horizon = int(self.info.get("chunk_size") or act_full.shape[0])
+        act_full = np.ascontiguousarray(act_full[:horizon], dtype=np.float32)
+        # Stage the full-dim raw chunk as next request's executed past action.
+        # The client replans after ~replan_ratio*chunk_size of it, but the
+        # trained commit stride is one model step regardless
+        # (eval_libero_unified.py:3459), so feeding the full chunk is the
+        # closest server-side approximation.
+        self._prev_returned_chunk = act_full
+        out = act_full[:, : self.d_out]  # slice dual layout -> single-arm block when needed
+        if self._delta_mode:
+            # Anchor is the CURRENT request's raw 46-dim state (pre-padding),
+            # matching the loader's per-chunk observation-frame anchoring.
+            p44 = self._proprio_to_p44(
+                np.asarray(obs["state"], dtype=np.float32).reshape(-1)
+            ).astype(np.float32)
+            out = out + p44[None, : out.shape[1]]
+        return {"actions": np.ascontiguousarray(out, dtype=np.float32)}
 
 
 class WebsocketPolicyServer:
