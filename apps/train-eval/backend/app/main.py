@@ -11,7 +11,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -41,7 +40,6 @@ from . import (
     user_config,
     variant_values,
     variants,
-    videos,
     wandb_auth,
 )
 from .paths import CLUSTER_STAGING_REL
@@ -388,14 +386,6 @@ async def get_variants():
     return {"variants": variants.list_variants()}
 
 
-# Declared before /api/variants/{name} so the literal path wins over the
-# param route. Enriches the plain name list with the MODEL_ID + train dataset
-# facets the experiments page filters on, without a request per variant.
-@app.get("/api/variants/summaries")
-async def get_variant_summaries():
-    return {"summaries": await variants.list_variant_summaries()}
-
-
 @app.get("/api/variants/{name}")
 async def get_variant(name: str):
     try:
@@ -406,13 +396,10 @@ async def get_variant(name: str):
     # UI doesn't re-derive it from MODEL_ID string heuristics — that heuristic
     # silently missed dexjoco-* ids and hid the action-horizon editor for them.
     try:
-        model = training_models.resolve_training_model(v)
-        family = model.family
-        harness = model.harness
+        family = training_models.resolve_training_model(v).family
     except Exception:
         family = None
-        harness = None
-    return {**v.model_dump(), "model_family": family, "harness": harness}
+    return {**v.model_dump(), "model_family": family}
 
 
 @app.get("/api/variants/{name}/files", response_model=variants.VariantFiles)
@@ -600,8 +587,7 @@ async def post_submit_config_preview(req: submit.SubmitRequest):
             except ValueError as e:
                 model_repo_error = str(e)
         else:
-            if not node:
-                node = mlxp_config.get_settings().default_node
+            node = node or ""
             try:
                 model_repo_path = mlxp_submit.mlxp_training_repo_path(model)
             except ValueError as e:
@@ -877,91 +863,6 @@ async def get_job_eval_runs(cluster: str, job_id: str):
         raise HTTPException(404, str(e))
     except RuntimeError as e:
         raise HTTPException(500, str(e))
-
-
-@app.get("/api/jobs/{cluster}/{job_id}/videos", response_model=videos.VideoListing)
-async def get_job_videos(cluster: str, job_id: str):
-    try:
-        return await videos.list_videos(cluster, job_id)
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
-    except RuntimeError as e:
-        raise HTTPException(500, str(e))
-
-
-@app.get("/api/jobs/{cluster}/{job_id}/videos/stream")
-async def stream_job_video(request: Request, cluster: str, job_id: str, path: str):
-    if cluster == "mlxp":
-        raise HTTPException(501, "video streaming is not supported for mlxp jobs")
-    try:
-        eval_dir, _harness = await videos.resolve_eval_context(cluster, job_id)
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
-    if not eval_dir:
-        raise HTTPException(404, "job has no eval dir")
-    try:
-        abs_path = videos.resolve_video_path(eval_dir, path)
-    except videos.VideoPathError as e:
-        raise HTTPException(400, str(e))
-
-    size = await videos.remote_file_size(cluster, abs_path)
-    if size is None:
-        raise HTTPException(404, "video not found")
-
-    # no-transform: the Next proxy gzips proxied responses when the browser
-    # advertises Accept-Encoding, which would buffer/mangle the mp4 byte stream.
-    headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-transform"}
-    range_header = request.headers.get("range") or request.headers.get("Range")
-    start, end = _parse_range(range_header, size)
-    if start is None:
-        return StreamingResponse(
-            videos.stream_remote_range(cluster, abs_path, 0, None),
-            media_type="video/mp4",
-            headers={**headers, "Content-Length": str(size)},
-        )
-    length = end - start + 1
-    return StreamingResponse(
-        videos.stream_remote_range(cluster, abs_path, start, length),
-        status_code=206,
-        media_type="video/mp4",
-        headers={
-            **headers,
-            "Content-Range": f"bytes {start}-{end}/{size}",
-            "Content-Length": str(length),
-        },
-    )
-
-
-def _parse_range(range_header: str | None, size: int) -> tuple[int | None, int | None]:
-    """Parse a single-range `bytes=` header into inclusive (start, end).
-
-    Returns (None, None) when there is no usable Range header (caller serves the
-    whole file). Clamps to the file size; ignores malformed/multi-range values.
-    """
-    if not range_header or not range_header.startswith("bytes=") or size == 0:
-        return None, None
-    spec = range_header[len("bytes="):].split(",", 1)[0].strip()
-    if "-" not in spec:
-        return None, None
-    lo, _, hi = spec.partition("-")
-    try:
-        if lo == "":
-            # suffix range: last N bytes
-            n = int(hi)
-            if n <= 0:
-                return None, None
-            start = max(0, size - n)
-            return start, size - 1
-        start = int(lo)
-        end = int(hi) if hi else size - 1
-    except ValueError:
-        return None, None
-    if start > size - 1:
-        return None, None
-    end = min(end, size - 1)
-    if end < start:
-        return None, None
-    return start, end
 
 
 @app.post("/api/jobs/{cluster}/{job_id}/resume", response_model=submit.SubmitResponse)

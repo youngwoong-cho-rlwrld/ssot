@@ -497,7 +497,7 @@ async def _mlxp_git_run_with_pod(cmd: str, timeout: float) -> tuple[int, str, st
     while pod creation and logs still work. A short-lived pod gives the submit
     preflight the same filesystem view without depending on exec.
     """
-    from .mlxp_config import get_settings
+    from .mlxp_config import get_settings, labels
 
     settings = get_settings()
     pod_name = f"tew-git-{uuid.uuid4().hex[:10]}"
@@ -552,10 +552,7 @@ async def _mlxp_git_run_with_pod(cmd: str, timeout: float) -> tuple[int, str, st
                 "mlx.navercorp.com/zone": settings.zone,
                 "sidecar.istio.io/inject": "false",
             },
-            "labels": {
-                "owner": settings.owner_label,
-                "tool": settings.tool_label,
-            },
+            "labels": labels(settings),
         },
         "spec": {
             "restartPolicy": "Never",
@@ -879,32 +876,6 @@ def _filter_tasks_by_short(config_text: str, selected_shorts: list[str]) -> str:
     return _set_array(config_text, "TASKS", kept)
 
 
-def _set_single_task_name(config_text: str, task_name: str) -> str:
-    """Rewrite the middle (task_name) field of the ``__single__`` sentinel TASKS
-    row to ``task_name``, keeping the ``__single__`` short and the config's
-    instruction. Single-task variants carry exactly one row
-    ``__single__|task_name|instruction``; the submit-time task picker changes
-    only which DexJoCo task runs. No-op when TASKS is absent or carries no
-    ``__single__`` row (multi-task variants ignore the scalar override)."""
-    m = re.search(r"^TASKS=\(.*?^\)\s*$", config_text, flags=re.MULTILINE | re.DOTALL)
-    if not m:
-        return config_text
-    entries = re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(0))
-    rewritten: list[str] = []
-    changed = False
-    for entry in entries:
-        parts = entry.split("|", 2)
-        if parts[0] == "__single__":
-            instruction = parts[2] if len(parts) == 3 else ""
-            rewritten.append(f"__single__|{task_name}|{instruction}")
-            changed = True
-        else:
-            rewritten.append(entry)
-    if not changed:
-        return config_text
-    return _set_array(config_text, "TASKS", rewritten)
-
-
 def _apply_submission_config_overrides(
     config_text: str,
     *,
@@ -950,10 +921,6 @@ def render_training_config_snapshot(
         dataset_override=dataset_override,
         train_note=train_note,
     )
-    # The body scripts resolve MODEL_FAMILY (n1.5/n1.6/gam) to branch their
-    # train/eval logic. Configs no longer carry MODEL_VERSION, so bake the
-    # registry-resolved family into the submitted snapshot the shell sources.
-    text = set_scalar(text, "MODEL_FAMILY", model)
 
     text = set_scalar(text, "TRAIN_NUM_GPUS", train_num_gpus)
     text = set_scalar(text, "MAX_STEPS", train_max_steps)
@@ -1044,11 +1011,8 @@ def render_eval_config_preview(
         train_note=train_note,
         data_dir=data_dir,
     )
-    # The eval body resolves MODEL_FAMILY to branch its logic; configs no longer
-    # carry MODEL_VERSION, so bake the registry-resolved family into the snapshot.
-    text = set_scalar(text, "MODEL_FAMILY", model)
     if dexjoco_task is not None and dexjoco_task.strip():
-        text = _set_single_task_name(text, dexjoco_task.strip())
+        text = set_scalar(text, "DEXJOCO_TASK", dexjoco_task.strip())
     if not family_derives_per_gpu_batch_size(model):
         text = remove_scalar(text, "TRAIN_BATCH_SIZE")
     if train_git_commit is not None:
