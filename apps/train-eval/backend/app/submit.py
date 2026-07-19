@@ -30,7 +30,7 @@ from .dexjoco_rollout import rollout_for_variant
 from .eval_harness import harness_for
 from .job_identity import comment_field_fragment
 from .output_namespace import make_output_namespace, validate_output_namespace
-from .partitions import is_background_partition
+from .partitions import is_background_partition, partition_max_time, walltime_seconds
 from .paths import CLUSTER_STAGING_REL, CONFIGS_DIR, LIB_DIR
 from .resource_presets import slurm_resources_for
 from .ssh import rsync_to, ssh_run
@@ -669,6 +669,19 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
     training_repo = slurm_training_repo_path(cluster.vars, model)
 
     partition = req.partition or cluster.vars["PARTITION"]
+
+    # Adhere to the scheduler's own limit: clamp the requested walltime to the
+    # partition's MaxTime so a submission never asks for more than slurm
+    # allows (e.g. 48h TRAIN_WALLTIME on a 3h debug partition). Lookup is
+    # best-effort; on failure the configured walltime passes through and
+    # slurm remains the final authority.
+    partition_cap = await partition_max_time(cluster.ssh_alias, partition)
+    if partition_cap:
+        requested_secs = walltime_seconds(walltime)
+        cap_secs = walltime_seconds(partition_cap)
+        if requested_secs is not None and cap_secs is not None and requested_secs > cap_secs:
+            walltime = partition_cap
+
     sbatch_flags: list[str] = []
     if is_background_partition(partition):
         sbatch_flags.append("--requeue")

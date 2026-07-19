@@ -68,7 +68,7 @@ class DexjocoRolloutContractTests(unittest.TestCase):
 
     def test_all_dexjoco_configs_have_compatibility_rollout_defaults(self):
         configs = dexjoco_config_paths()
-        self.assertEqual(len(configs), 30)
+        self.assertEqual(len(configs), 32)
 
         for path in configs:
             variant = asyncio.run(load_variant(path.parent.name))
