@@ -103,6 +103,26 @@ app.get('/', (_req, res) => {
   res.type('html').send(portalHtml);
 });
 
+// Service-worker exorcism: a previous app on this origin/port (e.g. a chat
+// app) may have registered a service worker that keeps rendering its cached
+// UI whenever the gateway is down. Browsers re-fetch the SW script on
+// navigation; serving a self-unregistering worker at the common script paths
+// permanently evicts such ghosts.
+const SW_KILLER = `self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    self.registration.unregister()
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((clients) => clients.forEach((c) => c.navigate(c.url)))
+  );
+});
+`;
+for (const swPath of ['/sw.js', '/service-worker.js', '/serviceworker.js']) {
+  app.get(swPath, (_req, res) => {
+    res.type('application/javascript').send(SW_KILLER);
+  });
+}
+
 app.get('/healthz', (_req, res) => {
   res.json({ status: 'ok', apps: config.apps.map((a) => a.id) });
 });
