@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sortSheetRows } from "./sheetView.ts";
+import { buildAgentRowsContext, sortSheetRows } from "./sheetView.ts";
 
 function row({ id, group = "main", score = null, variant = id }) {
   return {
@@ -66,4 +66,28 @@ test("distinguishes a real zero token count from a missing value", () => {
     sortSheetRows([missing, one, zero], rules).map(({ id }) => id),
     ["zero", "one", "missing"],
   );
+});
+
+test("deduplicates agent rows and stores only non-empty metric displays", () => {
+  const first = {
+    ...row({ id: "first" }),
+    metrics: {
+      "task::shown": { display: "50.00% ± 1.00%", value: 0.5 },
+      "task::blank": { display: "", value: null },
+    },
+  };
+  const second = row({ id: "second" });
+  const columns = [
+    { id: "task::shown", label: "Shown", taskKey: "task", evalSet: "shown" },
+    { id: "task::blank", label: "Blank", taskKey: "task", evalSet: "blank" },
+  ];
+
+  const context = buildAgentRowsContext([first], [first, second], columns);
+
+  assert.deepEqual(context.rowIdsInCurrentOrder, ["first"]);
+  assert.deepEqual(context.allRowIdsInCurrentOrder, ["first", "second"]);
+  assert.equal(context.rows.length, 2);
+  assert.deepEqual(context.rows[0].metrics, {
+    "task::shown": "50.00% ± 1.00%",
+  });
 });

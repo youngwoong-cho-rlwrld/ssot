@@ -154,6 +154,11 @@ export function buildChartRows(
 }
 
 export function buildAgentRowContext(row: SheetRow, performanceColumns: PerformanceColumn[]) {
+  const metrics: Record<string, string> = {};
+  for (const column of performanceColumns) {
+    const display = row.metrics[column.id]?.display ?? "";
+    if (display) metrics[column.id] = display;
+  }
   return {
     id: row.id,
     experiment: row.experiment,
@@ -164,13 +169,25 @@ export function buildAgentRowContext(row: SheetRow, performanceColumns: Performa
     stateEncoder: row.stateEncoder,
     actionEncoder: row.actionEncoder,
     totalAverage: row.totalAverage,
-    metrics: performanceColumns.map((column) => ({
-      columnId: column.id,
-      label: column.label,
-      taskKey: column.taskKey,
-      evalSet: column.evalSet,
-      display: row.metrics[column.id]?.display ?? "",
-    })),
+    metrics,
+  };
+}
+
+export function buildAgentRowsContext(
+  rowsInCurrentOrder: SheetRow[],
+  allRowsInCurrentOrder: SheetRow[],
+  performanceColumns: PerformanceColumn[],
+) {
+  const rows = new Map<string, ReturnType<typeof buildAgentRowContext>>();
+  for (const row of [...rowsInCurrentOrder, ...allRowsInCurrentOrder]) {
+    if (!rows.has(row.id)) {
+      rows.set(row.id, buildAgentRowContext(row, performanceColumns));
+    }
+  }
+  return {
+    rows: [...rows.values()],
+    rowIdsInCurrentOrder: rowsInCurrentOrder.map((row) => row.id),
+    allRowIdsInCurrentOrder: allRowsInCurrentOrder.map((row) => row.id),
   };
 }
 

@@ -12,6 +12,7 @@ import type { Field } from "@enmight/types/apiTypes";
 const MODEL_STORAGE_KEY = "results-sheet-openclaw-model";
 const STATUS_TIMEOUT_MS = 20_000;
 const MESSAGE_TIMEOUT_MS = 150_000;
+const RESULTS_SESSION_KEY = /^agent:main:ssot-results-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type UseResultsAgentProps = {
   enabled: boolean;
@@ -134,6 +135,10 @@ export function useResultsAgent({ enabled, context, columns, applyActions }: Use
           : `${response.status} ${response.statusText}`);
       }
 
+      if (typeof payload.sessionKey === "string" && RESULTS_SESSION_KEY.test(payload.sessionKey)) {
+        sessionKeyRef.current = payload.sessionKey;
+      }
+
       const validation = validateAgentEnvelope(payload, columns);
       if (!validation.envelope) {
         appendMessage({
@@ -150,6 +155,7 @@ export function useResultsAgent({ enabled, context, columns, applyActions }: Use
       setStatus("connected");
       setStatusDetail("Connected to OpenClaw.");
     } catch (error) {
+      sessionKeyRef.current = null;
       const messageText = controller.signal.aborted
         ? "OpenClaw request timed out."
         : errorMessage(error);
@@ -168,6 +174,7 @@ export function useResultsAgent({ enabled, context, columns, applyActions }: Use
 
   const setSelectedModel = useCallback((model: string) => {
     if (!models.some((candidate) => candidate.key === model && candidate.available)) return;
+    sessionKeyRef.current = null;
     setSelectedModelState(model);
     localStorage.setItem(MODEL_STORAGE_KEY, model);
   }, [models]);

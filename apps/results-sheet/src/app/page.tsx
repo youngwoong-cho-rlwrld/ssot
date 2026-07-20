@@ -6,7 +6,7 @@ import { buildSheetModel } from "@/lib/results";
 import { DataTable } from "@/components/DataDisplay/DataTable/DataTable";
 import { ResultsChartPanel } from "@/components/ResultsChartPanel";
 import {
-  buildAgentRowContext,
+  buildAgentRowsContext,
   buildChartRows as createChartRows,
   buildChartTasks as createChartTasks,
   buildTableHeaders,
@@ -138,24 +138,26 @@ export default function Page() {
     (row: RowType) => handleResultRowToggle(String(row.id)),
     [handleResultRowToggle],
   );
-  const agentContext = useMemo(() => ({
-    columns: agentColumnContext(headers),
-    visibleColumnIds: effectiveVisibleColumnIds,
-    sortByItems,
-    appliedFilters,
-    colorStylerItems,
-    chartPanelOpen,
-    chartType,
-    chartGroupBy,
-    chartGroupOverrides,
-    rowCount: tableRows.length,
-    filteredRowCount: chartRows.length,
-    experimentsInCurrentOrder: chartRows.slice(0, 120).map((row) => row.experiment),
-    rowsInCurrentOrder: chartRows.slice(0, 120).map((row) => buildAgentRowContext(row, model.performanceColumns)),
-    allFilteredRowsIncluded: chartRows.length <= 120,
-    allRowsInCurrentOrder: sortedRows.slice(0, 120).map((row) => buildAgentRowContext(row, model.performanceColumns)),
-    allRowsIncluded: sortedRows.length <= 120,
-  }), [
+  const agentContext = useMemo(() => {
+    const currentRows = chartRows.slice(0, 120);
+    const allRows = sortedRows.slice(0, 120);
+    return {
+      columns: agentColumnContext(headers),
+      visibleColumnIds: effectiveVisibleColumnIds,
+      sortByItems,
+      appliedFilters,
+      colorStylerItems,
+      chartPanelOpen,
+      chartType,
+      chartGroupBy,
+      chartGroupOverrides,
+      rowCount: tableRows.length,
+      filteredRowCount: chartRows.length,
+      ...buildAgentRowsContext(currentRows, allRows, model.performanceColumns),
+      allFilteredRowsIncluded: chartRows.length <= 120,
+      allRowsIncluded: sortedRows.length <= 120,
+    };
+  }, [
     appliedFilters,
     chartGroupBy,
     chartGroupOverrides,

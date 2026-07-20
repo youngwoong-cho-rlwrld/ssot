@@ -11,7 +11,7 @@ import {
 } from "./agentContract.mjs";
 
 const CONTEXT_DESCRIPTION =
-  "The context contains columns, visibleColumnIds, sortByItems, appliedFilters, colorStylerItems, chartPanelOpen, chartType, chartGroupBy, chartGroupOverrides, row counts, rowsInCurrentOrder, and allRowsInCurrentOrder.";
+  "The context contains columns, visibleColumnIds, sortByItems, appliedFilters, colorStylerItems, chart state, row counts, a deduplicated rows array, rowIdsInCurrentOrder, and allRowIdsInCurrentOrder. Each row.metrics object maps metric column IDs to displayed values; a missing metric is blank.";
 
 /**
  * @param {{
@@ -45,8 +45,8 @@ export function buildResultsAgentPrompt({ requestId, message, contextFile, conte
     "- Return exactly one JSON object and no markdown.",
     "- Do not include code fences.",
     "- Do not propose actions outside the schema.",
-    "- Answer data-insight questions from context.rowsInCurrentOrder; do not invent values that are not present in the context.",
-    "- Use context.rowsInCurrentOrder for the current filtered view. If the user asks to clear filters or reason over all rows, use context.allRowsInCurrentOrder.",
+    "- Answer data-insight questions from context.rows; do not invent values that are not present in the context.",
+    "- Resolve the current filtered view by selecting context.rows whose IDs appear in context.rowIdsInCurrentOrder. If the user asks to clear filters or reason over all rows, use context.allRowIdsInCurrentOrder instead.",
     "- Result metric columns are text. Metric displays use percent mean/std text; infer mean and std from that text yourself.",
     "- For filters or color-rule filters on result metric columns or Total average, do not use GT, GTE, LT, or LTE. Compute matching displayed strings from context and use EQUALS, IN, or CONTAINS.",
     "- For comparisons such as above baseline or greater than a threshold, parse the displayed text yourself, choose the matching displayed strings, and emit text filters such as IN over exact display strings.",

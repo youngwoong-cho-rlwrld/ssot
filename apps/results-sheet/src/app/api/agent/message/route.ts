@@ -3,11 +3,16 @@ export const runtime = "nodejs";
 
 import { buildResultsAgentPrompt } from "../../../../lib/agentPrompt.mjs";
 import {
+  removeRequestContext,
+  writeRequestContext,
+} from "../../../../lib/agentContext.mjs";
+import {
   fetchOpenClawJson,
   openClawApiUrl,
   OPENCLAW_CHAT_TIMEOUT_MS,
 } from "../../../../lib/openclawUpstream.ts";
 import { requireSsotUser } from "../../../../lib/ssotAuth.ts";
+import path from "node:path";
 
 const MAX_MESSAGE_BYTES = 32 * 1024;
 const MAX_CONTEXT_BYTES = 4 * 1024 * 1024;
@@ -33,34 +38,73 @@ export async function POST(request: Request) {
   const parsed = parseMessageRequest(input);
   if (typeof parsed === "string") return badRequest(parsed);
 
-  const prompt = buildResultsAgentPrompt({
-    requestId: `openclaw-${crypto.randomUUID()}`,
-    message: parsed.message,
-    context: parsed.context,
-  });
+  const requestId = `rsv-${Date.now()}-${crypto.randomUUID()}`;
+  const contextDirectory = resultsAgentContextDirectory();
+  let contextFile: string | null = null;
 
   try {
-    const payload = await fetchOpenClawJson<unknown>(
-      openClawApiUrl("/api/chat"),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: prompt,
-          session_key: parsed.sessionKey,
-          ...(parsed.model ? { model: parsed.model } : {}),
-        }),
-        signal: request.signal,
-      },
-      OPENCLAW_CHAT_TIMEOUT_MS,
-    );
-    return Response.json(agentEnvelope(payload));
+    contextFile = await writeRequestContext(contextDirectory, {
+      requestId,
+      source: "Results Sheet Viewer",
+      message: parsed.message,
+      context: parsed.context,
+    });
+    const prompt = buildResultsAgentPrompt({ requestId, message: parsed.message, contextFile });
+    let sessionKey = parsed.sessionKey;
+    let payload: unknown;
+    try {
+      payload = await sendOpenClawMessage(prompt, sessionKey, parsed.model, request.signal);
+    } catch (error) {
+      if (!isTranscriptCompactionFailure(error)) throw error;
+      sessionKey = `agent:main:ssot-results-${crypto.randomUUID()}`;
+      payload = await sendOpenClawMessage(prompt, sessionKey, parsed.model, request.signal);
+    }
+    return Response.json({ ...agentEnvelope(payload), sessionKey });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : String(error) },
       { status: 502 },
     );
+  } finally {
+    if (contextFile) {
+      try {
+        await removeRequestContext(contextDirectory, requestId, contextFile);
+      } catch (error) {
+        console.error(`Failed to remove Results agent context: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
+}
+
+function sendOpenClawMessage(
+  prompt: string,
+  sessionKey: string,
+  model: string | null,
+  signal: AbortSignal,
+) {
+  return fetchOpenClawJson<unknown>(
+    openClawApiUrl("/api/chat"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: prompt,
+        session_key: sessionKey,
+        ...(model ? { model } : {}),
+      }),
+      signal,
+    },
+    OPENCLAW_CHAT_TIMEOUT_MS,
+  );
+}
+
+function isTranscriptCompactionFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("transcript compaction failed");
+}
+
+function resultsAgentContextDirectory() {
+  return process.env.RESULTS_AGENT_CONTEXT_DIR ?? path.join(process.cwd(), ".agent-context");
 }
 
 function parseMessageRequest(input: unknown): MessageRequest | string {
