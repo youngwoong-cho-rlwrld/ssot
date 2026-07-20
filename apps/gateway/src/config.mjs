@@ -96,6 +96,24 @@ const apps = [
     ws: true,
     enabled: env('SSOT_SESSIONS_ENABLED', 'true') !== 'false',
   },
+  {
+    id: 'openclaw',
+    name: 'OpenClaw',
+    description: 'Watch the local OpenClaw agent, browse its sessions, and chat with it.',
+    basePath: env('SSOT_OPENCLAW_BASE_PATH', '/openclaw'),
+    mode: production ? 'static' : 'proxy',
+    origin: env('SSOT_OPENCLAW_WEB_DEV_ORIGIN', 'http://127.0.0.1:5175'),
+    staticDir: env(
+      'SSOT_OPENCLAW_DIST',
+      path.join(repoRoot, 'apps/openclaw/frontend/dist')
+    ),
+    api: {
+      origin: env('SSOT_OPENCLAW_API_ORIGIN', 'http://127.0.0.1:8790'),
+      prefix: '/api',
+    },
+    ws: true,
+    enabled: env('SSOT_OPENCLAW_ENABLED', 'true') !== 'false',
+  },
 ];
 
 // Optional JSON override file for anything above: { host, port, apps: { <id>:

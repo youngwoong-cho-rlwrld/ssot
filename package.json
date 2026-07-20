@@ -21,7 +21,8 @@
     "apps/results-sheet",
     "apps/urdf-viewer",
     "apps/train-eval/frontend",
-    "apps/session-viewer/frontend"
+    "apps/session-viewer/frontend",
+    "apps/openclaw/frontend"
   ],
   "nx": {
     "includedScripts": []

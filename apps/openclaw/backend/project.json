@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "@ssot/openclaw-api",
+  "projectType": "application",
+  "targets": {
+    "install": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv sync",
+        "cwd": "apps/openclaw/backend"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --host ${OPENCLAW_API_HOST:-127.0.0.1} --port ${OPENCLAW_API_PORT:-8790} --reload",
+        "cwd": "apps/openclaw/backend"
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --host ${OPENCLAW_API_HOST:-127.0.0.1} --port ${OPENCLAW_API_PORT:-8790}",
+        "cwd": "apps/openclaw/backend"
+      }
+    }
+  }
+}
