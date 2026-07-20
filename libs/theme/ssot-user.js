@@ -77,12 +77,16 @@ class SsotUser extends HTMLElement {
   _renderChip(user) {
     const a = document.createElement('a');
     a.href = this.settingsUrl;
-    a.title = user.email || user.username || 'Account';
+    a.title = user.id || user.email || user.username || 'Account';
     a.style.cssText = this._baseStyle();
 
     const avatar = this._avatar(user);
     const label = document.createElement('span');
-    label.textContent = user.username || (user.email ? user.email.split('@')[0] : 'Account');
+    const localId = user.id && !user.id.includes('@') ? user.id : '';
+    label.textContent =
+      localId ||
+      user.username ||
+      (user.id ? user.id.split('@')[0] : user.email ? user.email.split('@')[0] : 'Account');
     label.style.cssText = 'max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
 
     a.replaceChildren(avatar, label);
@@ -100,7 +104,8 @@ class SsotUser extends HTMLElement {
       return img;
     }
     // Colored initial fallback, hue derived from the identity string.
-    const seed = user.username || user.email || '?';
+    const localId = user.id && !user.id.includes('@') ? user.id : '';
+    const seed = localId || user.username || user.id || user.email || '?';
     const initial = (seed.trim()[0] || '?').toUpperCase();
     const hue = Array.from(seed).reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
     const badge = document.createElement('span');

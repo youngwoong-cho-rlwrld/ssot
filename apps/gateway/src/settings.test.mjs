@@ -7,7 +7,14 @@ import test, { after } from 'node:test';
 const dataDir = mkdtempSync(path.join(tmpdir(), 'ssot-settings-'));
 process.env.SSOT_DATA_DIR = dataDir;
 
-const { db, dbPath, getSettings, upsertUser } = await import('./db.mjs');
+const {
+  cloneUserSettings,
+  db,
+  dbPath,
+  getSettings,
+  setSettings,
+  upsertUser,
+} = await import('./db.mjs');
 const { default: express } = await import('express');
 const { DEFAULT_CLUSTER_ENVS, registerSettingsRoutes } = await import('./settings.mjs');
 
@@ -65,6 +72,31 @@ test('SQLite values start empty while built-in cluster keys are available', asyn
       assert.deepEqual(getSettings(user.id, 'train-eval'), {});
     });
   }
+});
+
+test('an explicit account clone replaces the target with every source setting', () => {
+  const source = upsertUser({ email: 'clone-source@example.com', name: 'source' });
+  const target = upsertUser({ email: 'admin', name: 'old-name' });
+  setSettings(source.id, 'profile', { username: 'source-user' });
+  setSettings(source.id, 'train-eval', {
+    wandb: { project: 'project', api_key: 'secret' },
+  });
+  setSettings(source.id, 'session-viewer', { codex_root: '/source/codex' });
+  setSettings(target.id, 'obsolete', { value: true });
+
+  const result = cloneUserSettings(source.email, target.email, 'admin');
+
+  assert.equal(result.user.email, 'admin');
+  assert.equal(result.user.name, 'admin');
+  assert.equal(result.settingsCount, 3);
+  assert.deepEqual(getSettings(target.id, 'profile'), { username: 'source-user' });
+  assert.deepEqual(getSettings(target.id, 'train-eval'), {
+    wandb: { project: 'project', api_key: 'secret' },
+  });
+  assert.deepEqual(getSettings(target.id, 'session-viewer'), {
+    codex_root: '/source/codex',
+  });
+  assert.deepEqual(getSettings(target.id, 'obsolete'), {});
 });
 
 test('a rejected W&B key is not persisted', async () => {

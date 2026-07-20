@@ -73,17 +73,16 @@ deployment knobs. Nx injects the root `.env` into all tasks. Highlights:
 
 The gateway owns sign-in and per-user settings for the whole suite.
 
-**Email sign-in.** Sign-in is no-password: `/auth/login` shows a single email
-field, and whoever enters an allowed email is signed in as that user (name
-defaults to the email local part). There is no password or external identity
-provider. Set `SSOT_ALLOWED_EMAIL_DOMAINS` (comma-separated) to restrict who
-may sign in; leaving it empty allows any email. `SSOT_PUBLIC_URL` marks the
-session cookie `Secure` when it is https, and `SSOT_SESSION_TTL_DAYS` sets the
-session lifetime. See the "auth / user management" block in `.env.example`.
+**Sign-in.** Sign-in is no-password: `/auth/login` accepts an email or a local
+account ID. Set `SSOT_ALLOWED_EMAIL_DOMAINS` (comma-separated) to restrict email
+sign-in; leaving it empty allows any email. Local IDs are denied unless they
+are listed in `SSOT_ALLOWED_USER_IDS`. `SSOT_PUBLIC_URL` marks the session
+cookie `Secure` when it is https, and `SSOT_SESSION_TTL_DAYS` sets the session
+lifetime. See the "auth / user management" block in `.env.example`.
 
-Because identity is trust-based (anyone who knows an allowed email can sign in
-as that person), run the gateway only on a trusted network and treat
-`SSOT_ALLOWED_EMAIL_DOMAINS` as the primary access gate.
+Because identity is trust-based (anyone who knows an allowed identifier can
+sign in as that person), run the gateway only on a trusted network and keep
+both identifier allowlists narrow.
 
 **Settings page** (`/settings`, gateway-served) lets a signed-in user edit:
 their username; the train-eval cluster environment settings, Weights & Biases,

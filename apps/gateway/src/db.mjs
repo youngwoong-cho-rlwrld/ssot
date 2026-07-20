@@ -73,6 +73,42 @@ export function getUserById(id) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 }
 
+// Replace a target account's settings with an exact, transactional copy of a
+// source account. This is an explicit administration operation; normal sign-in
+// still creates an empty account and never inherits another user's settings.
+export function cloneUserSettings(sourcePrincipal, targetPrincipal, targetName) {
+  const source = String(sourcePrincipal || '').trim().toLowerCase();
+  const target = String(targetPrincipal || '').trim().toLowerCase();
+  if (!source || !target) throw new Error('source and target principals are required');
+  if (source === target) throw new Error('source and target principals must differ');
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const sourceUser = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(source);
+    if (!sourceUser) throw new Error(`source account does not exist: ${source}`);
+
+    db.prepare(
+      `INSERT INTO users (email, name, picture, created_at)
+       VALUES (?, ?, NULL, ?)
+       ON CONFLICT(email) DO UPDATE SET name = excluded.name`
+    ).run(target, targetName ?? target, nowIso());
+    const targetUser = db.prepare('SELECT id FROM users WHERE email = ?').get(target);
+
+    db.prepare('DELETE FROM user_settings WHERE user_id = ?').run(targetUser.id);
+    const copied = db.prepare(
+      `INSERT INTO user_settings (user_id, namespace, key, value, updated_at)
+       SELECT ?, namespace, key, value, ?
+       FROM user_settings
+       WHERE user_id = ?`
+    ).run(targetUser.id, nowIso(), sourceUser.id);
+    db.exec('COMMIT');
+    return { user: getUserById(targetUser.id), settingsCount: Number(copied.changes) };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 // --- sessions ------------------------------------------------------------
 export function createSession(tokenHash, userId, ttlDays) {
   const created = new Date();

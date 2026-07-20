@@ -24,6 +24,10 @@ const authConfig = () => {
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
+    allowedUserIds: env('SSOT_ALLOWED_USER_IDS', '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
     ttlDays: Number(env('SSOT_SESSION_TTL_DAYS', '30')) || 30,
     secure: publicUrl.startsWith('https://'),
   };
@@ -35,10 +39,15 @@ const domainOf = (email) => (email.split('@')[1] || '').toLowerCase();
 // Deliberately permissive single-@ email shape check; domain allowlisting is
 // the real gate.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function domainAllowed(cfg, email) {
   if (cfg.allowedDomains.length === 0) return true;
   return cfg.allowedDomains.includes(domainOf(email));
+}
+
+function userIdAllowed(cfg, userId) {
+  return cfg.allowedUserIds.includes(userId);
 }
 
 // Look up the signed-in user for a request from its session cookie.
@@ -82,12 +91,13 @@ const escapeHtml = (s) =>
 
 function loginPage({ cfg, next, error, email }) {
   const domains = cfg.allowedDomains;
-  const hint =
-    domains.length === 0
-      ? ''
-      : `<p class="hint">Use your ${domains
-          .map((d) => '@' + escapeHtml(d))
-          .join(' or ')} email.</p>`;
+  const allowed = [
+    ...cfg.allowedUserIds.map((id) => escapeHtml(id)),
+    ...domains.map((domain) => '@' + escapeHtml(domain)),
+  ];
+  const hint = allowed.length
+    ? `<p class="hint">Use ${allowed.join(' or ')}.</p>`
+    : '';
   const err = error ? `<p class="err">${escapeHtml(error)}</p>` : '';
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
@@ -121,8 +131,8 @@ function loginPage({ cfg, next, error, email }) {
   ${err}
   <form method="POST" action="/auth/login">
     <input type="hidden" name="next" value="${escapeHtml(next)}" />
-    <label for="email">Email</label>
-    <input type="email" id="email" name="email" class="ssot-input" autocomplete="email" autofocus
+    <label for="identifier">Email or account ID</label>
+    <input type="text" id="identifier" name="identifier" class="ssot-input" autocomplete="username" autofocus
       required value="${escapeHtml(email || '')}" placeholder="you@example.com" />
     <button type="submit" class="ssot-btn ssot-btn-primary">Sign in</button>
   </form>
@@ -147,15 +157,20 @@ export function registerAuthRoutes(app) {
     const cfg = authConfig();
     const body = req.body || {};
     const next = safeNext(body.next);
-    const email = String(body.email || '').trim().toLowerCase();
+    // Keep accepting the former `email` field for API/form compatibility.
+    // The users.email column remains the canonical exact principal key even
+    // when the value is an allowlisted local account ID such as `admin`.
+    const email = String(body.identifier || body.email || '').trim().toLowerCase();
 
     const render = (error, status) =>
       res.status(status).type('html').send(loginPage({ cfg, next, error, email }));
 
-    if (!EMAIL_RE.test(email)) {
-      return render('Please enter a valid email address.', 400);
+    const isEmail = EMAIL_RE.test(email);
+    const isUserId = USER_ID_RE.test(email) && userIdAllowed(cfg, email);
+    if (!isEmail && !isUserId) {
+      return render('Please enter a valid email address or account ID.', 400);
     }
-    if (!domainAllowed(cfg, email)) {
+    if (isEmail && !domainAllowed(cfg, email)) {
       const allowed = cfg.allowedDomains.map((d) => '@' + d).join(' or ');
       return render(`That email is not allowed. Use your ${allowed} email.`, 403);
     }

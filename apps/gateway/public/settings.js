@@ -238,12 +238,12 @@
       fillSettings(s);
       void refreshWandbStatus();
 
-      // Account email comes from /api/auth/me since it is not in profile settings.
+      // Account identity comes from /api/auth/me since it is not profile settings.
       try {
         const me = await api('/api/auth/me');
         if (me.ok) {
           const { user } = await me.json();
-          $('acct-email').value = user.email || '';
+          $('acct-email').value = user.id || user.email || '';
         }
       } catch { /* ignore */ }
 

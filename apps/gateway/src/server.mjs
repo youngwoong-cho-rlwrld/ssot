@@ -88,6 +88,7 @@ app.get('/api/auth/me', (req, res) => {
   const profile = getSettings(user.id, 'profile');
   res.json({
     user: {
+      id: user.email,
       email: user.email,
       name: user.name || '',
       picture: user.picture || '',
@@ -127,13 +128,10 @@ registerSettingsRoutes(app, {
 });
 
 // --- settings page (gateway-served) --------------------------------------
-const settingsHtml = fs.readFileSync(
-  path.join(here, '..', 'public', 'settings.html'),
-  'utf8'
-);
+const settingsHtmlPath = path.join(here, '..', 'public', 'settings.html');
 app.get('/settings', (req, res) => {
   if (!req.ssotUser) return res.redirect('/auth/login?next=/settings');
-  res.type('html').send(settingsHtml);
+  res.sendFile(settingsHtmlPath);
 });
 
 app.get('/settings.js', (_req, res) => {
