@@ -145,7 +145,10 @@ test('built-in cluster keys are restored server-side and custom keys remain supp
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        clusters: [{ name: 'kakao', env: { SSH_ALIAS: 'host', CUSTOM_VALUE: 'yes' } }],
+        clusters: [{
+          name: 'kakao',
+          env: { SSH_ALIAS: 'host', CUSTOM_VALUE: 'yes', CUSTOM_EMPTY: '' },
+        }],
       }),
     });
     assert.equal(response.status, 200);
@@ -154,14 +157,18 @@ test('built-in cluster keys are restored server-side and custom keys remain supp
     assert.equal(kakao.env.CLUSTER, 'kakao');
     assert.equal(kakao.env.PARTITION, '');
     assert.equal(kakao.env.SSH_ALIAS, 'host');
+    assert.equal(kakao.env.GAM_DIR, '');
     assert.equal(kakao.env.CUSTOM_VALUE, 'yes');
+    assert.equal(kakao.env.CUSTOM_EMPTY, '');
     assert.ok(kakao.locked_keys.includes('PARTITION'));
     assert.ok(!kakao.locked_keys.includes('CUSTOM_VALUE'));
 
     const stored = getSettings(other.id, 'train-eval').clusters[0].env_text;
     assert.match(stored, /^CLUSTER=kakao$/m);
     assert.match(stored, /^PARTITION=$/m);
+    assert.match(stored, /^GAM_DIR=$/m);
     assert.match(stored, /^CUSTOM_VALUE=yes$/m);
+    assert.match(stored, /^CUSTOM_EMPTY=$/m);
   });
 });
 

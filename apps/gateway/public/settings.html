@@ -39,10 +39,21 @@
     .status { font-size: var(--ssot-text-xs); color: var(--ssot-text-faint); }
     .status.ok { color: var(--ssot-success); }
     .status.err { color: var(--ssot-danger); }
+    .load-state { margin-top: 12px; color: var(--ssot-text-soft); font-size: var(--ssot-text-sm); }
+    .load-state.err { color: var(--ssot-danger); }
+    .settings-loading section, .settings-load-failed section { display: none; }
     .cluster { padding: 14px 0; }
     .cluster + .cluster { border-top: 1px solid var(--ssot-border); }
     .cluster-head { display: flex; align-items: center; gap: 8px; }
     .cluster-head .ssot-input { flex: 1; font-weight: var(--ssot-weight-semibold); }
+    .te-savebar {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      margin-top: 12px;
+      padding: 8px 0;
+      background: var(--ssot-bg);
+    }
     .kv-head { font-size: var(--ssot-text-xs); font-weight: var(--ssot-weight-semibold); color: var(--ssot-text-faint); margin-top: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
     .add-btn { margin-top: 12px; }
     .del { flex: none; width: 32px; padding: 0; }
@@ -61,8 +72,9 @@
     <ssot-theme-toggle></ssot-theme-toggle>
     <ssot-user></ssot-user>
   </header>
-  <main>
+  <main id="settings-main" class="settings-loading">
     <h1>Settings</h1>
+    <p id="settings-load-state" class="load-state" role="status">Loading settings…</p>
 
     <!-- Account -->
     <section id="sec-account">
@@ -85,6 +97,10 @@
     <section id="sec-train-eval">
       <h2>Train / Eval</h2>
       <p class="sec-sub">Cluster environment settings, Weights &amp; Biases, and notifications used by the train-eval app.</p>
+      <div class="sec-foot te-savebar">
+        <button class="ssot-btn ssot-btn-primary" data-save="train-eval">Save</button>
+        <span class="status" data-status="train-eval"></span>
+      </div>
 
       <div id="te-clusters"></div>
       <button class="ssot-btn add-btn" id="te-add-cluster">+ Add cluster</button>
@@ -121,10 +137,6 @@
         <label class="check"><input type="checkbox" id="te-notify-cancelled" /> Cancelled</label>
       </div>
 
-      <div class="sec-foot">
-        <button class="ssot-btn ssot-btn-primary" data-save="train-eval">Save</button>
-        <span class="status" data-status="train-eval"></span>
-      </div>
     </section>
 
     <!-- Results Sheet -->
