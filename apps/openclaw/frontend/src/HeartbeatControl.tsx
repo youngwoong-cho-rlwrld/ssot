@@ -5,7 +5,6 @@ import type { HeartbeatResponse } from "./types";
 
 const PRESETS = ["15m", "30m", "1h", "2h"];
 const EVERY_RE = /^\d+[smhd]$/;
-const POLL_MS = 15_000;
 
 export function HeartbeatControl() {
   const [data, setData] = useState<HeartbeatResponse | null>(null);
@@ -30,17 +29,10 @@ export function HeartbeatControl() {
   }, []);
 
   useEffect(() => {
-    let controller = new AbortController();
-    const tick = () => {
-      controller.abort();
-      controller = new AbortController();
-      void load(controller.signal);
-    };
-    tick();
-    const id = window.setInterval(tick, POLL_MS);
+    const controller = new AbortController();
+    void load(controller.signal);
     return () => {
       controller.abort();
-      window.clearInterval(id);
     };
   }, [load]);
 

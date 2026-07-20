@@ -95,6 +95,16 @@ body {
   color: var(--accent);
 }
 
+.toolbar__cleanup {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+
+.cleanup-trigger {
+  white-space: nowrap;
+}
+
 /* Airbnb-style search bar: a pill that opens the filter panel. */
 .searchbar-wrap {
   position: relative;
@@ -673,6 +683,127 @@ body {
   box-shadow: 0 0 0 2px var(--ssot-ring);
 }
 
+.fp-apply:disabled,
+.fp-clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* -------------------------- Cleanup panel -------------------------- */
+
+.cleanup-panel {
+  right: 0;
+  left: auto;
+  width: min(380px, calc(100vw - 32px));
+  transform: none;
+  animation: cleanup-in 0.14s ease;
+}
+
+@keyframes cleanup-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cleanup-panel__body {
+  gap: 12px;
+}
+
+.cleanup-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cleanup-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--ssot-radius);
+  background: var(--panel-bg);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+
+.cleanup-option:hover,
+.cleanup-option--on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cleanup-option:focus-within {
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.cleanup-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.cleanup-option__copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cleanup-option__label {
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-semibold);
+  color: var(--ink);
+}
+
+.cleanup-option__description {
+  font-size: var(--ssot-text-xs);
+  color: var(--ink-soft);
+}
+
+.cleanup-option__count {
+  min-width: 30px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--ssot-surface-muted);
+  color: var(--ink-soft);
+  font-size: var(--ssot-text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.cleanup-panel__error {
+  padding: 8px 10px;
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-danger-soft);
+  color: var(--ssot-danger);
+  font-size: var(--ssot-text-sm);
+  line-height: 1.4;
+}
+
+.cleanup-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: var(--ssot-danger);
+  background: var(--ssot-danger);
+}
+
+.cleanup-apply:hover:not(:disabled) {
+  border-color: var(--ssot-danger);
+  background: var(--ssot-danger);
+  filter: brightness(0.94);
+}
+
 /* ----------------------------- Board ----------------------------- */
 
 .app__board {
@@ -738,6 +869,13 @@ body {
 .postit--selected {
   outline: 2.5px solid var(--accent);
   outline-offset: 2px;
+}
+
+.postit--cleanup-highlight {
+  outline: 3px solid var(--ssot-danger);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--ssot-danger-soft),
+    0 12px 28px rgba(20, 24, 33, 0.24);
 }
 
 /* Zoomed-out placeholder: cheap to lay out and paint (no text / SVG). */
@@ -909,7 +1047,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pulse__ring {
+  .pulse__ring,
+  .cleanup-panel {
     animation: none;
   }
 }

@@ -4,8 +4,6 @@ import {
   IconChevronLeft,
   IconMessageCircle,
   IconSend,
-  IconSettings,
-  IconX,
 } from "@tabler/icons-react";
 import {
   useEffect,
@@ -17,7 +15,11 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import type { AgentConfig, AgentConnectionStatus, AgentMessage } from "@/lib/agentTypes";
+import type {
+  AgentConnectionStatus,
+  AgentMessage,
+  AgentModel,
+} from "@/lib/agentTypes";
 import { PanelResizeHandle } from "@/components/PanelResizeHandle";
 
 type ResultsAgentPanelProps = {
@@ -27,22 +29,15 @@ type ResultsAgentPanelProps = {
   maxWidth: number;
   status: AgentConnectionStatus;
   statusDetail: string;
+  models: AgentModel[];
+  selectedModel: string;
   messages: AgentMessage[];
   pending: boolean;
   onResizeStart: (event: PointerEvent<HTMLButtonElement>) => void;
   onResizeBy: (deltaWidth: number) => void;
   onClose: () => void;
-  onOpenConfig: () => void;
+  onModelChange: (model: string) => void;
   onSend: (message: string) => void;
-};
-
-type AgentConfigModalProps = {
-  open: boolean;
-  status: AgentConnectionStatus;
-  statusDetail: string;
-  config: AgentConfig;
-  onClose: () => void;
-  onSave: (config: AgentConfig) => void;
 };
 
 export function ResultsAgentPanel({
@@ -52,12 +47,14 @@ export function ResultsAgentPanel({
   maxWidth,
   status,
   statusDetail,
+  models,
+  selectedModel,
   messages,
   pending,
   onResizeStart,
   onResizeBy,
   onClose,
-  onOpenConfig,
+  onModelChange,
   onSend,
 }: ResultsAgentPanelProps) {
   const [value, setValue] = useState("");
@@ -118,16 +115,25 @@ export function ResultsAgentPanel({
             <IconMessageCircle size={16} stroke={1.5} aria-hidden="true" />
             <span>Chat</span>
           </div>
-          <button
-            className="agentPanelStatusButton"
-            type="button"
-            aria-label={`Configure agent, currently ${status}`}
+          <label
+            className="agentModelSelect"
             title={statusDetail ? `${status}: ${statusDetail}` : status}
-            onClick={onOpenConfig}
           >
             <span className={`agentStatusDot agentStatusDot-${status}`} />
-            <span>{status}</span>
-          </button>
+            <select
+              aria-label="Chat model"
+              value={selectedModel}
+              disabled={pending || models.every((model) => !model.available)}
+              onChange={(event) => onModelChange(event.currentTarget.value)}
+            >
+              {!selectedModel && <option value="">No model</option>}
+              {models.map((model) => (
+                <option key={model.key} value={model.key} disabled={!model.available}>
+                  {model.name}{model.available ? "" : " (unavailable)"}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <button className="agentPanelClose" type="button" aria-label="Close agent panel" onClick={onClose}>
           <IconChevronLeft size={18} stroke={1.4} aria-hidden="true" />
@@ -215,102 +221,6 @@ const EXAMPLE_PROMPTS = [
   "Color the heuristics experiments in blue",
   "Sort by Total average, descending. Then open the chart",
 ];
-
-const AGENT_START_COMMAND =
-  "AGENT_TOKEN=\"$(openssl rand -hex 32)\"; export AGENT_TOKEN; printf 'Agent token: %s\\n' \"$AGENT_TOKEN\"; APP_DIR=\"$PWD\" sh -lc 'tmux new-session -d -s results-agent -n chat \"cd \\\"$APP_DIR\\\" && claude\" && tmux split-window -h -t results-agent:0 \"cd \\\"$APP_DIR\\\" && AGENT_TOKEN=\\\"$AGENT_TOKEN\\\" AGENT_TMUX_TARGET=results-agent:0.0 npm run agent\" && tmux select-pane -t results-agent:0.0 && tmux attach -t results-agent'";
-
-export function AgentConfigModal({
-  open,
-  status,
-  statusDetail,
-  config,
-  onClose,
-  onSave,
-}: AgentConfigModalProps) {
-  const [agentUrl, setAgentUrl] = useState(config.agentUrl);
-  const [token, setToken] = useState(config.token);
-
-  useEffect(() => {
-    if (!open) return;
-    setAgentUrl(config.agentUrl);
-    setToken(config.token);
-  }, [config, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, open]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="agentModalBackdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div className="agentModal" role="dialog" aria-modal="true" aria-labelledby="agent-config-title">
-        <div className="agentModalHeader">
-          <div className="agentModalTitle" id="agent-config-title">
-            <IconSettings size={17} stroke={1.5} aria-hidden="true" />
-            <span>Configure Agent</span>
-          </div>
-          <button className="agentPanelClose" type="button" aria-label="Close" onClick={onClose}>
-            <IconX size={18} stroke={1.4} aria-hidden="true" />
-          </button>
-        </div>
-        <div className="agentModalStatus">
-          <span className={`agentStatusDot agentStatusDot-${status}`} />
-          <span>{status}</span>
-        </div>
-        {statusDetail && <div className={`agentModalDetail agentModalDetail-${status}`}>{statusDetail}</div>}
-        <div className="agentModalHelp">
-          <ol>
-            <li>Move to the directory where results-sheet-viewer is installed.</li>
-            <li>Run this command. It opens tmux with Claude in pane 0 and the agent server in pane 1.</li>
-            <li>Paste the same token into the Agent token field below.</li>
-          </ol>
-          <code>{AGENT_START_COMMAND}</code>
-        </div>
-        <label className="agentConfigField">
-          <span>Agent URL</span>
-          <input
-            value={agentUrl}
-            onChange={(event) => setAgentUrl(event.currentTarget.value)}
-            placeholder="http://<agent-host>:3011"
-          />
-        </label>
-        <label className="agentConfigField">
-          <span>Agent token</span>
-          <input
-            value={token}
-            onChange={(event) => setToken(event.currentTarget.value)}
-            placeholder="AGENT_TOKEN"
-            type="password"
-          />
-        </label>
-        <div className="agentModalActions">
-          <button className="agentModalButton agentModalButtonSubtle" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="agentModalButton agentModalButtonPrimary"
-            type="button"
-            onClick={() => onSave({ agentUrl: agentUrl.trim(), token: token.trim() })}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 type MarkdownBlock =
   | { type: "paragraph"; text: string }

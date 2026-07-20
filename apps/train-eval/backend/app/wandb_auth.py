@@ -11,7 +11,8 @@ from __future__ import annotations
 import asyncio
 from pydantic import BaseModel
 
-from .wandb_config import WANDB_ENTITY_OVERRIDE, get_project, set_project
+from . import user_context
+from .wandb_config import WANDB_ENTITY_OVERRIDE, get_project, project_scope, set_project
 
 
 class WandbStatus(BaseModel):
@@ -19,6 +20,9 @@ class WandbStatus(BaseModel):
     entity: str | None = None
     project: str
     error: str | None = None
+    # Additive: "user" when `project` came from a per-user overlay, else
+    # "global". Additive-only for the gateway UI; existing consumers ignore it.
+    scope: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -42,11 +46,24 @@ async def get_status() -> WandbStatus:
             return None, str(e)
 
     entity, err = await asyncio.to_thread(_probe)
+    # The netrc login and its entity are the machine owner's identity. An
+    # identified non-owner without their own project overlay sees blanks, same
+    # policy as the cluster-env scaffold: keys are contract, values personal.
+    if user_context.current_user_slug() is not None and not user_context.is_owner_request():
+        scope = project_scope()
+        return WandbStatus(
+            logged_in=entity is not None,
+            entity=None,
+            project=get_project() if scope == "user" else "",
+            error=err,
+            scope="user",
+        )
     return WandbStatus(
         logged_in=entity is not None,
         entity=entity,
         project=get_project(),
         error=err,
+        scope=project_scope(),
     )
 
 
@@ -75,6 +92,7 @@ async def login(key: str) -> WandbStatus:
         entity=entity,
         project=get_project(),
         error=err,
+        scope=project_scope(),
     )
 
 

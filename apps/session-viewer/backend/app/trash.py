@@ -1,8 +1,8 @@
-"""Move a session file to the macOS Trash instead of unlinking it.
+"""Safely remove session files while enforcing their configured source roots.
 
-Deleting a session removes its on-disk ``.jsonl``. We move the file to
-``~/.Trash`` rather than permanently unlinking, so an accidental delete of real
-work history can be recovered from Finder; emptying the Trash makes it permanent.
+Single-session deletion moves its on-disk ``.jsonl`` to the operating-system
+Trash so it remains recoverable. Explicit bulk cleanup permanently unlinks its
+selected files.
 
 A safety guard ensures only files under the known session roots can ever be
 deleted, so a crafted uid/path can never trash arbitrary files.
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import shutil
 import time
+import uuid
 from pathlib import Path
 
 from . import settings
@@ -49,7 +50,16 @@ def move_to_trash(path: Path, allowed_roots: tuple[Path, ...]) -> Path:
     dest = trash / path.name
     if dest.exists():
         # Avoid clobbering an existing trashed file of the same name.
-        dest = trash / f"{path.stem}-{int(time.time())}{path.suffix}"
+        dest = trash / (
+            f"{path.stem}-{time.time_ns()}-{uuid.uuid4().hex[:8]}{path.suffix}"
+        )
 
     shutil.move(str(path), str(dest))
     return dest
+
+
+def delete_permanently(path: Path, allowed_roots: tuple[Path, ...]) -> None:
+    """Permanently unlink one session file below an allowed source root."""
+    if not _is_under_allowed_root(path, allowed_roots):
+        raise DeleteNotAllowed(f"refusing to delete path outside session roots: {path}")
+    path.unlink()

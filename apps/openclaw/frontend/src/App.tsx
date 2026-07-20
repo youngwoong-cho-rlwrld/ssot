@@ -8,13 +8,22 @@ import { Chat } from "./Chat";
 import { InstructionsPanel } from "./InstructionsPanel";
 import { SetupCard } from "./SetupCard";
 import { ApiError, getStatus } from "./api";
-import type { OpenClawSession } from "./types";
+import { sessionLabel } from "./util";
+import type { OpenClawSession, StatusResponse } from "./types";
 
 const PROBE_MS = 10_000;
 
 export default function App() {
+  // The single main pane is driven by the selected session: a DIRECT session
+  // (or no selection) shows the CHAT view bound to it; group/cron show the
+  // read-only TRANSCRIPT view. A nonce forces a fresh chat even when already
+  // unbound, and a token refreshes the session list after a chat turn.
   const [selected, setSelected] = useState<OpenClawSession | null>(null);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const [newChatNonce, setNewChatNonce] = useState(0);
+  const [sessionsReloadToken, setSessionsReloadToken] = useState(0);
+  const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   // Whether the openclaw CLI is present. A status probe returning the
   // "cli_missing" kind means the binary isn't installed, so we replace the
   // whole app with a setup card. Any other error (gateway down) keeps the
@@ -22,25 +31,42 @@ export default function App() {
   const [cliMissing, setCliMissing] = useState(false);
   const portalUrl = import.meta.env.VITE_SSOT_PORTAL_URL ?? "/";
 
+  // New chat: clear any selection and reset the pane to a fresh empty chat.
+  const startNewChat = () => {
+    setSelected(null);
+    setNewChatNonce((n) => n + 1);
+  };
+
+  // direct session (or nothing selected) => chat; group/cron => transcript.
+  const chatMode = selected === null || selected.kind === "direct";
+  const boundKey = selected?.kind === "direct" ? selected.key : null;
+
   useEffect(() => {
     let alive = true;
     let controller: AbortController | null = null;
-    const probe = () => {
-      controller?.abort();
-      controller = new AbortController();
-      getStatus(controller.signal)
-        .then(() => alive && setCliMissing(false))
-        .catch((err) => {
-          if (controller?.signal.aborted || !alive) return;
-          setCliMissing(err instanceof ApiError && err.kind === "cli_missing");
-        });
+    let timer: number | null = null;
+    const probe = async () => {
+      const requestController = new AbortController();
+      controller = requestController;
+      try {
+        const nextStatus = await getStatus(requestController.signal);
+        if (!alive) return;
+        setStatus(nextStatus);
+        setStatusError(null);
+        setCliMissing(false);
+      } catch (err) {
+        if (requestController.signal.aborted || !alive) return;
+        setStatusError(err instanceof Error ? err.message : String(err));
+        setCliMissing(err instanceof ApiError && err.kind === "cli_missing");
+      } finally {
+        if (alive) timer = window.setTimeout(() => void probe(), PROBE_MS);
+      }
     };
-    probe();
-    const id = window.setInterval(probe, PROBE_MS);
+    void probe();
     return () => {
       alive = false;
       controller?.abort();
-      window.clearInterval(id);
+      if (timer !== null) window.clearTimeout(timer);
     };
   }, []);
 
@@ -84,13 +110,15 @@ export default function App() {
         <ssot-user></ssot-user>
       </header>
 
-      <StatusBar />
+      <StatusBar status={status} error={statusError} />
 
       <main className="app__content">
         <div className="col col--activity">
           <SessionList
             selectedKey={selected?.key ?? null}
             onSelect={setSelected}
+            onNewChat={startNewChat}
+            reloadToken={sessionsReloadToken}
             onDeleted={(key) =>
               setSelected((cur) => (cur?.key === key ? null : cur))
             }
@@ -98,17 +126,23 @@ export default function App() {
           <LogFeed />
         </div>
 
-        <div className="col col--transcript">
-          <TranscriptPanel
-            agentId={selected?.agentId ?? null}
-            sessionId={selected?.sessionId ?? null}
-            sessionKey={selected?.key ?? null}
-            kind={selected?.kind ?? null}
-          />
-        </div>
-
-        <div className="col col--chat">
-          <Chat />
+        <div className="col col--main">
+          {chatMode ? (
+            <Chat
+              agentId={selected?.agentId ?? "main"}
+              boundSessionKey={boundKey}
+              boundLabel={boundKey ? sessionLabel(boundKey) : null}
+              newChatNonce={newChatNonce}
+              onTurnComplete={() => setSessionsReloadToken((n) => n + 1)}
+            />
+          ) : (
+            <TranscriptPanel
+              agentId={selected!.agentId}
+              sessionId={selected!.sessionId}
+              sessionKey={selected!.key}
+              kind={selected!.kind}
+            />
+          )}
         </div>
       </main>
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 Role = Literal["user", "assistant", "system"]
 
@@ -47,6 +47,7 @@ class TranscriptDetail(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_key: Optional[str] = None
+    model: Optional[str] = Field(default=None, max_length=512)
 
 
 class ModelDefaultRequest(BaseModel):

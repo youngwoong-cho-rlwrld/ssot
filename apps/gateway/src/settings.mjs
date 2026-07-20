@@ -51,7 +51,7 @@ export function registerSettingsRoutes(app) {
     const user = requireUser(req, res);
     if (!user) return;
     try {
-      const data = await bootstrapTrainEval();
+      const data = await bootstrapTrainEval(user);
       res.json(data);
     } catch (err) {
       console.error('[ssot-gateway] train-eval bootstrap failed', err);

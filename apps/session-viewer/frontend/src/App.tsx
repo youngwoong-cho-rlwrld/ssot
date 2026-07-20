@@ -13,10 +13,13 @@ import {
 } from "./board/filters";
 
 export default function App() {
-  const { sessions, loading, error, removeLocal } = useSessions();
+  const { sessions, loading, error, refresh, removeLocal } = useSessions();
   const { board, updateNode, removeNode } = useBoard();
   const [filters, setFilters] = useState<FilterState>(initialFilterState);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const [cleanupHighlightedUids, setCleanupHighlightedUids] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
 
   const projects = useMemo(() => projectsOf(sessions), [sessions]);
   const maxMessages = useMemo(() => maxMessagesOf(sessions), [sessions]);
@@ -27,6 +30,10 @@ export default function App() {
   );
 
   const onApplyFilters = useCallback((next: FilterState) => setFilters(next), []);
+
+  const onCleanupHighlight = useCallback((uids: string[]) => {
+    setCleanupHighlightedUids(new Set(uids));
+  }, []);
 
   const onMoveNode = useCallback(
     (uid: string, x: number, y: number) => updateNode(uid, { x, y }),
@@ -76,6 +83,8 @@ export default function App() {
         projects={projects}
         sessions={sessions}
         maxMessages={maxMessages}
+        onCleaned={refresh}
+        onCleanupHighlight={onCleanupHighlight}
       />
 
       <main className="app__board">
@@ -94,6 +103,7 @@ export default function App() {
           sessions={filtered}
           board={board}
           selectedUid={selectedUid}
+          highlightedUids={cleanupHighlightedUids}
           onSelect={setSelectedUid}
           onMoveNode={onMoveNode}
           onToggleStar={onToggleStar}

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Search, LayoutGrid } from "lucide-react";
+import { Search, LayoutGrid, Trash2 } from "lucide-react";
 import { FilterPanel } from "./FilterPanel";
+import { CleanupPanel } from "./CleanupPanel";
 import { activeFilterCount, type FilterState } from "./filters";
 import type { Session } from "../types";
 
@@ -10,6 +11,8 @@ interface ToolbarProps {
   projects: string[];
   sessions: Session[];
   maxMessages: number;
+  onCleaned: () => void;
+  onCleanupHighlight: (uids: string[]) => void;
 }
 
 const AGENT_LABEL: Record<FilterState["agent"], string> = {
@@ -32,8 +35,10 @@ export function Toolbar({
   projects,
   sessions,
   maxMessages,
+  onCleaned,
+  onCleanupHighlight,
 }: ToolbarProps) {
-  const [open, setOpen] = useState(false);
+  const [openPanel, setOpenPanel] = useState<"filter" | "cleanup" | null>(null);
   const activeCount = activeFilterCount(filters);
 
   return (
@@ -47,9 +52,11 @@ export function Toolbar({
         <button
           type="button"
           className="searchbar"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() =>
+            setOpenPanel((current) => (current === "filter" ? null : "filter"))
+          }
           aria-haspopup="dialog"
-          aria-expanded={open}
+          aria-expanded={openPanel === "filter"}
         >
           <span className="searchbar__seg searchbar__seg--main">
             {filters.q || "Search sessions"}
@@ -68,14 +75,36 @@ export function Toolbar({
           </span>
         </button>
 
-        {open && (
+        {openPanel === "filter" && (
           <FilterPanel
             initial={filters}
             onApply={onApply}
-            onClose={() => setOpen(false)}
+            onClose={() => setOpenPanel(null)}
             projects={projects}
             sessions={sessions}
             maxMessages={maxMessages}
+          />
+        )}
+      </div>
+
+      <div className="toolbar__cleanup">
+        <button
+          type="button"
+          className="ssot-btn cleanup-trigger"
+          onClick={() =>
+            setOpenPanel((current) => (current === "cleanup" ? null : "cleanup"))
+          }
+          aria-haspopup="dialog"
+          aria-expanded={openPanel === "cleanup"}
+        >
+          <Trash2 size={15} />
+          Clean up
+        </button>
+        {openPanel === "cleanup" && (
+          <CleanupPanel
+            onClose={() => setOpenPanel(null)}
+            onCleaned={onCleaned}
+            onHighlight={onCleanupHighlight}
           />
         )}
       </div>

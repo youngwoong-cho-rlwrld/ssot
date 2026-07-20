@@ -12,11 +12,55 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, AsyncIterator, Optional
+import os
+import signal
+import tempfile
+import time
+from pathlib import Path
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 from . import settings
 
 log = logging.getLogger("openclaw.cli")
+
+_PROCESS_TERM_GRACE_SECONDS = 3.0
+_CHAT_CLEANUP_MARGIN_SECONDS = 10
+
+
+class _SingleFlightCache:
+    """Small event-loop-local TTL cache that shares one in-flight CLI call."""
+
+    def __init__(self, ttl_seconds: float) -> None:
+        self.ttl_seconds = ttl_seconds
+        self.value: Any = None
+        self.stored_at = 0.0
+        self.task: asyncio.Task[Any] | None = None
+
+    async def get(self, loader: Callable[[], Awaitable[Any]]) -> Any:
+        now = time.monotonic()
+        if self.stored_at and now - self.stored_at < self.ttl_seconds:
+            return self.value
+        task = self.task
+        if task is None:
+            task = asyncio.create_task(loader())
+            self.task = task
+        try:
+            value = await asyncio.shield(task)
+            self.value = value
+            self.stored_at = time.monotonic()
+            return value
+        finally:
+            if self.task is task and task.done():
+                self.task = None
+
+    def invalidate(self) -> None:
+        self.value = None
+        self.stored_at = 0.0
+
+
+_status_cache = _SingleFlightCache(5.0)
+_session_caches: dict[int, _SingleFlightCache] = {}
+_models_cache = _SingleFlightCache(60.0)
 
 
 class CliError(Exception):
@@ -48,6 +92,7 @@ async def _run(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=settings.subprocess_env(),
+            start_new_session=os.name != "nt",
         )
     except FileNotFoundError as exc:
         raise CliError(f"openclaw CLI not found ({bin_path})", kind="cli_missing") from exc
@@ -59,11 +104,69 @@ async def _run(
             proc.communicate(input=stdin_data), timeout=timeout
         )
     except asyncio.TimeoutError as exc:
-        proc.kill()
-        await proc.wait()
+        await _terminate_process_group(proc)
         raise CliError(f"openclaw {args[0] if args else ''} timed out after {timeout}s") from exc
+    except asyncio.CancelledError:
+        await _terminate_process_group(proc)
+        raise
+    except BaseException:
+        await _terminate_process_group(proc)
+        raise
+
+    # ``communicate`` proves the captured pipes reached EOF, but a command can
+    # still leave a detached descendant in its session. Sweep the private
+    # process group before returning so no CLI invocation can leak children.
+    await _terminate_process_group(proc)
 
     return proc.returncode or 0, stdout, stderr
+
+
+async def _terminate_process_group(proc: asyncio.subprocess.Process) -> None:
+    """Gracefully stop a CLI invocation and every child it spawned.
+
+    OpenClaw handles SIGTERM by aborting an accepted Gateway run. Give that
+    cleanup a short grace period, then force-kill only if the private process
+    group is still alive. On POSIX the group must be signalled even when the
+    parent already exited: a descendant may still be holding captured pipes.
+    """
+    if os.name == "nt":
+        if proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), _PROCESS_TERM_GRACE_SECONDS)
+            except asyncio.TimeoutError:
+                proc.kill()
+        await proc.wait()
+        return
+
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        await proc.wait()
+        return
+
+    deadline = time.monotonic() + _PROCESS_TERM_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        if not _process_group_exists(proc.pid):
+            await proc.wait()
+            return
+        await asyncio.sleep(0.05)
+
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    await proc.wait()
+
+
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
 
 
 async def run_json(args: list[str], timeout: int) -> Any:
@@ -84,14 +187,28 @@ async def run_json(args: list[str], timeout: int) -> Any:
 
 
 async def status() -> Any:
-    return await run_json(["status", "--json"], settings.STATUS_TIMEOUT)
+    return await _status_cache.get(
+        lambda: run_json(["status", "--json"], settings.STATUS_TIMEOUT)
+    )
 
 
 async def sessions(limit: int = 100) -> Any:
-    return await run_json(
-        ["sessions", "--json", "--all-agents", "--limit", str(limit)],
-        settings.SESSIONS_TIMEOUT,
+    cache = _session_caches.setdefault(limit, _SingleFlightCache(5.0))
+    return await cache.get(
+        lambda: run_json(
+            ["sessions", "--json", "--all-agents", "--limit", str(limit)],
+            settings.SESSIONS_TIMEOUT,
+        )
     )
+
+
+def invalidate_sessions() -> None:
+    for cache in _session_caches.values():
+        cache.invalidate()
+
+
+def invalidate_status() -> None:
+    _status_cache.invalidate()
 
 
 async def logs(limit: int) -> list[dict[str, Any]]:
@@ -139,6 +256,7 @@ async def stream_logs() -> AsyncIterator[str]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             env=settings.subprocess_env(),
+            start_new_session=os.name != "nt",
         )
     except FileNotFoundError as exc:
         raise CliError(f"openclaw CLI not found ({bin_path})", kind="cli_missing") from exc
@@ -153,20 +271,48 @@ async def stream_logs() -> AsyncIterator[str]:
                 break
             yield line.decode("utf-8", "replace").rstrip("\n")
     finally:
-        if proc.returncode is None:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-            await proc.wait()
+        await _terminate_process_group(proc)
 
 
-async def agent_turn(message: str, session_key: Optional[str]) -> Any:
-    """Run one local agent turn. Never passes --deliver/--channel."""
-    args = ["agent", "--json", "-m", message]
-    if session_key:
-        args += ["--session-key", session_key]
-    return await run_json(args, settings.CHAT_TIMEOUT)
+def _write_agent_message(message: str) -> str:
+    """Write a private temporary message file and return its path."""
+    fd, file_path = tempfile.mkstemp(prefix="ssot-openclaw-", suffix=".txt")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(message)
+    return file_path
+
+
+async def agent_turn(
+    message: str,
+    session_key: Optional[str],
+    model: Optional[str] = None,
+) -> Any:
+    """Run one local agent turn. Never passes --deliver/--channel.
+
+    The message goes through ``--message-file`` rather than argv so large
+    Results Sheet contexts do not hit the operating system's argument-size
+    limit. The file is mode 0600 (mkstemp) and removed after the CLI exits.
+    """
+    message_path = await asyncio.to_thread(_write_agent_message, message)
+    try:
+        args = [
+            "agent",
+            "--json",
+            "--message-file",
+            message_path,
+            "--timeout",
+            str(settings.CHAT_TIMEOUT),
+        ]
+        if session_key:
+            args += ["--session-key", session_key]
+        if model:
+            args += ["--model", model]
+        return await run_json(
+            args,
+            settings.CHAT_TIMEOUT + _CHAT_CLEANUP_MARGIN_SECONDS,
+        )
+    finally:
+        await asyncio.to_thread(Path(message_path).unlink, missing_ok=True)
 
 
 # --- models ---------------------------------------------------------------
@@ -188,6 +334,7 @@ async def models_set(model: str) -> None:
             "utf-8", "replace"
         ).strip()
         raise CliError(f"openclaw models set exited {rc}: {detail[:300]}")
+    _models_cache.invalidate()
 
 
 async def models_paste_api_key(provider: str, api_key: str) -> None:
@@ -207,6 +354,7 @@ async def models_paste_api_key(provider: str, api_key: str) -> None:
             "utf-8", "replace"
         ).strip()
         raise CliError(f"openclaw models auth exited {rc}: {detail[:300]}")
+    _models_cache.invalidate()
 
 
 # --- heartbeat & cron controls --------------------------------------------
@@ -220,6 +368,7 @@ async def config_set(path: str, value: str) -> None:
             "utf-8", "replace"
         ).strip()
         raise CliError(f"openclaw config set exited {rc}: {detail[:300]}")
+    invalidate_status()
 
 
 async def system_heartbeat(enabled: bool) -> None:
@@ -233,6 +382,7 @@ async def system_heartbeat(enabled: bool) -> None:
             "utf-8", "replace"
         ).strip()
         raise CliError(f"openclaw system heartbeat {action} exited {rc}: {detail[:300]}")
+    invalidate_status()
 
 
 async def cron_list() -> Any:
@@ -248,6 +398,7 @@ async def cron_set_enabled(job_id: str, enabled: bool) -> None:
             "utf-8", "replace"
         ).strip()
         raise CliError(f"openclaw cron {action} exited {rc}: {detail[:300]}")
+    invalidate_status()
 
 
 def _provider_of(model_key: str) -> str:
@@ -257,7 +408,19 @@ def _provider_of(model_key: str) -> str:
 
 async def models_merged() -> dict[str, Any]:
     """Merge ``models list`` and ``models status`` into one view for the UI."""
-    lst, st = await asyncio.gather(models_list(), models_status())
+    return await _models_cache.get(_load_models_merged)
+
+
+async def _load_models_merged() -> dict[str, Any]:
+    list_task = asyncio.create_task(models_list())
+    status_task = asyncio.create_task(models_status())
+    try:
+        lst, st = await asyncio.gather(list_task, status_task)
+    except BaseException:
+        list_task.cancel()
+        status_task.cancel()
+        await asyncio.gather(list_task, status_task, return_exceptions=True)
+        raise
     default = st.get("defaultModel")
     resolved = st.get("resolvedDefault") or default
     auth = st.get("auth") or {}

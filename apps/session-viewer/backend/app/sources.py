@@ -331,6 +331,7 @@ def parse_codex_meta(path: Path) -> Optional[Session]:
                 fallback_id = "-".join(parts[-5:])
 
         session_id: Optional[str] = None
+        session_meta_seen = False
         cwd: Optional[str] = None
         cli_version: Optional[str] = None
         model: Optional[str] = None
@@ -357,6 +358,12 @@ def parse_codex_meta(path: Path) -> Optional[Session]:
                 continue
 
             if rtype == "session_meta":
+                # A rollout can contain later nested session_meta records. The
+                # file/card identity is the first session metadata record and
+                # must never be overwritten by a child record.
+                if session_meta_seen:
+                    continue
+                session_meta_seen = True
                 pid = payload.get("id")
                 if isinstance(pid, str) and pid:
                     session_id = pid

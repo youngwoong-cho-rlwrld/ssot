@@ -35,6 +35,8 @@ export type ResultVariant = {
 export type ResultsResponse = {
   variants: ResultVariant[];
   errors: Array<{ cluster: string; error: string }>;
+  fetchedAt?: Record<string, number>;
+  stale?: boolean;
 };
 
 export type PerformanceColumn = {

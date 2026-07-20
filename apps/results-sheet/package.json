@@ -7,9 +7,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "next dev --webpack -H ${RESULTS_SHEET_HOST:-0.0.0.0} -p ${RESULTS_SHEET_PORT:-3001}",
+    "dev": "next dev --webpack -H ${RESULTS_SHEET_HOST:-127.0.0.1} -p ${RESULTS_SHEET_PORT:-3001}",
     "build": "next build --webpack",
-    "start": "next start -H ${RESULTS_SHEET_HOST:-0.0.0.0} -p ${RESULTS_SHEET_PORT:-3001}",
+    "start": "next start -H ${RESULTS_SHEET_HOST:-127.0.0.1} -p ${RESULTS_SHEET_PORT:-3001}",
     "agent": "node scripts/claude-agent.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test",

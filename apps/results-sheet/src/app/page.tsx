@@ -14,7 +14,6 @@ import {
   sortSheetRows,
 } from "@/lib/sheetView";
 import {
-  AgentConfigModal,
   ResultsAgentPanel,
 } from "@/components/ResultsAgentPanel";
 import toolbarClasses from "@/components/ResultsToolbarActions.module.css";
@@ -175,16 +174,20 @@ export default function Page() {
     applyAgentActions(actions, allColumnIds, refresh);
   }, [allColumnIds, applyAgentActions, refresh]);
   const {
-    configOpen: agentConfigOpen,
-    setConfigOpen: setAgentConfigOpen,
     status: agentStatus,
     statusDetail: agentStatusDetail,
-    config: agentConfig,
+    models: agentModels,
+    selectedModel: agentSelectedModel,
+    setSelectedModel: setAgentSelectedModel,
     messages: agentMessages,
     pending: agentPending,
     send: handleAgentSend,
-    saveConfig: handleAgentConfigSave,
-  } = useResultsAgent({ context: agentContext, columns: headers, applyActions: handleAgentActions });
+  } = useResultsAgent({
+    enabled: agentPanelOpen,
+    context: agentContext,
+    columns: headers,
+    applyActions: handleAgentActions,
+  });
   const handleTaskGroupByChange = useCallback((taskKey: string, groupBy: ChartGroupMode) => {
     setChartGroupOverrides((current) => {
       if (groupBy === "auto") {
@@ -237,14 +240,6 @@ export default function Page() {
 
   return (
     <main className="page">
-      <AgentConfigModal
-        open={agentConfigOpen}
-        status={agentStatus}
-        statusDetail={agentStatusDetail}
-        config={agentConfig}
-        onClose={() => setAgentConfigOpen(false)}
-        onSave={handleAgentConfigSave}
-      />
       {loadError && (
         <div className="status statusError">
           {loadError}
@@ -273,12 +268,14 @@ export default function Page() {
             maxWidth={AGENT_PANEL_MAX_WIDTH}
             status={agentStatus}
             statusDetail={agentStatusDetail}
+            models={agentModels}
+            selectedModel={agentSelectedModel}
             messages={agentMessages}
             pending={agentPending}
             onResizeStart={(event) => startPanelResize("agent", event)}
             onResizeBy={(delta) => resizePanelBy("agent", delta)}
             onClose={() => setAgentPanelOpen(false)}
-            onOpenConfig={() => setAgentConfigOpen(true)}
+            onModelChange={setAgentSelectedModel}
             onSend={handleAgentSend}
           />
           <div className="tableShell">

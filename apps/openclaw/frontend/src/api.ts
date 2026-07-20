@@ -131,11 +131,14 @@ export const logsStreamUrl = `${API_BASE}/logs/stream`;
 export function postChat(
   message: string,
   sessionKey?: string,
+  model?: string,
+  signal?: AbortSignal,
 ): Promise<ChatResult> {
   return request<ChatResult>(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, session_key: sessionKey }),
+    body: JSON.stringify({ message, session_key: sessionKey, model }),
+    signal,
   });
 }
 

@@ -7,6 +7,8 @@ test("returns a safe empty response for a malformed top-level payload", () => {
   assert.deepEqual(normalizeResultsPayload("not an object", " cluster-a "), {
     variants: [],
     errors: [],
+    fetchedAt: {},
+    stale: false,
   });
 });
 
@@ -75,9 +77,17 @@ test("filters malformed records and sanitizes nested numeric data", () => {
       { cluster: "cluster-a", error: "" },
       "bad error",
     ],
+    fetched_at: {
+      "cluster-a": 123.5,
+      other: 456,
+      invalid: "now",
+    },
+    stale: true,
   }, "cluster-a");
 
   assert.deepEqual(normalized.errors, [{ cluster: "cluster-a", error: "scan failed" }]);
+  assert.deepEqual(normalized.fetchedAt, { "cluster-a": 123.5 });
+  assert.equal(normalized.stale, true);
   assert.equal(normalized.variants.length, 1);
 
   const variant = normalized.variants[0];

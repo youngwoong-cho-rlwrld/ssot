@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { deleteSession, getSessions } from "./api";
 import type { OpenClawSession } from "./types";
 import {
@@ -15,6 +15,10 @@ interface SessionListProps {
   selectedKey: string | null;
   onSelect: (s: OpenClawSession) => void;
   onDeleted?: (key: string) => void;
+  // Start a fresh empty chat (clears selection, resets the main pane).
+  onNewChat: () => void;
+  // Bump to force an immediate reload (e.g. after a chat turn).
+  reloadToken?: number;
 }
 
 function kindClass(kind: string): string {
@@ -24,7 +28,13 @@ function kindClass(kind: string): string {
   return "kind--other";
 }
 
-export function SessionList({ selectedKey, onSelect, onDeleted }: SessionListProps) {
+export function SessionList({
+  selectedKey,
+  onSelect,
+  onDeleted,
+  onNewChat,
+  reloadToken,
+}: SessionListProps) {
   const [sessions, setSessions] = useState<OpenClawSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,20 +60,22 @@ export function SessionList({ selectedKey, onSelect, onDeleted }: SessionListPro
 
   useEffect(() => {
     aliveRef.current = true;
-    let controller = new AbortController();
-    const tick = () => {
-      controller.abort();
+    let controller: AbortController | null = null;
+    let timer: number | null = null;
+    const tick = async () => {
       controller = new AbortController();
-      void load(controller.signal);
+      await load(controller.signal);
+      if (aliveRef.current) {
+        timer = window.setTimeout(() => void tick(), POLL_MS);
+      }
     };
-    tick();
-    const id = window.setInterval(tick, POLL_MS);
+    void tick();
     return () => {
       aliveRef.current = false;
-      controller.abort();
-      window.clearInterval(id);
+      controller?.abort();
+      if (timer !== null) window.clearTimeout(timer);
     };
-  }, [load]);
+  }, [load, reloadToken]);
 
   const doDelete = async (s: OpenClawSession, force: boolean) => {
     if (!s.sessionId) return;
@@ -87,6 +99,15 @@ export function SessionList({ selectedKey, onSelect, onDeleted }: SessionListPro
       <div className="panel__head">
         <h2 className="panel__title">Sessions</h2>
         {loading && <RefreshCw size={13} className="spin panel__spin" />}
+        <button
+          type="button"
+          className="sessions__new"
+          onClick={onNewChat}
+          title="Start a new chat"
+        >
+          <Plus size={13} />
+          New chat
+        </button>
       </div>
 
       <div className="panel__body sessions__body">

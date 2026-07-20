@@ -6,6 +6,7 @@ import asyncio
 import fcntl
 import hashlib
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from . import (
+    cache_db,
     clusters,
     cluster_settings,
     copy_checkpoint,
@@ -31,6 +33,7 @@ from . import (
     notifications,
     notifications_config,
     partitions,
+    poller,
     results,
     remote_paths,
     submission_snapshot,
@@ -38,6 +41,7 @@ from . import (
     training_models,
     train_overrides,
     user_config,
+    user_context,
     variant_values,
     variants,
     wandb_auth,
@@ -50,18 +54,23 @@ from .wandb_config import get_project as wandb_project
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    # The one persistent background task: poll job states and post Slack
-    # notifications on status transitions (no-op unless notifications are
-    # enabled + a webhook is configured).
+    # Two persistent background tasks:
+    #  - notifications monitor: polls job states and posts Slack on transitions
+    #    (no-op unless notifications are enabled + a webhook is configured).
+    #  - cache poller: refreshes the SQLite cache backing /api/jobs and
+    #    /api/results (no-op when TRAIN_EVAL_POLLER=0).
     monitor_task = asyncio.create_task(notifications.run_monitor())
+    poller_task = asyncio.create_task(poller.run())
     try:
         yield
     finally:
-        monitor_task.cancel()
-        try:
-            await monitor_task
-        except asyncio.CancelledError:
-            pass
+        for task in (monitor_task, poller_task):
+            task.cancel()
+        for task in (monitor_task, poller_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="train-eval-web", lifespan=_lifespan)
@@ -79,6 +88,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Resolve the gateway-injected `x-ssot-user` into a contextvar so the per-user
+# settings overlay (user_config / wandb_config / mlxp_config) applies for the
+# request. Header-absent requests resolve to no user -> flat global config.
+app.add_middleware(user_context.SsotUserMiddleware)
 
 
 # A caller can lose the HTTP response after Slurm accepted a job.  Serialize
@@ -774,6 +787,7 @@ async def post_submit(req: submit.SubmitRequest):
             await notifications.note_submitted(
                 "mlxp", r.job_id, r.job_name, req.phase, req.variant
             )
+            poller.schedule_jobs_poll("mlxp")
             return {
                 "job_id": r.job_id,
                 "job_name": r.job_name,
@@ -787,6 +801,7 @@ async def post_submit(req: submit.SubmitRequest):
             await notifications.note_submitted(
                 req.cluster, resp.job_id, resp.job_name, req.phase, req.variant
             )
+        poller.schedule_jobs_poll(req.cluster)
         return resp
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(400, str(e))
@@ -796,19 +811,96 @@ async def post_submit(req: submit.SubmitRequest):
 
 # ── jobs ──
 
+def _parse_since(since: str | None, hours: int) -> float | None:
+    """Resolve the terminal-job history cutoff as epoch seconds.
+
+    ``since`` may be a bare hours count ("48") or an ISO timestamp; when absent
+    we fall back to the ``hours`` window (default 24), matching today's sacct
+    semantics. Returns None only when no window applies (hours<=0)."""
+    from datetime import datetime, timezone
+
+    if since:
+        s = since.strip()
+        try:
+            return time.time() - float(s) * 3600
+        except ValueError:
+            pass
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            pass
+    if hours <= 0:
+        return None
+    return time.time() - hours * 3600
+
+
+def _staleness(meta: dict[str, dict], targets: list[str], interval: float) -> bool:
+    """True if any target cluster's last poll errored, is missing, or is older
+    than ~2 poll intervals (i.e. we likely missed a cycle)."""
+    now = time.time()
+    for c in targets:
+        entry = meta.get(c)
+        if entry is None or not entry["ok"]:
+            return True
+        if now - entry["fetched_at"] > 2 * interval:
+            return True
+    return False
+
+
 @app.get("/api/jobs")
 async def get_jobs(
     cluster: str | None = None,
     hours: int = 24,
     start: str | None = None,
     end: str | None = None,
+    since: str | None = None,
+    fresh: int = 0,
 ):
     target = [cluster] if cluster else None
-    try:
-        js = await jobs.list_jobs(target, hours=hours, start=start, end=end)
-        return {"jobs": [j.model_dump() for j in js]}
-    except RuntimeError as e:
-        raise HTTPException(503, str(e))
+    # A live fetch is forced when the poller is off, when ?fresh=1, or when an
+    # explicit start/end range is requested (arbitrary ranges aren't windowed
+    # in the cache — serve them straight from the source, and upsert the rows).
+    if not poller.poller_enabled() or fresh or start or end:
+        try:
+            js = await jobs.list_jobs(target, hours=hours, start=start, end=end)
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+        if poller.poller_enabled():
+            # Opportunistic write-through: a cache failure here must not turn a
+            # good live fetch into a 500 — log and still return the live jobs.
+            #
+            # Invariant: only user-agnostic fetches may be cached (the shared
+            # cache is read by everyone). When a per-user request is active, the
+            # mlxp fetch above ran with that user's owner_selector, so its rows
+            # are user-scoped — serve them to this requester but do NOT upsert
+            # them. Slurm rows are machine identity (`squeue -u $USER`) either
+            # way, so they stay cacheable.
+            skip_mlxp = user_context.current_user_slug() is not None
+            try:
+                for c in {j.cluster for j in js}:
+                    if c == "mlxp" and skip_mlxp:
+                        continue
+                    await cache_db.upsert_jobs(c, [j for j in js if j.cluster == c])
+            except Exception as exc:  # noqa: BLE001 - cache is best-effort here
+                print(f"[cache] live-path upsert failed (serving live anyway): {exc}")
+        return {
+            "jobs": [j.model_dump() for j in js],
+            "source": "live",
+            "stale": False,
+        }
+
+    targets = target or clusters.list_clusters()
+    rows = await cache_db.read_jobs(target, _parse_since(since, hours))
+    meta = await cache_db.read_poll_meta("jobs")
+    return {
+        "jobs": rows,
+        "source": "cache",
+        "fetched_at": {c: meta[c]["fetched_at"] for c in targets if c in meta},
+        "stale": _staleness(meta, targets, poller.jobs_poll_interval()),
+    }
 
 
 @app.get("/api/jobs/{cluster}/{job_id}")
@@ -875,6 +967,7 @@ async def get_job_eval_runs(cluster: str, job_id: str):
 async def post_resume_job(cluster: str, job_id: str):
     try:
         response, _created = await _resume_slurm_once(cluster, job_id)
+        poller.schedule_jobs_poll(cluster)
         return response
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
@@ -887,7 +980,9 @@ async def post_resume_job(cluster: str, job_id: str):
 @app.post("/api/jobs/{cluster}/{job_id}/retry", response_model=submit.SubmitResponse)
 async def post_retry_job(cluster: str, job_id: str):
     try:
-        return await job_resume.retry_failed_job(cluster, job_id)
+        resp = await job_resume.retry_failed_job(cluster, job_id)
+        poller.schedule_jobs_poll(cluster)
+        return resp
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
@@ -945,19 +1040,109 @@ async def delete_job(cluster: str, job_id: str):
         if cluster == "mlxp" and "transient Kubernetes transport failure" in str(e):
             raise HTTPException(503, str(e))
         raise HTTPException(500, str(e))
+    poller.schedule_jobs_poll(cluster)
     return {"status": "cancelled"}
 
 
 # ── results ──
 
 @app.get("/api/results", response_model=results.ResultsResponse)
-async def get_results(cluster: str | None = None):
-    try:
-        return await results.list_results(cluster)
-    except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
-    except RuntimeError as e:
-        raise HTTPException(500, str(e))
+async def get_results(cluster: str | None = None, fresh: int = 0):
+    # The background cache is the machine-global/owner view. A non-owner's
+    # cluster paths and credentials are user-scoped, so serve those requests
+    # live rather than leaking the owner's cached result roots.
+    shared_cache_scope = (
+        user_context.current_user_slug() is None
+        or user_context.is_owner_request()
+    )
+    if not poller.poller_enabled() or not shared_cache_scope:
+        try:
+            return await results.list_results(cluster)
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e))
+        except RuntimeError as e:
+            raise HTTPException(500, str(e))
+
+    if fresh and poller.poller_enabled():
+        targets = [cluster] if cluster else clusters.list_clusters()
+        refreshed = await asyncio.gather(
+            *(poller.refresh_results(c) for c in targets),
+            return_exceptions=True,
+        )
+        variants: list[results.ResultVariant] = []
+        errors: list[results.ClusterResultError] = []
+        fetched_at: dict[str, float] = {}
+        stale = False
+        for c, item in zip(targets, refreshed):
+            if isinstance(item, BaseException):
+                stale = True
+                errors.append(results.ClusterResultError(
+                    cluster=c,
+                    error=str(item) or type(item).__name__,
+                ))
+                continue
+            variants.extend(item.variants)
+            errors.extend(item.errors)
+            fetched_at.update(item.fetched_at or {})
+            stale = stale or bool(item.stale)
+        variants.sort(key=lambda r: (r.cluster, r.model_version or "", r.variant))
+        return results.ResultsResponse(
+            clusters=targets,
+            variants=variants,
+            errors=errors,
+            fetched_at=fetched_at,
+            stale=stale,
+        )
+
+    targets = [cluster] if cluster else clusters.list_clusters()
+    cached = await cache_db.read_results([cluster] if cluster else None)
+    meta = await cache_db.read_poll_meta("results")
+    variants: list[dict] = []
+    errors: list[dict] = []
+    fetched_at: dict[str, float] = {}
+    stale = _staleness(meta, targets, poller.results_poll_interval())
+    for c in targets:
+        entry = cached.get(c)
+        if entry is None:
+            stale = True
+            errors.append({"cluster": c, "error": "Results cache is warming up."})
+            continue
+        variants.extend(entry["variants"])
+        errors.extend(entry["errors"])
+        fetched_at[c] = entry["fetched_at"]
+        poll = meta.get(c)
+        if poll is not None and not poll["ok"]:
+            errors.append({
+                "cluster": c,
+                "error": poll["error"] or "The latest results refresh failed.",
+            })
+    validated_variants: list[results.ResultVariant] = []
+    validated_errors: list[results.ClusterResultError] = []
+    for item in variants:
+        try:
+            validated_variants.append(results.ResultVariant.model_validate(item))
+        except (TypeError, ValueError):
+            stale = True
+            cluster_name = item.get("cluster") if isinstance(item, dict) else None
+            validated_errors.append(results.ClusterResultError(
+                cluster=cluster_name if cluster_name in targets else (targets[0] if targets else "unknown"),
+                error="A cached result is incompatible and will be replaced on refresh.",
+            ))
+    for item in errors:
+        try:
+            validated_errors.append(results.ClusterResultError.model_validate(item))
+        except (TypeError, ValueError):
+            stale = True
+    validated_variants.sort(
+        key=lambda item: (item.cluster, item.model_version or "", item.variant)
+    )
+    return results.ResultsResponse(
+        clusters=targets,
+        variants=validated_variants,
+        errors=validated_errors,
+        fetched_at=fetched_at,
+        stale=stale,
+    )
 
 
 def _sse_next_line(request: Request) -> int:

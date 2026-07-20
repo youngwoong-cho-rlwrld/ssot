@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { keepPreviousData, useIsFetching, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, Database, ExternalLink, Table2, Video } from "lucide-react";
@@ -40,6 +40,7 @@ export default function ResultsPage() {
   const [cluster, setCluster] = useState("all");
   const [nameFilter, setNameFilter] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const freshClustersRef = useRef(new Set<string>());
 
   const clustersQuery = useQuery({
     queryKey: ["clusters"],
@@ -55,8 +56,12 @@ export default function ResultsPage() {
   const resultQueries = useQueries({
     queries: clusterNames.map((c) => ({
       queryKey: ["results", c],
-      queryFn: () => api<ResultsResponse>(`/api/results?cluster=${encodeURIComponent(c)}`),
-      refetchInterval: REFRESH_MS,
+      queryFn: () => api<ResultsResponse>(
+        `/api/results?cluster=${encodeURIComponent(c)}${freshClustersRef.current.delete(c) ? "&fresh=1" : ""}`,
+      ),
+      refetchInterval: (query: { state: { data?: ResultsResponse } }) => (
+        query.state.data?.stale ? 5_000 : REFRESH_MS
+      ),
       placeholderData: keepPreviousData,
     })),
   });
@@ -95,6 +100,7 @@ export default function ResultsPage() {
   const autoOpen = nameFilter.trim().length > 0 && groups.length <= 2;
 
   const refresh = () => {
+    for (const name of clusterNames) freshClustersRef.current.add(name);
     qc.invalidateQueries({ queryKey: ["results"] });
     qc.invalidateQueries({ queryKey: ["clusters"] });
   };

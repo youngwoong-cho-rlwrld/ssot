@@ -1,8 +1,11 @@
 export type AgentConnectionStatus = "connected" | "disconnected" | "configuring";
 
-export type AgentConfig = {
-  agentUrl: string;
-  token: string;
+export type AgentModel = {
+  key: string;
+  name: string;
+  provider: string;
+  available: boolean;
+  isDefault: boolean;
 };
 
 export type AgentMessage = {

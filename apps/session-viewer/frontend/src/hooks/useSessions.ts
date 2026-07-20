@@ -74,22 +74,31 @@ export function useSessions(): UseSessionsResult {
 
   useEffect(() => {
     mounted.current = true;
-    let controller = new AbortController();
+    let controller: AbortController | null = null;
+    let inFlight = false;
 
     const load = async () => {
-      controller.abort();
-      controller = new AbortController();
+      // A filesystem scan can take longer than the polling interval. Let the
+      // current request finish instead of aborting it and starting another scan.
+      if (inFlight) return;
+      inFlight = true;
+      const requestController = new AbortController();
+      controller = requestController;
       try {
-        const data = await getSessions({ signal: controller.signal });
+        const data = await getSessions({ signal: requestController.signal });
         if (!mounted.current) return;
         setSessions((prev) => reconcile(prev, data));
         setError(null);
       } catch (err) {
-        if (controller.signal.aborted) return;
+        // Check the controller for THIS request. The hook may already have
+        // created a later request by the time this catch handler runs.
+        if (requestController.signal.aborted) return;
         if (!mounted.current) return;
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        if (mounted.current) setLoading(false);
+        if (controller === requestController) controller = null;
+        inFlight = false;
+        if (mounted.current && !requestController.signal.aborted) setLoading(false);
       }
     };
 
@@ -98,7 +107,7 @@ export function useSessions(): UseSessionsResult {
 
     return () => {
       mounted.current = false;
-      controller.abort();
+      controller?.abort();
       window.clearInterval(interval);
     };
   }, [tick]);

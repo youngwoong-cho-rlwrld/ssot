@@ -45,3 +45,18 @@ export interface BoardNode {
   starred: boolean;
   note: string;
 }
+
+export type CleanupCategory = "system" | "old" | "short";
+
+export interface CleanupPreview {
+  counts: Record<CleanupCategory, number>;
+  affected: number;
+  affected_uids: string[];
+}
+
+export interface CleanupResult {
+  status: "deleted" | "partial";
+  affected: number;
+  deleted: number;
+  failed: number;
+}

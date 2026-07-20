@@ -53,6 +53,21 @@ app.use((req, _res, next) => {
 // --- auth + account API --------------------------------------------------
 registerAuthRoutes(app);
 
+// Agent-backed APIs can execute expensive local work and must never be
+// reachable through the network-facing gateway without a signed-in session.
+// The standalone upstreams bind to loopback; this is the public trust boundary.
+app.use((req, res, next) => {
+  const protectedAgentApi =
+    req.path === '/results/api/agent' ||
+    req.path.startsWith('/results/api/agent/') ||
+    req.path === '/openclaw/api' ||
+    req.path.startsWith('/openclaw/api/');
+  if (protectedAgentApi && !req.ssotUser) {
+    return res.status(401).json({ error: 'unauthenticated' });
+  }
+  next();
+});
+
 app.get('/api/auth/me', (req, res) => {
   const user = req.ssotUser;
   if (!user) return res.status(401).json({ error: 'unauthenticated' });

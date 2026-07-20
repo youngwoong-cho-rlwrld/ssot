@@ -2,15 +2,20 @@
 
 Local whiteboard for tracking your Claude Code and Codex CLI sessions. Every
 session shows up as a draggable post-it on an infinite canvas; click one to read
-its full transcript. Position, color, star, and note persist across reloads.
+its transcript. Position, color, star, and note persist across reloads. The
+cleanup panel can permanently remove cron, older-than-14-days, and
+fewer-than-10-chat sessions represented by dashboard cards. Option counts and
+selected totals use the same card identities shown on the board.
 
-## What it reads (read-only)
+## What it reads
 
 - Claude: `~/.claude/projects/*/*.jsonl`
 - Codex:  `~/.codex/sessions/**/*.jsonl`
 
-The only file the app writes is `backend/board.json` (your post-it layout and
-annotations). It never modifies your session files.
+Board layout and annotations are stored in the shared SSOT SQLite database.
+Session files are only modified after an explicit action. Single-session Delete
+moves its JSONL file to the operating system Trash; Clean up permanently removes
+the selected JSONL files.
 
 ## Prerequisites
 
@@ -39,7 +44,7 @@ Or start both at once:
 
 ## Layout
 
-- `backend/`  FastAPI: scans and parses session files, serves `/api`, persists `board.json`.
+- `backend/`  FastAPI: indexes session files, serves `/api`, and persists board and metadata caches in SQLite.
 - `frontend/` Vite + React + react-flow whiteboard.
 
 ## Notes

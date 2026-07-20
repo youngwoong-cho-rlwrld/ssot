@@ -1,0 +1,5 @@
+# SQLite cache written by the background poller (poller.py / cache_db.py).
+data/
+
+# Machine-local cluster environment copies must never enter source control.
+app/*.env

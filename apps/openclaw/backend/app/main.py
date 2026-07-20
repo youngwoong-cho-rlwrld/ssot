@@ -52,6 +52,7 @@ _CADENCE_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 # Smallest heartbeat cadence we accept; guards against "0s"/"0m" and absurdly
 # tight schedules that would hammer the model.
 _CADENCE_FLOOR_SECONDS = 60
+_chat_gate = asyncio.Semaphore(1)
 
 
 def _cadence_seconds(every: str) -> int | None:
@@ -155,6 +156,7 @@ async def session_delete(
         result = await asyncio.to_thread(
             session_store.delete_session, agent_id, session_id, force
         )
+        cli.invalidate_sessions()
         return JSONResponse(content=result)
     except session_store.SessionNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -197,15 +199,58 @@ async def logs_stream(request: Request) -> StreamingResponse:
 
 
 @app.post("/api/chat")
-async def chat(body: ChatRequest) -> JSONResponse:
+async def chat(body: ChatRequest, request: Request) -> JSONResponse:
     message = body.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="message is required")
+    model = body.model.strip() if body.model else None
+    if model:
+        try:
+            merged = await cli.models_merged()
+        except cli.CliError as exc:
+            return _cli_error(exc)
+        available = {
+            item.get("key")
+            for item in merged.get("models", [])
+            if item.get("available")
+        }
+        if model not in available:
+            raise HTTPException(status_code=400, detail=f"unavailable model: {model}")
+    if _chat_gate.locked():
+        return JSONResponse(
+            status_code=429,
+            content={"error": "agent_busy", "detail": "OpenClaw is already processing a chat turn."},
+            headers={"Retry-After": "1"},
+        )
     try:
-        result = await cli.agent_turn(message, body.session_key)
+        async with _chat_gate:
+            result = await _until_disconnect(
+                request,
+                cli.agent_turn(message, body.session_key, model),
+            )
+        cli.invalidate_sessions()
         return JSONResponse(content=result)
     except cli.CliError as exc:
         return _cli_error(exc)
+
+
+async def _until_disconnect(request: Request, operation) -> object:
+    """Cancel a CLI-backed operation when its HTTP client disconnects."""
+    task = asyncio.create_task(operation)
+    try:
+        while not task.done():
+            done, _pending = await asyncio.wait({task}, timeout=0.25)
+            if done:
+                break
+            if await request.is_disconnected():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                raise HTTPException(status_code=499, detail="client disconnected")
+        return await task
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 @app.get("/api/models")

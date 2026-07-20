@@ -42,7 +42,32 @@ export function normalizeResultsPayload(
         ))
     : [];
 
-  return { variants, errors };
+  return {
+    variants,
+    errors,
+    fetchedAt: normalizeFetchedAt(payload.fetched_at, normalizedExpectedCluster),
+    stale: payload.stale === true,
+  };
+}
+
+function normalizeFetchedAt(input: unknown, expectedCluster: string | null) {
+  if (!isRecord(input)) return {};
+  const fetchedAt: Record<string, number> = {};
+  for (const [rawCluster, rawTimestamp] of Object.entries(input)) {
+    const cluster = clusterName(rawCluster);
+    if (
+      !cluster ||
+      (expectedCluster && cluster !== expectedCluster) ||
+      typeof rawTimestamp !== "number" ||
+      !Number.isFinite(rawTimestamp) ||
+      rawTimestamp < 0 ||
+      rawTimestamp > MAX_DATE_SECONDS
+    ) {
+      continue;
+    }
+    fetchedAt[cluster] = rawTimestamp;
+  }
+  return fetchedAt;
 }
 
 function normalizeVariant(input: unknown): ResultVariant | null {

@@ -492,4 +492,6 @@ export type ResultsResponse = {
   clusters: string[];
   variants: ResultVariant[];
   errors: Array<{ cluster: string; error: string }>;
+  fetched_at?: Record<string, number>;
+  stale?: boolean;
 };

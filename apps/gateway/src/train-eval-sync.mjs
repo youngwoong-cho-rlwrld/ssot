@@ -28,6 +28,15 @@ async function apiFetch(path, opts = {}) {
   return res.status === 204 ? null : res.json();
 }
 
+// Every backend call made on behalf of a signed-in user must carry their
+// identity, exactly like the regular /train-eval/api proxy does — otherwise
+// the backend resolves the flat GLOBAL config (the machine owner's values):
+// reads would leak the owner's settings to other users, and writes would
+// clobber the shared files instead of the user's own overlay.
+function userHeaders(user) {
+  return user && user.email ? { 'x-ssot-user': user.email } : {};
+}
+
 // --- env_text <-> {K:V} --------------------------------------------------
 const BARE = /^[A-Za-z0-9._/:@=+,-]+$/;
 
@@ -70,13 +79,15 @@ function parseEnvText(text) {
 
 // --- push on save --------------------------------------------------------
 // Returns true when every attempted push succeeded, false if any failed.
-export async function pushTrainEval({ profile, trainEval, changed }) {
+export async function pushTrainEval({ user, profile, trainEval, changed }) {
   const tasks = [];
+  const headers = userHeaders(user);
 
   if (changed === 'profile') {
     tasks.push(
       apiFetch('/api/user-settings', {
         method: 'POST',
+        headers,
         body: JSON.stringify({ username: profile.username || '' }),
       })
     );
@@ -88,6 +99,7 @@ export async function pushTrainEval({ profile, trainEval, changed }) {
       tasks.push(
         apiFetch('/api/cluster-settings/' + encodeURIComponent(cluster.name), {
           method: 'PUT',
+          headers,
           body: JSON.stringify({ env_text: serializeEnv(cluster.env) }),
         })
       );
@@ -98,6 +110,7 @@ export async function pushTrainEval({ profile, trainEval, changed }) {
       tasks.push(
         apiFetch('/api/wandb/project', {
           method: 'POST',
+          headers,
           body: JSON.stringify({ project: w.project.trim() }),
         })
       );
@@ -106,6 +119,7 @@ export async function pushTrainEval({ profile, trainEval, changed }) {
       tasks.push(
         apiFetch('/api/wandb/login', {
           method: 'POST',
+          headers,
           body: JSON.stringify({ key: w.api_key.trim() }),
         })
       );
@@ -126,7 +140,7 @@ export async function pushTrainEval({ profile, trainEval, changed }) {
         body.slack_webhook_url = n.slack_webhook_url.trim();
       }
       tasks.push(
-        apiFetch('/api/notifications', { method: 'POST', body: JSON.stringify(body) })
+        apiFetch('/api/notifications', { method: 'POST', headers, body: JSON.stringify(body) })
       );
     }
   }
@@ -141,11 +155,12 @@ export async function pushTrainEval({ profile, trainEval, changed }) {
 // --- bootstrap (prefill) -------------------------------------------------
 // Proxies the train-eval API's current effective values in the gateway's
 // stored shape so the settings page can prefill when nothing is saved yet.
-export async function bootstrapTrainEval() {
+export async function bootstrapTrainEval(user) {
+  const headers = userHeaders(user);
   const [clustersR, wandbR, notifR] = await Promise.allSettled([
-    apiFetch('/api/cluster-settings'),
-    apiFetch('/api/wandb/status'),
-    apiFetch('/api/notifications'),
+    apiFetch('/api/cluster-settings', { headers }),
+    apiFetch('/api/wandb/status', { headers }),
+    apiFetch('/api/notifications', { headers }),
   ]);
 
   const out = {};

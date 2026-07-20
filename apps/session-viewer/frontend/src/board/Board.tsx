@@ -27,6 +27,7 @@ interface BoardProps {
   sessions: Session[]; // already filtered
   board: Map<string, BoardNode>;
   selectedUid: string | null;
+  highlightedUids: ReadonlySet<string>;
   onSelect: (uid: string) => void;
   onMoveNode: (uid: string, x: number, y: number) => void;
   onToggleStar: (uid: string) => void;
@@ -36,6 +37,7 @@ function BoardInner({
   sessions,
   board,
   selectedUid,
+  highlightedUids,
   onSelect,
   onMoveNode,
   onToggleStar,
@@ -65,10 +67,11 @@ function BoardInner({
       const saved = board.get(session.uid);
       const color = saved?.color ?? defaultColorFor(session.agent);
       const starred = saved?.starred ?? false;
+      const highlighted = highlightedUids.has(session.uid);
       const pos = saved
         ? { x: saved.x, y: saved.y }
         : auto[session.uid] ?? { x: 0, y: 0 };
-      const sig = `${color}|${starred}|${pos.x}|${pos.y}|${lod ? 1 : 0}`;
+      const sig = `${color}|${starred}|${pos.x}|${pos.y}|${lod ? 1 : 0}|${highlighted ? 1 : 0}`;
       seen.add(session.uid);
 
       const cached = cache.get(session.uid);
@@ -78,7 +81,14 @@ function BoardInner({
       if (cached && cached.sig === sig && cached.node.data.session === session) {
         return cached.node;
       }
-      const data: PostItData = { session, color, starred, lod, onToggleStar };
+      const data: PostItData = {
+        session,
+        color,
+        starred,
+        highlighted,
+        lod,
+        onToggleStar,
+      };
       const node: PostItNodeType = {
         id: session.uid,
         type: "postit",
@@ -94,7 +104,7 @@ function BoardInner({
     });
     for (const uid of cache.keys()) if (!seen.has(uid)) cache.delete(uid);
     return out;
-  }, [sessions, auto, board, onToggleStar, lod]);
+  }, [sessions, auto, board, highlightedUids, onToggleStar, lod]);
 
   // Apply selection as a shallow overlay: reuse the same node reference for every
   // card except the (un)selected one, so react-flow only re-renders what changed.

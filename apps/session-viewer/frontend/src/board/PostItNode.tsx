@@ -8,6 +8,7 @@ export interface PostItData extends Record<string, unknown> {
   session: Session;
   color: string | null;
   starred: boolean;
+  highlighted: boolean;
   lod: boolean; // true = zoomed out: render a cheap skeleton instead of content
   onToggleStar: (uid: string) => void;
 }
@@ -15,7 +16,7 @@ export interface PostItData extends Record<string, unknown> {
 export type PostItNodeType = Node<PostItData, "postit">;
 
 function PostItNodeImpl({ data, selected }: NodeProps<PostItNodeType>) {
-  const { session, color, starred, lod, onToggleStar } = data;
+  const { session, color, starred, highlighted, lod, onToggleStar } = data;
   const bg = color ?? defaultColorFor(session.agent);
   const rotation = rotationFor(session.uid);
   const isClaude = session.agent === "claude";
@@ -25,7 +26,7 @@ function PostItNodeImpl({ data, selected }: NodeProps<PostItNodeType>) {
   if (lod) {
     return (
       <div
-        className={`postit postit--skeleton${selected ? " postit--selected" : ""}`}
+        className={`postit postit--skeleton${selected ? " postit--selected" : ""}${highlighted ? " postit--cleanup-highlight" : ""}`}
         style={{ background: bg, transform: `rotate(${rotation}deg)` }}
       >
         <span
@@ -40,7 +41,7 @@ function PostItNodeImpl({ data, selected }: NodeProps<PostItNodeType>) {
 
   return (
     <div
-      className={`postit${selected ? " postit--selected" : ""}`}
+      className={`postit${selected ? " postit--selected" : ""}${highlighted ? " postit--cleanup-highlight" : ""}`}
       style={{ background: bg, transform: `rotate(${rotation}deg)` }}
     >
       <div className="postit__top">

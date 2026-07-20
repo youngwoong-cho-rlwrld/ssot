@@ -12,11 +12,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import board_store, cache, settings
+from . import board_store, cache, cleanup as cleanup_service, settings
 from .models import BoardNode, Session, SessionDetail
 from .trash import DeleteNotAllowed, move_to_trash
 
@@ -24,10 +24,10 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Populate the cache once at startup so the first request is cheap. Failures
-    # here should not prevent the server from starting.
+    # Rehydrate small persisted metadata and let the dedicated indexer handle
+    # changed transcripts. Startup never parses the source corpus.
     try:
-        cache.scan_all(settings.CLAUDE_ROOT, settings.CODEX_ROOT)
+        cache.prime(settings.CLAUDE_ROOT, settings.CODEX_ROOT)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("session_board").warning("startup scan failed: %s", exc)
     yield
@@ -73,6 +73,30 @@ class DeleteResult(BaseModel):
     status: str
     uid: str
     trashed_to: str
+
+
+class CleanupCounts(BaseModel):
+    system: int
+    old: int
+    short: int
+
+
+class CleanupPreview(BaseModel):
+    counts: CleanupCounts
+    affected: int
+    affected_uids: list[str]
+
+
+class CleanupSelection(BaseModel):
+    categories: list[cleanup_service.CleanupCategory]
+    affected_uids: list[str] = Field(max_length=10_000)
+
+
+class CleanupResult(BaseModel):
+    status: str
+    affected: int
+    deleted: int
+    failed: int
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +196,7 @@ def list_sessions(
     since: Optional[str] = None,
     roots: tuple[Path, Path] = Depends(resolve_roots),
 ) -> list[Session]:
-    sessions = cache.scan_all(*roots)
+    sessions = cache.list_all(*roots)
 
     if agent:
         sessions = [s for s in sessions if s.agent == agent]
@@ -212,6 +236,36 @@ def board() -> list[BoardNode]:
     return board_store.list_nodes()
 
 
+@app.get("/api/cleanup", response_model=CleanupPreview)
+def cleanup_preview(
+    categories: list[cleanup_service.CleanupCategory] = Query(default=[]),
+    roots: tuple[Path, Path] = Depends(resolve_roots),
+) -> CleanupPreview:
+    summary = cleanup_service.summarize(
+        cleanup_service.discover(*roots, exact=False),
+        categories,
+    )
+    return CleanupPreview(
+        counts=CleanupCounts(**summary.counts),
+        affected=summary.affected,
+        affected_uids=list(summary.affected_uids),
+    )
+
+
+@app.delete("/api/cleanup", response_model=CleanupResult)
+def cleanup_sessions(
+    body: CleanupSelection,
+    roots: tuple[Path, Path] = Depends(resolve_roots),
+) -> CleanupResult:
+    outcome = cleanup_service.clean(*roots, body.categories, body.affected_uids)
+    return CleanupResult(
+        status="deleted" if outcome.failed == 0 else "partial",
+        affected=outcome.affected,
+        deleted=outcome.deleted,
+        failed=outcome.failed,
+    )
+
+
 @app.put("/api/board/{uid}", response_model=BoardNode)
 def update_board(uid: str, body: BoardUpdate) -> BoardNode:
     # exclude_unset so only the fields the client actually sent are merged.
@@ -235,7 +289,7 @@ def delete_session(
     path = Path(session.path)
     if not path.exists():
         # Already gone on disk; just drop our references.
-        cache.forget(uid)
+        cache.forget(uid, *roots)
         board_store.delete(uid)
         raise HTTPException(status_code=404, detail="session file no longer exists")
 
@@ -246,6 +300,6 @@ def delete_session(
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to delete: {exc}")
 
-    cache.forget(uid)
+    cache.forget(uid, *roots)
     board_store.delete(uid)
     return DeleteResult(status="deleted", uid=uid, trashed_to=str(dest))

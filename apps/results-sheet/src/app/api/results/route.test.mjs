@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MAX_CLUSTER_COUNT } from "../../../lib/clusters.ts";
-
 let moduleSequence = 0;
 
 function importFreshRoute() {
@@ -85,55 +83,34 @@ test("forwards one cluster and returns the upstream payload unchanged", async ()
   }
 });
 
-test("deduplicates concurrent scans for the same cluster", async () => {
+test("forwards fresh=1 to train-eval", async () => {
   const originalFetch = globalThis.fetch;
-  let fetchCount = 0;
-  let releaseFetch;
-  const pendingFetch = new Promise((resolve) => {
-    releaseFetch = resolve;
-  });
-  globalThis.fetch = () => {
-    fetchCount += 1;
-    return pendingFetch;
-  };
-
-  try {
-    const { GET } = await importFreshRoute();
-    const requestUrl = "http://viewer.test/api/results?cluster=dedupe-cluster";
-    const first = GET(new Request(requestUrl));
-    const second = GET(new Request(requestUrl));
-
-    assert.equal(fetchCount, 1);
-    releaseFetch(Response.json({ clusters: ["dedupe-cluster"], variants: [], errors: [] }));
-    const responses = await Promise.all([first, second]);
-    assert.deepEqual(responses.map((response) => response.status), [200, 200]);
-    assert.equal(fetchCount, 1);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("evicts the least-recently-used entry when the cache exceeds its bound", async () => {
-  const originalFetch = globalThis.fetch;
-  let fetchCount = 0;
+  let requestedUrl = "";
   globalThis.fetch = async (url) => {
-    fetchCount += 1;
-    const cluster = new URL(String(url)).searchParams.get("cluster");
-    return Response.json({ clusters: [cluster], variants: [], errors: [] });
+    requestedUrl = String(url);
+    return Response.json({
+      clusters: ["fresh-cluster"],
+      variants: [],
+      errors: [],
+      fetched_at: { "fresh-cluster": 123 },
+      stale: false,
+    });
   };
 
   try {
     const { GET } = await importFreshRoute();
-    for (let index = 0; index <= MAX_CLUSTER_COUNT; index += 1) {
-      const response = await GET(
-        new Request(`http://viewer.test/api/results?cluster=cluster-${index}`),
-      );
-      assert.equal(response.status, 200);
-    }
-    assert.equal(fetchCount, MAX_CLUSTER_COUNT + 1);
-
-    await GET(new Request("http://viewer.test/api/results?cluster=cluster-0"));
-    assert.equal(fetchCount, MAX_CLUSTER_COUNT + 2);
+    const response = await GET(
+      new Request("http://viewer.test/api/results?cluster=fresh-cluster&fresh=1"),
+    );
+    assert.equal(response.status, 200);
+    assert.equal(new URL(requestedUrl).searchParams.get("fresh"), "1");
+    assert.deepEqual(await response.json(), {
+      clusters: ["fresh-cluster"],
+      variants: [],
+      errors: [],
+      fetched_at: { "fresh-cluster": 123 },
+      stale: false,
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

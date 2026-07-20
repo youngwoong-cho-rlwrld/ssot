@@ -71,6 +71,11 @@ class ResultsResponse(BaseModel):
     clusters: list[str]
     variants: list[ResultVariant]
     errors: list[ClusterResultError] = Field(default_factory=list)
+    # Additive cache metadata (populated when served from the poller cache;
+    # None on a live fetch). fetched_at maps cluster -> epoch seconds of the
+    # last successful scan; stale is True when any cluster's cache is behind.
+    fetched_at: dict[str, float] | None = None
+    stale: bool | None = None
 
 
 async def _scan_cluster_results(

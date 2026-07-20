@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { getTranscript, getTranscriptByKey } from "./api";
+import { Markdown } from "./Markdown";
+import { ToolCallView } from "./ToolCallView";
+import { usePersistedBool } from "./hooks";
 import type { TranscriptDetail, Turn } from "./types";
 import { relativeTimeIso, sessionLabel } from "./util";
 
@@ -10,35 +14,26 @@ interface TranscriptPanelProps {
   kind: string | null;
 }
 
-function firstLine(s: string): string {
-  const nl = s.indexOf("\n");
-  const line = nl === -1 ? s : s.slice(0, nl);
-  return line.length > 120 ? `${line.slice(0, 120)}...` : line;
-}
-
-function TurnView({ turn }: { turn: Turn }) {
+function TurnView({
+  turn,
+  showTools,
+}: {
+  turn: Turn;
+  showTools: boolean;
+}) {
   return (
     <div className={`turn turn--${turn.role}`}>
-      <div className="turn__role">{turn.role}</div>
-      {turn.text && <div className="turn__text">{turn.text}</div>}
-      {turn.tool_calls.map((tc, i) => (
-        <details key={i} className="tool">
-          <summary className="tool__summary">
-            <span className="tool__name">{tc.name}</span>
-            <span className="tool__preview">{firstLine(tc.input_preview)}</span>
-          </summary>
-          <div className="tool__body">
-            <div className="tool__label">input</div>
-            <pre className="tool__pre">{tc.input_preview}</pre>
-            {tc.output_preview != null && (
-              <>
-                <div className="tool__label">output</div>
-                <pre className="tool__pre">{tc.output_preview}</pre>
-              </>
-            )}
-          </div>
-        </details>
-      ))}
+      {turn.role !== "user" && turn.role !== "assistant" && (
+        <div className="turn__role">{turn.role}</div>
+      )}
+      {turn.text && (
+        <div className="turn__text">
+          <Markdown>{turn.text}</Markdown>
+        </div>
+      )}
+      {turn.tool_calls.length > 0 &&
+        showTools &&
+        turn.tool_calls.map((tc, i) => <ToolCallView key={i} call={tc} />)}
     </div>
   );
 }
@@ -52,6 +47,10 @@ export function TranscriptPanel({
   const [detail, setDetail] = useState<TranscriptDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showTools, toggleTools] = usePersistedBool(
+    "openclaw.showToolCalls.transcript",
+    true,
+  );
 
   // Cron sessions have no transcript of their own (their store entry carries no
   // sessionId, or points at a runtime stub), so resolve them by key and let the
@@ -89,10 +88,25 @@ export function TranscriptPanel({
     };
   }, [agentId, sessionId, sessionKey, byKey]);
 
+  // When tool/system bubbles are hidden, drop every turn that would render
+  // empty: system turns and tool-only turns with no text.
+  const turns = (detail?.turns ?? []).filter(
+    (t) => showTools || (t.role !== "system" && Boolean(t.text)),
+  );
+
   return (
     <section className="panel transcript">
       <div className="panel__head">
         <h2 className="panel__title">Transcript</h2>
+        <button
+          type="button"
+          className={`tool-toggle${showTools ? " tool-toggle--on" : ""}`}
+          onClick={toggleTools}
+          title={showTools ? "Hide tool / system bubbles" : "Show tool / system bubbles"}
+        >
+          {showTools ? <Eye size={13} /> : <EyeOff size={13} />}
+          tools
+        </button>
       </div>
 
       {detail && (
@@ -131,8 +145,12 @@ export function TranscriptPanel({
         {detail && detail.turns.length === 0 && !loading && (
           <div className="panel__status">No messages on disk for this session.</div>
         )}
-        {detail?.turns.map((turn, i) => (
-          <TurnView key={i} turn={turn} />
+        {turns.map((turn, i) => (
+          <TurnView
+            key={i}
+            turn={turn}
+            showTools={showTools}
+          />
         ))}
       </div>
     </section>

@@ -55,13 +55,6 @@ export interface StatusResponse {
     agents?: { agentId: string; enabled: boolean; every?: string }[];
   };
   channelSummary?: unknown[];
-  tasks?: {
-    total?: number;
-    active?: number;
-    terminal?: number;
-    failures?: number;
-    byStatus?: Record<string, number>;
-  };
   sessions?: {
     count?: number;
     defaults?: { model?: string; contextTokens?: number };

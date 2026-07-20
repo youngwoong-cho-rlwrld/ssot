@@ -1,4 +1,11 @@
-import type { BoardNode, Session, SessionDetail } from "./types";
+import type {
+  BoardNode,
+  CleanupCategory,
+  CleanupPreview,
+  CleanupResult,
+  Session,
+  SessionDetail,
+} from "./types";
 
 // import.meta.env.BASE_URL is the Vite base ("/sessions/"), so this resolves to
 // "/sessions/api" under the gateway and dev proxy alike.
@@ -65,6 +72,29 @@ export async function putBoardNode(
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(partial),
+  });
+}
+
+export async function getCleanupPreview(
+  categories: CleanupCategory[],
+  signal?: AbortSignal,
+): Promise<CleanupPreview> {
+  const search = new URLSearchParams();
+  for (const category of categories) search.append("categories", category);
+  const qs = search.toString();
+  return request<CleanupPreview>(`${BASE}/cleanup${qs ? `?${qs}` : ""}`, {
+    signal,
+  });
+}
+
+export async function cleanupSessions(
+  categories: CleanupCategory[],
+  affectedUids: string[],
+): Promise<CleanupResult> {
+  return request<CleanupResult>(`${BASE}/cleanup`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ categories, affected_uids: affectedUids }),
   });
 }
 

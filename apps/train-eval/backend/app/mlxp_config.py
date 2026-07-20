@@ -9,11 +9,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from . import cluster_settings
+from . import cluster_settings, user_context
 
 
 _SETTINGS_DIR = Path.home() / ".train-eval-web"
-_SETTINGS_FILE = _SETTINGS_DIR / "mlxp.json"
+_FILENAME = "mlxp.json"
+_SETTINGS_FILE = _SETTINGS_DIR / _FILENAME
 
 # This application's identity, written as the `tool` label on every Job/Pod it
 # creates and used to scope job listing selectors. Not user config: changing it
@@ -96,6 +97,11 @@ class MlxpSettings(BaseModel):
     image_pull_secret: str = Field(min_length=1)
     zone: str = Field(min_length=1)
     wandb_secret: str = Field(min_length=1)
+    # Additive, response-only: "user" when `user` came from a per-user overlay,
+    # else "global". Only `user` is per-user; every other field (namespace,
+    # image, zone, pvc, GPU facts) is machine-global, and the derived dirs hang
+    # off the effective `user`. Ignored on input.
+    scope: str | None = None
 
 
 class MlxpSettingsUpdate(BaseModel):
@@ -138,14 +144,27 @@ _FIELD_ENV_NAMES: dict[str, tuple[str, str]] = {
 _PREFIXED = ("MLXP_", "TRAIN_EVAL_MLXP_")
 
 
-def _load_saved() -> dict[str, Any]:
-    if not _SETTINGS_FILE.is_file():
+def _read_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
         return {}
     try:
-        data = json.loads(_SETTINGS_FILE.read_text())
+        data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _load_saved() -> dict[str, Any]:
+    return _read_file(_SETTINGS_FILE)
+
+
+def _overlay_saved() -> dict[str, Any]:
+    """The per-user overlay's saved values for this request, or {} when there is
+    no user header or no overlay file yet."""
+    overlay = user_context.overlay_file(_FILENAME)
+    if overlay is None:
+        return {}
+    return _read_file(overlay)
 
 
 def _cluster_env_values() -> dict[str, str]:
@@ -182,6 +201,7 @@ def _overrides_from(
 
 def get_settings() -> MlxpSettings:
     saved = _load_saved()
+    overlay = _overlay_saved()
     # Cluster env FILE accepts plain slurm-style names; the process environment
     # only namespaced ones. Process env wins over file, file over derived
     # defaults — matching the historical defaults < file < env order.
@@ -189,17 +209,38 @@ def get_settings() -> MlxpSettings:
         **_overrides_from(_cluster_env_values(), allow_plain=True),
         **_overrides_from(os.environ, allow_plain=False),
     }
-    user = str(overrides.get("user") or saved.get("user") or _default_user())
+    # Only `user` is per-user. Priority: env/cluster-file override, then the
+    # per-user overlay, then the flat global file, then the derived default.
+    # Every other field stays machine-global; the derived dirs (experiments,
+    # datasets, home, …) hang off whichever `user` won here.
+    user = str(
+        overrides.get("user")
+        or overlay.get("user")
+        or saved.get("user")
+        or _default_user()
+    )
+    if overrides.get("user"):
+        scope = "global"
+    elif overlay.get("user"):
+        scope = "user"
+    else:
+        scope = "global"
     ddn_mount = str(overrides.get("ddn_mount") or _DEFAULT_DDN_MOUNT)
     ddn_home = str(overrides.get("ddn_user_home") or f"{ddn_mount}/{user}")
     data = _defaults_for(user, ddn_mount, ddn_home)
     data.update(overrides)
-    return MlxpSettings.model_validate(data)
+    settings = MlxpSettings.model_validate(data)
+    settings.scope = scope
+    return settings
 
 
 def save_user(user: str) -> MlxpSettings:
-    _SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _SETTINGS_FILE.write_text(json.dumps({"user": user}, indent=2) + "\n")
+    """Persist the mlxp job `user` via the owner-gated write policy: a per-user
+    save writes only that user's overlay; the flat global mlxp.json is written
+    for header-absent requests and for the machine owner. See
+    user_context.save_settings_file."""
+    payload = json.dumps({"user": user}, indent=2) + "\n"
+    user_context.save_settings_file(_FILENAME, payload)
     return get_settings()
 
 

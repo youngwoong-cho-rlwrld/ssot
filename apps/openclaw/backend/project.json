@@ -23,6 +23,13 @@
         "command": "uv run uvicorn app.main:app --host ${OPENCLAW_API_HOST:-127.0.0.1} --port ${OPENCLAW_API_PORT:-8790}",
         "cwd": "apps/openclaw/backend"
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run python -m unittest discover -s tests -v",
+        "cwd": "apps/openclaw/backend"
+      }
     }
   }
 }

@@ -23,16 +23,18 @@ All under `/api`:
 - `GET /logs?limit=N` — non-streaming tail of `openclaw logs --json`.
 - `GET /logs/stream` — SSE relay of `openclaw logs --json --follow`; the follower
   subprocess is killed on client disconnect.
-- `POST /chat` `{message, session_key?}` — one local agent turn via
-  `openclaw agent --json -m <message> [--session-key <key>]`. Never passes
-  `--deliver`/`--channel` (those would push to Slack).
+- `POST /chat` `{message, session_key?, model?}` — one local agent turn via a
+  private `--message-file`, with optional session and model overrides. The
+  backend limits chat concurrency, propagates disconnect cancellation, and
+  never passes `--deliver`/`--channel` (those would push to Slack).
+- `GET /models` — cached, single-flight discovery of configured models.
 
 ## Run
 
 ```bash
-npx nx install openclaw-api     # uv sync
-npx nx dev openclaw-api         # backend on :8790
-npx nx dev openclaw-web         # frontend on :5175
+npm exec nx run @ssot/openclaw-api:install
+npm exec nx run @ssot/openclaw-api:dev
+npm exec nx run @ssot/openclaw-web:dev
 ```
 
 Under the gateway the app mounts at `/openclaw`. Env knobs (`OPENCLAW_*`,
