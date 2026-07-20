@@ -5,16 +5,10 @@
   const $ = (id) => document.getElementById(id);
   const api = (path, opts) =>
     fetch(path, Object.assign({ credentials: 'same-origin' }, opts));
-  const namespaceState = Object.fromEntries(
-    ['profile', 'train-eval', 'results-sheet', 'session-viewer'].map((namespace) => [
-      namespace,
-      { dirty: false, revision: 0, saveInFlight: false },
-    ]),
-  );
+  const settingsState = { dirty: false, revision: 0, saveInFlight: false };
 
-  function setStatus(ns, text, kind) {
-    const el = document.querySelector(`[data-status="${ns}"]`);
-    if (!el) return;
+  function setSaveStatus(text, kind) {
+    const el = $('settings-save-status');
     el.textContent = text || '';
     el.className = 'status' + (kind ? ' ' + kind : '');
     if (text && kind === 'ok') {
@@ -24,13 +18,14 @@
     }
   }
 
-  async function putNamespace(ns, body) {
-    const res = await api('/api/settings/' + ns, {
+  async function putSettings(body) {
+    const res = await api('/api/settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (res.status === 401) {
+      settingsState.dirty = false;
       window.location.href = '/auth/login?next=/settings';
       throw new Error('unauthenticated');
     }
@@ -63,7 +58,7 @@
     delBtn.title = 'Remove cluster';
     delBtn.onclick = () => {
       wrap.remove();
-      markNamespaceDirty('train-eval');
+      markSettingsDirty();
     };
     delBtn.style.visibility = cluster.built_in ? 'hidden' : '';
     delBtn.tabIndex = cluster.built_in ? -1 : 0;
@@ -99,7 +94,7 @@
     add.textContent = '+ Add variable';
     add.onclick = () => {
       rows.appendChild(kvRow('', ''));
-      markNamespaceDirty('train-eval');
+      markSettingsDirty();
     };
     wrap.appendChild(add);
 
@@ -130,7 +125,7 @@
     del.textContent = '×';
     del.onclick = () => {
       row.remove();
-      markNamespaceDirty('train-eval');
+      markSettingsDirty();
     };
     del.style.visibility = locked ? 'hidden' : '';
     del.tabIndex = locked ? -1 : 0;
@@ -211,6 +206,23 @@
     }
   }
 
+  function fillSettings(s) {
+    s = s || {};
+    $('acct-username').value = (s.profile && s.profile.username) || '';
+
+    const rs = s['results-sheet'] || {};
+    $('rs-configs-root').value = rs.configs_root || '';
+
+    const sv = s['session-viewer'] || {};
+    $('sv-claude-root').value = sv.claude_root || '';
+    $('sv-codex-root').value = sv.codex_root || '';
+
+    fillTrainEval(s['train-eval'] || {});
+    $('te-wandb-key').value = '';
+    $('te-wandb-clear').checked = false;
+    $('te-slack-clear').checked = false;
+  }
+
   async function load() {
     const main = $('settings-main');
     const loadState = $('settings-load-state');
@@ -223,17 +235,7 @@
       if (!res.ok) throw new Error('request failed (' + res.status + ')');
       const s = await res.json();
 
-      $('acct-email').value = (s.profile && s.profile.email) || '';
-      $('acct-username').value = (s.profile && s.profile.username) || '';
-
-      const rs = s['results-sheet'] || {};
-      $('rs-configs-root').value = rs.configs_root || '';
-
-      const sv = s['session-viewer'] || {};
-      $('sv-claude-root').value = sv.claude_root || '';
-      $('sv-codex-root').value = sv.codex_root || '';
-
-      fillTrainEval(s['train-eval'] || {});
+      fillSettings(s);
       void refreshWandbStatus();
 
       // Account email comes from /api/auth/me since it is not in profile settings.
@@ -292,81 +294,71 @@
     },
   };
 
-  async function saveNamespace(ns, trigger) {
-    const state = namespaceState[ns];
-    if (state.saveInFlight) return;
-    const submittedRevision = state.revision;
-    state.saveInFlight = true;
-    if (trigger) {
-      trigger.disabled = true;
-      trigger.textContent = 'Saving...';
-    }
-    setStatus(ns, 'Saving...', '');
+  async function saveSettings() {
+    if (settingsState.saveInFlight) return;
+    const button = $('settings-save');
+    const submittedRevision = settingsState.revision;
+    settingsState.saveInFlight = true;
+    button.disabled = true;
+    button.textContent = 'Saving...';
+    setSaveStatus('Saving...', '');
     try {
-      const result = await putNamespace(ns, savers[ns]());
-      setStatus(ns, 'Saved', 'ok');
-      if (state.revision === submittedRevision) {
-        state.dirty = false;
-        if (ns === 'train-eval') {
-          fillTrainEval(result);
-          $('te-wandb-key').value = '';
-          $('te-slack-webhook').value = '';
-          $('te-wandb-clear').checked = false;
-          $('te-slack-clear').checked = false;
-          void refreshWandbStatus();
-        }
+      const body = Object.fromEntries(
+        Object.entries(savers).map(([namespace, collect]) => [namespace, collect()]),
+      );
+      const result = await putSettings(body);
+      setSaveStatus('Saved', 'ok');
+      if (settingsState.revision === submittedRevision) {
+        settingsState.dirty = false;
+        fillSettings(result);
+        void refreshWandbStatus();
       } else {
-        setStatus(ns, 'Saved. More changes pending.', 'ok');
+        setSaveStatus('Saved. More changes pending.', 'ok');
       }
     } catch (err) {
-      setStatus(ns, err.message || 'Save failed', 'err');
-      if (trigger) trigger.textContent = 'Retry save';
+      setSaveStatus(err.message || 'Save failed', 'err');
+      button.textContent = 'Retry save';
       return;
     } finally {
-      state.saveInFlight = false;
-      if (trigger) trigger.disabled = false;
+      settingsState.saveInFlight = false;
+      button.disabled = false;
     }
-    if (trigger) trigger.textContent = state.dirty ? 'Save changes' : 'Save';
+    button.textContent = settingsState.dirty ? 'Save changes' : 'Save';
   }
 
-  document.querySelectorAll('[data-save]').forEach((btn) => {
-    btn.addEventListener('click', () => saveNamespace(btn.dataset.save, btn));
-  });
+  $('settings-save').addEventListener('click', saveSettings);
 
-  function markNamespaceDirty(ns) {
-    const state = namespaceState[ns];
-    state.dirty = true;
-    state.revision += 1;
-    if (state.saveInFlight) return;
-    for (const button of document.querySelectorAll(`[data-save="${ns}"]`)) {
-      button.textContent = 'Save changes';
-    }
+  function markSettingsDirty() {
+    settingsState.dirty = true;
+    settingsState.revision += 1;
+    if (!settingsState.saveInFlight) $('settings-save').textContent = 'Save changes';
   }
 
-  for (const [ns, sectionId] of [
-    ['profile', 'sec-account'],
-    ['train-eval', 'sec-train-eval'],
-    ['results-sheet', 'sec-results-sheet'],
-    ['session-viewer', 'sec-session-viewer'],
+  for (const sectionId of [
+    'sec-account',
+    'sec-train-eval',
+    'sec-results-sheet',
+    'sec-session-viewer',
   ]) {
-    $(sectionId).addEventListener('input', () => markNamespaceDirty(ns));
+    $(sectionId).addEventListener('input', markSettingsDirty);
   }
 
   window.addEventListener('beforeunload', (event) => {
-    if (!Object.values(namespaceState).some((state) => state.dirty)) return;
+    if (!settingsState.dirty) return;
     event.preventDefault();
     event.returnValue = '';
   });
 
   $('te-add-cluster').addEventListener('click', () => {
     $('te-clusters').appendChild(clusterBlock({ name: '', env: {} }));
-    markNamespaceDirty('train-eval');
+    markSettingsDirty();
   });
 
   $('sign-out').addEventListener('click', async () => {
     try {
       await api('/auth/logout', { method: 'POST' });
     } catch { /* ignore */ }
+    settingsState.dirty = false;
     window.location.href = '/';
   });
 

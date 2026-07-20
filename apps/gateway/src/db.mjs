@@ -190,3 +190,30 @@ export function transformSettings(userId, namespace, transform) {
     throw error;
   }
 }
+
+// Read, transform, and replace multiple namespaces in one transaction. The
+// Settings page uses this so its single Save action cannot leave only some
+// sections persisted when validation or a write fails.
+export function transformSettingsBatch(userId, transforms) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const updated = {};
+    for (const [namespace, transform] of Object.entries(transforms)) {
+      const current = getSettings(userId, namespace);
+      const next = transform(current);
+      db.prepare('DELETE FROM user_settings WHERE user_id = ? AND namespace = ?').run(
+        userId,
+        namespace
+      );
+      for (const [key, value] of Object.entries(next)) {
+        setSetting(userId, namespace, key, value);
+      }
+      updated[namespace] = getSettings(userId, namespace);
+    }
+    db.exec('COMMIT');
+    return updated;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}

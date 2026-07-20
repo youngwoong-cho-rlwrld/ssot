@@ -13,6 +13,8 @@ const { DEFAULT_CLUSTER_ENVS, registerSettingsRoutes } = await import('./setting
 
 const owner = upsertUser({ email: 'youngwoong.cho@rlwrld.ai' });
 const other = upsertUser({ email: 'other@example.com' });
+const batchUser = upsertUser({ email: 'batch@example.com' });
+const rejectedBatchUser = upsertUser({ email: 'rejected-batch@example.com' });
 
 after(() => {
   db.close();
@@ -170,6 +172,131 @@ test('built-in cluster keys are restored server-side and custom keys remain supp
     assert.match(stored, /^CUSTOM_VALUE=yes$/m);
     assert.match(stored, /^CUSTOM_EMPTY=$/m);
   });
+});
+
+test('the page-wide save replaces every settings section atomically', async () => {
+  await withServer(batchUser, async (origin) => {
+    const saved = await fetch(`${origin}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        profile: { username: 'batch-user' },
+        'train-eval': {
+          clusters: [{ name: 'kakao', env: { GAM_DIR: '/workspace/gam' } }],
+          wandb: { project: 'batch-project', api_key: 'batch-wandb-secret' },
+          notifications: {
+            enabled: false,
+            slack_webhook_url: 'https://hooks.example/batch-secret',
+          },
+        },
+        'results-sheet': { configs_root: '/workspace/configs' },
+        'session-viewer': {
+          claude_root: '/workspace/claude',
+          codex_root: '/workspace/codex',
+        },
+      }),
+    });
+    assert.equal(saved.status, 200);
+    const snapshot = await saved.json();
+    assert.equal(snapshot.profile.username, 'batch-user');
+    assert.equal(snapshot['results-sheet'].configs_root, '/workspace/configs');
+    assert.equal(snapshot['session-viewer'].codex_root, '/workspace/codex');
+    assert.equal(snapshot['train-eval'].wandb.api_key, undefined);
+    assert.equal(snapshot['train-eval'].notifications.slack_webhook_url, undefined);
+    assert.equal(
+      snapshot['train-eval'].clusters.find((cluster) => cluster.name === 'kakao').env.GAM_DIR,
+      '/workspace/gam',
+    );
+
+    const preserved = await fetch(`${origin}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        profile: { username: 'batch-user' },
+        'train-eval': {
+          clusters: [{ name: 'kakao', env: { GAM_DIR: '/workspace/gam' } }],
+          wandb: { project: 'next-project', api_key: '' },
+          notifications: { enabled: true, slack_webhook_url: '' },
+        },
+        'results-sheet': { configs_root: '/workspace/configs' },
+        'session-viewer': {
+          claude_root: '/workspace/claude',
+          codex_root: '/workspace/codex',
+        },
+      }),
+    });
+    assert.equal(preserved.status, 200);
+    assert.equal(
+      getSettings(batchUser.id, 'train-eval').wandb.api_key,
+      'batch-wandb-secret',
+    );
+    assert.equal(
+      getSettings(batchUser.id, 'train-eval').notifications.slack_webhook_url,
+      'https://hooks.example/batch-secret',
+    );
+
+    const rejected = await fetch(`${origin}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        profile: { username: 'must-not-persist' },
+        'train-eval': { clusters: [], wandb: {}, notifications: {} },
+        'results-sheet': { configs_root: 42 },
+        'session-viewer': { claude_root: '', codex_root: '' },
+      }),
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal(getSettings(batchUser.id, 'profile').username, 'batch-user');
+    assert.equal(
+      getSettings(batchUser.id, 'results-sheet').configs_root,
+      '/workspace/configs',
+    );
+    assert.match(
+      getSettings(batchUser.id, 'train-eval').clusters[0].env_text,
+      /^GAM_DIR=\/workspace\/gam$/m,
+    );
+  });
+});
+
+test('a rejected page-wide W&B key leaves every section unchanged', async () => {
+  await withServer(
+    rejectedBatchUser,
+    async (origin) => {
+      const body = {
+        profile: { username: 'before-rejection' },
+        'train-eval': { clusters: [], wandb: { project: '' }, notifications: {} },
+        'results-sheet': { configs_root: '/before' },
+        'session-viewer': { claude_root: '', codex_root: '' },
+      };
+      const seeded = await fetch(`${origin}/api/settings`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      assert.equal(seeded.status, 200);
+
+      body.profile.username = 'after-rejection';
+      body['results-sheet'].configs_root = '/after';
+      body['train-eval'].wandb.api_key = 'rejected-key';
+      const rejected = await fetch(`${origin}/api/settings`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      assert.equal(rejected.status, 400);
+      assert.equal(
+        getSettings(rejectedBatchUser.id, 'profile').username,
+        'before-rejection',
+      );
+      assert.equal(
+        getSettings(rejectedBatchUser.id, 'results-sheet').configs_root,
+        '/before',
+      );
+    },
+    {
+      validateWandbKey: async () => ({ logged_in: false, error: 'invalid API key' }),
+    },
+  );
 });
 
 test('blank secret inputs preserve the existing SQLite secret', async () => {

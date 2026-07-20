@@ -1,5 +1,5 @@
 import express from 'express';
-import { getSettings, transformSettings } from './db.mjs';
+import { getSettings, transformSettings, transformSettingsBatch } from './db.mjs';
 
 // The four settings namespaces the account page can read and write.
 const NAMESPACES = ['profile', 'train-eval', 'results-sheet', 'session-viewer'];
@@ -335,6 +335,69 @@ export function registerSettingsRoutes(app, { getWandbStatus, validateWandbKey }
     } catch (error) {
       console.error('[ssot-gateway] W&B status failed', error);
       res.status(503).json({ error: 'wandb_status_unavailable' });
+    }
+  });
+
+  app.put('/api/settings', jsonBody, async (req, res) => {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ error: 'invalid_body' });
+    }
+    try {
+      for (const namespace of NAMESPACES) {
+        const value = body[namespace];
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error(`${namespace} settings are required`);
+        }
+        normalizeNamespace(namespace, value, {});
+      }
+    } catch (error) {
+      return res.status(400).json({
+        error: 'invalid_settings',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const wandbKey =
+      typeof body['train-eval'].wandb?.api_key === 'string'
+        ? body['train-eval'].wandb.api_key.trim()
+        : '';
+    if (wandbKey && validateWandbKey) {
+      try {
+        const status = await validateWandbKey(wandbKey, user.email);
+        if (!status?.logged_in) {
+          return res.status(400).json({
+            error: 'invalid_wandb_key',
+            detail: status?.error || 'Weights & Biases rejected the API key',
+          });
+        }
+      } catch (error) {
+        console.error('[ssot-gateway] W&B validation failed', error);
+        return res.status(503).json({ error: 'wandb_validation_unavailable' });
+      }
+    }
+
+    try {
+      const transforms = Object.fromEntries(
+        NAMESPACES.map((namespace) => [
+          namespace,
+          (current) => normalizeNamespace(namespace, body[namespace], current),
+        ]),
+      );
+      const updated = transformSettingsBatch(user.id, transforms);
+      res.json(
+        Object.fromEntries(
+          NAMESPACES.map((namespace) => [
+            namespace,
+            publicNamespace(namespace, updated[namespace]),
+          ]),
+        ),
+      );
+    } catch (error) {
+      console.error('[ssot-gateway] settings persistence failed', error);
+      res.status(503).json({ error: 'settings_unavailable' });
     }
   });
 
