@@ -386,6 +386,12 @@ async def get_variants():
     return {"variants": variants.list_variants()}
 
 
+# Must be registered before /api/variants/{name} or it matches name="summaries".
+@app.get("/api/variants/summaries")
+async def get_variant_summaries():
+    return {"summaries": await variants.list_variant_summaries()}
+
+
 @app.get("/api/variants/{name}")
 async def get_variant(name: str):
     try:
