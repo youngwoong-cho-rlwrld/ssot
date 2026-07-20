@@ -97,10 +97,16 @@ export default function JobDetail({ params }: { params: Promise<{ cluster: strin
   const details = useQuery({
     queryKey: ["job-details", cluster, id],
     queryFn: () => api<JobDetails>(`/api/jobs/${cluster}/${id}/details`),
-    refetchInterval: (q) =>
-      isTerminalJobState((q.state.data as JobDetails | undefined)?.state)
-        ? false
-        : REFRESH_MS,
+    refetchInterval: (q) => {
+      const data = q.state.data as JobDetails | undefined;
+      if (!isTerminalJobState(data?.state)) return REFRESH_MS;
+      // Training links are derived from durable checkpoint metadata and may
+      // become available after a copy-history migration/backfill. Do not keep
+      // a terminal eval page pinned forever to an earlier null response.
+      return data?.phase === "eval" && !data.training_job ? 60_000 : false;
+    },
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const progress = useQuery({

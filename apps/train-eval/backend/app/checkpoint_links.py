@@ -10,7 +10,7 @@ import shlex
 from typing import Any
 
 from .clusters import list_clusters, load_cluster
-from .mlxp_config import get_settings as get_mlxp_settings
+from .mlxp_config import experiments_roots, get_settings as get_mlxp_settings
 from .paths import CHECKPOINT_COPY_HISTORY_REL, CLUSTER_STAGING_REL
 from .remote_paths import _kubectl_bash_lc
 from .ssh import ssh_run
@@ -114,7 +114,40 @@ async def find_training_job_for_checkpoint(
     if info:
         return info
 
-    return find_checkpoint_info_from_links(links, checkpoint)
+    info = find_checkpoint_info_from_links(links, checkpoint)
+    if info:
+        return info
+
+    # Historical/manual checkpoint copies may predate persisted copy history.
+    # The output namespace is preserved as the copied directory leaf, so ask
+    # every other cluster's training metadata index for that namespace. This is
+    # deliberately the final fallback: exact copy records and same-cluster
+    # metadata remain authoritative. Refuse ambiguous cross-cluster matches.
+    return await _cross_cluster_checkpoint_job(cluster, checkpoint)
+
+
+async def _cross_cluster_checkpoint_job(
+    eval_cluster: str,
+    checkpoint: str,
+) -> dict[str, Any] | None:
+    clusters = [name for name in list_clusters() if name != eval_cluster]
+    if not clusters:
+        return None
+    results = await asyncio.gather(
+        *(_local_checkpoint_job(name, checkpoint) for name in clusters),
+        return_exceptions=True,
+    )
+    matches: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        key = (str(result.get("cluster") or ""), str(result.get("job_id") or ""))
+        if not all(key) or key in seen:
+            continue
+        seen.add(key)
+        matches.append(result)
+    return matches[0] if len(matches) == 1 else None
 
 
 def find_checkpoint_info_from_links(
@@ -165,8 +198,13 @@ async def _slurm_copy_history_records(host: str) -> list[dict[str, Any]]:
 
 async def _mlxp_copy_history_records() -> list[dict[str, Any]]:
     settings = get_mlxp_settings()
-    hist_dir = shlex.quote(f"{settings.experiments_dir}/{CHECKPOINT_COPY_HISTORY_REL}")
-    rc, out, _err = await _kubectl_bash_lc(f"cat {hist_dir}/*.jsonl 2>/dev/null || true", 15.0)
+    history_globs = " ".join(
+        f"{shlex.quote(f'{root}/{CHECKPOINT_COPY_HISTORY_REL}')}/*.jsonl"
+        for root in experiments_roots(settings)
+    )
+    rc, out, _err = await _kubectl_bash_lc(
+        f"cat {history_globs} 2>/dev/null || true", 15.0
+    )
     if rc != 0:
         return []
     return _parse_jsonl_records(out)
@@ -214,10 +252,13 @@ async def _local_checkpoint_job(cluster: str, checkpoint: str) -> dict[str, Any]
     checkpoint_b64 = base64.b64encode(checkpoint.encode()).decode()
     if cluster == "mlxp":
         settings = get_mlxp_settings()
+        roots_b64 = base64.b64encode(
+            json.dumps(experiments_roots(settings)).encode()
+        ).decode()
         env_assignments = [
             f"CHECKPOINT_LOOKUP_B64={shlex.quote(checkpoint_b64)}",
             "CHECKPOINT_LOOKUP_CLUSTER=mlxp",
-            f"CHECKPOINT_LOOKUP_EXPERIMENTS_ROOT={shlex.quote(settings.experiments_dir)}",
+            f"CHECKPOINT_LOOKUP_EXPERIMENTS_ROOTS_B64={shlex.quote(roots_b64)}",
         ]
     else:
         env_assignments = [
@@ -272,13 +313,24 @@ _REMOTE_CHECKPOINT_LOOKUP_SCRIPT = r'''
 import base64
 import json
 import os
+import re
 from pathlib import Path
 
 
 checkpoint = base64.b64decode(os.environ["CHECKPOINT_LOOKUP_B64"]).decode()
 cluster = os.environ["CHECKPOINT_LOOKUP_CLUSTER"]
 staging_rel = os.environ.get("CHECKPOINT_LOOKUP_STAGING_REL", ".train-eval-web")
-experiments_root = Path(os.environ["CHECKPOINT_LOOKUP_EXPERIMENTS_ROOT"]) if os.environ.get("CHECKPOINT_LOOKUP_EXPERIMENTS_ROOT") else Path.home() / staging_rel / "experiments"
+if os.environ.get("CHECKPOINT_LOOKUP_EXPERIMENTS_ROOTS_B64"):
+    experiments_roots = [
+        Path(value)
+        for value in json.loads(
+            base64.b64decode(os.environ["CHECKPOINT_LOOKUP_EXPERIMENTS_ROOTS_B64"]).decode()
+        )
+    ]
+elif os.environ.get("CHECKPOINT_LOOKUP_EXPERIMENTS_ROOT"):
+    experiments_roots = [Path(os.environ["CHECKPOINT_LOOKUP_EXPERIMENTS_ROOT"])]
+else:
+    experiments_roots = [Path.home() / staging_rel / "experiments"]
 
 
 def read_json(path):
@@ -315,6 +367,17 @@ def add_checkpoint_index_entry(index, key, info, *, overwrite=True):
     leaf = Path(key).name
     if leaf and not is_checkpoint_step_leaf(leaf) and (overwrite or leaf not in index):
         index[leaf] = info
+    # The earliest PhysiXel campaigns wrote
+    #   <variant>_train_<timestamp>_<suffix>
+    # and later copied the same checkpoint as
+    #   <variant>_<timestamp>_<suffix>.
+    # Preserve that historical rename as an index alias; the timestamp+suffix
+    # requirement keeps ordinary variant names containing "train" untouched.
+    legacy_alias = re.sub(
+        r"_train_(?=\d{8}_\d{6}_[0-9a-f]{6}$)", "_", leaf, flags=re.IGNORECASE
+    )
+    if legacy_alias != leaf and (overwrite or legacy_alias not in index):
+        index[legacy_alias] = info
 
 
 def job_info_from_meta(job_id, meta):
@@ -367,7 +430,14 @@ def load_checkpoint_index():
         info = job_info_from_meta(path.stem, meta)
         add_job_indexes(checkpoint_index, info, meta)
 
-    snapshot_meta_paths = sorted(experiments_root.glob("*/config_*.meta.json")) if experiments_root.exists() else []
+    snapshot_meta_paths = []
+    # Load legacy first so matching metadata in the current root wins through
+    # the index's existing last-writer-wins behavior.
+    for experiments_root in reversed(experiments_roots):
+        if experiments_root.exists():
+            snapshot_meta_paths.extend(
+                sorted(experiments_root.glob("*/config_*.meta.json"))
+            )
     for path in snapshot_meta_paths:
         try:
             meta = read_json(path)

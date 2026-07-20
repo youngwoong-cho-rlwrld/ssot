@@ -34,7 +34,7 @@ from .k8s_resources import (
     requested_gpus,
 )
 from .kubectl_errors import is_kubectl_not_found, is_kubectl_transport_error
-from .mlxp_config import get_settings, owner_selector
+from .mlxp_config import experiments_roots, get_settings, owner_selector
 from .mlxp_data_pod import ensure_listing_pod
 from .paths import CHECKPOINT_COPY_HISTORY_REL
 from .ssh import iter_logical_lines
@@ -341,6 +341,17 @@ async def _list_archived_runs(since_epoch: int | None = None) -> list[dict[str, 
             "start": start_iso or "",
             "end": end_iso or "",
             "elapsed": _elapsed(start_iso, end_iso),
+            "checkpoint_dir": str(meta.get("checkpoint_dir") or ""),
+            "config_snapshot_path": str(meta.get("config_snapshot_path") or ""),
+            "config_snapshot_meta_path": str(
+                meta.get("config_snapshot_meta_path") or ""
+            ),
+            "wandb_project": str(
+                meta.get("wandb_project")
+                or meta.get("submit_wandb_project")
+                or train_meta.get("wandb_project")
+                or ""
+            ),
         })
     return out
 
@@ -409,15 +420,17 @@ def _has_completed_artifact(
 
 async def _archived_metadata_records(pod: str) -> list[dict[str, Any]]:
     settings = get_settings()
-    experiments_root = shlex.quote(settings.experiments_dir)
+    roots = " ".join(shlex.quote(root) for root in experiments_roots(settings))
     script = r"""
 shopt -s nullglob
-for f in __EXPERIMENTS_ROOT__/*/config_*.meta.json; do
-    printf '\036%s\n' "$f"
-    cat "$f"
-    printf '\n'
+for root in __EXPERIMENTS_ROOTS__; do
+    for f in "$root"/*/config_*.meta.json; do
+        printf '\036%s\n' "$f"
+        cat "$f"
+        printf '\n'
+    done
 done
-""".replace("__EXPERIMENTS_ROOT__", experiments_root)
+""".replace("__EXPERIMENTS_ROOTS__", roots)
     try:
         proc = await asyncio.create_subprocess_exec(
             "kubectl", "exec", "-n", settings.namespace, pod, "--", "bash", "-c", script,
@@ -448,19 +461,20 @@ done
 
 async def _archived_artifact_index(pod: str, since_epoch: int | None = None) -> dict[str, dict[str, Any]]:
     settings = get_settings()
-    experiments_root = shlex.quote(settings.experiments_dir)
+    roots = " ".join(shlex.quote(root) for root in experiments_roots(settings))
     # The per-dir body costs several NFS round-trips, so it dominates the walk
     # (~60s over all runs). When a window start is known we list only checkpoint
     # dirs modified at/after it via `find -newermt` and run the body on those;
     # otherwise we fall back to the full glob. The body itself is unchanged.
     script = r"""
 SINCE_EPOCH='__SINCE_EPOCH__'
+EXPERIMENTS_ROOTS=(__EXPERIMENTS_ROOTS__)
 shopt -s nullglob
 emit() {
-    local d="$1" output_namespace rel variant latest has_checkpoint end_path has_final start_epoch end_epoch
+    local root="$1" d="$2" output_namespace rel variant latest has_checkpoint end_path has_final start_epoch end_epoch
     local matches
     output_namespace=$(basename "$d")
-    rel="${d#__EXPERIMENTS_ROOT__/}"
+    rel="${d#${root}/}"
     variant="${rel%%/*}"
     [ "$output_namespace" = "checkpoints" ] && output_namespace="$variant"
 
@@ -493,12 +507,16 @@ emit() {
     end_epoch=$(stat -c %Y "$end_path" 2>/dev/null || echo "$start_epoch")
     printf '%s|%s|%s|%s|%s|%s\n' "$variant" "$output_namespace" "$has_checkpoint" "$has_final" "$start_epoch" "$end_epoch"
 }
-if [ -n "$SINCE_EPOCH" ]; then
-    while IFS= read -r d; do emit "$d"; done < <(find __EXPERIMENTS_ROOT__ -mindepth 2 -maxdepth 4 -type d \( -name checkpoints -o -path '*/checkpoints/*' \) -newermt "@$SINCE_EPOCH" -printf '%p/\n' 2>/dev/null)
-else
-    for d in __EXPERIMENTS_ROOT__/*/checkpoints/ __EXPERIMENTS_ROOT__/*/checkpoints/*/ __EXPERIMENTS_ROOT__/*/checkpoints/*/*/; do emit "$d"; done
-fi
-""".replace("__EXPERIMENTS_ROOT__", experiments_root).replace("__SINCE_EPOCH__", str(since_epoch) if since_epoch is not None else "")
+for root in "${EXPERIMENTS_ROOTS[@]}"; do
+    if [ -n "$SINCE_EPOCH" ]; then
+        while IFS= read -r d; do emit "$root" "$d"; done < <(find "$root" -mindepth 2 -maxdepth 4 -type d \( -name checkpoints -o -path '*/checkpoints/*' \) -newermt "@$SINCE_EPOCH" -printf '%p/\n' 2>/dev/null)
+    else
+        for d in "$root"/*/checkpoints/ "$root"/*/checkpoints/*/ "$root"/*/checkpoints/*/*/; do emit "$root" "$d"; done
+    fi
+done
+""".replace("__EXPERIMENTS_ROOTS__", roots).replace(
+        "__SINCE_EPOCH__", str(since_epoch) if since_epoch is not None else ""
+    )
     try:
         proc = await asyncio.create_subprocess_exec(
             "kubectl", "exec", "-n", settings.namespace, pod, "--", "bash", "-c", script,
@@ -529,14 +547,17 @@ fi
             "start_epoch": start_e,
             "end_epoch": end_e,
         }
-        index[output_namespace] = record
+        index.setdefault(output_namespace, record)
     return index
 
 
 async def _copy_history_index(pod: str) -> dict[str, dict[str, Any]]:
     settings = get_settings()
-    hist_dir = shlex.quote(f"{settings.experiments_dir}/{CHECKPOINT_COPY_HISTORY_REL}")
-    script = f"cat {hist_dir}/*.jsonl 2>/dev/null || true"
+    history_globs = " ".join(
+        f"{shlex.quote(f'{root}/{CHECKPOINT_COPY_HISTORY_REL}')}/*.jsonl"
+        for root in experiments_roots(settings)
+    )
+    script = f"cat {history_globs} 2>/dev/null || true"
     try:
         proc = await asyncio.create_subprocess_exec(
             "kubectl", "exec", "-n", settings.namespace, pod, "--", "bash", "-c", script,
@@ -822,17 +843,17 @@ async def _tail_archived_log(job_name: str, start_line: int = 1):
         return
     settings = get_settings()
     checkpoint_log_names = [x for x in dict.fromkeys([output_namespace, job_name]) if x]
-    log_paths = [
-        *[
-            f"{settings.experiments_dir}/{variant}/checkpoints/{name}/logs/training.log"
+    log_paths = []
+    for root in experiments_roots(settings):
+        log_paths.extend(
+            f"{root}/{variant}/checkpoints/{name}/logs/training.log"
             for name in checkpoint_log_names
-        ],
-        f"{settings.experiments_dir}/{variant}/checkpoints/logs/training_rank0.log",
-        *[
-            f"{settings.experiments_dir}/{variant}/logs/{name}/eval.log"
+        )
+        log_paths.append(f"{root}/{variant}/checkpoints/logs/training_rank0.log")
+        log_paths.extend(
+            f"{root}/{variant}/logs/{name}/eval.log"
             for name in checkpoint_log_names
-        ],
-    ]
+        )
     try:
         pod = await ensure_listing_pod()
     except Exception:
@@ -872,13 +893,21 @@ async def _archived_record(name: str) -> dict[str, Any] | None:
             break
     if archived is None:
         return None
+    comment_fields = {
+        "phase": "train",
+        "variant": archived["variant"],
+        "output_namespace": archived["output_namespace"],
+        "checkpoint_dir": archived.get("checkpoint_dir", ""),
+        "config_snapshot_path": archived.get("config_snapshot_path", ""),
+        "config_snapshot_meta_path": archived.get("config_snapshot_meta_path", ""),
+        "wandb_project": archived.get("wandb_project", ""),
+    }
     return {
         "JobID": archived["job_id"],
         "JobName": archived["job_name"],
         "JobTrainNote": archived.get("train_note", ""),
-        "JobComment": (
-            f"phase=train;variant={archived['variant']};"
-            f"output_namespace={archived['output_namespace']}"
+        "JobComment": ";".join(
+            f"{key}={value}" for key, value in comment_fields.items() if value
         ),
         "Partition": "mlxp",
         "State": "COMPLETED",

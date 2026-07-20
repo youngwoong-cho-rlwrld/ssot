@@ -155,6 +155,19 @@ def get_settings() -> MlxpSettings:
     return settings
 
 
+def experiments_roots(settings: MlxpSettings | None = None) -> tuple[str, ...]:
+    """Return current and legacy MLXP experiment roots, newest first.
+
+    Training outputs moved from ``<ddn_user_home>/experiments`` to the org
+    unified-checkpoints tree. Historical config snapshots and checkpoint-copy
+    records were intentionally left in place, so read paths must cover both
+    roots while writes continue to use only ``settings.experiments_dir``.
+    """
+    resolved = settings or get_settings()
+    legacy = f"{resolved.ddn_user_home.rstrip('/')}/experiments"
+    return tuple(dict.fromkeys((resolved.experiments_dir.rstrip('/'), legacy)))
+
+
 def save_user(user: str) -> MlxpSettings:
     values = _cluster_env_values()
     values["USER"] = user
