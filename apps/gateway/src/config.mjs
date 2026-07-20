@@ -128,6 +128,13 @@ try {
 }
 for (const a of apps) {
   Object.assign(a, fileOverrides.apps?.[a.id] ?? {});
+  const mount = String(a.basePath || '/').trim();
+  a.basePath = (mount.startsWith('/') ? mount : `/${mount}`).replace(/\/+$/, '') || '/';
+  const apiPrefix = String(a.api?.prefix || '/api').trim();
+  const normalizedApiPrefix = (apiPrefix.startsWith('/') ? apiPrefix : `/${apiPrefix}`)
+    .replace(/\/+$/, '') || '/api';
+  if (a.api) a.api.prefix = normalizedApiPrefix;
+  a.apiBase = `${a.basePath === '/' ? '' : a.basePath}${normalizedApiPrefix}`;
 }
 
 export const config = {

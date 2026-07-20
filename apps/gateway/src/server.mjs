@@ -53,17 +53,31 @@ app.use((req, _res, next) => {
 // --- auth + account API --------------------------------------------------
 registerAuthRoutes(app);
 
-// Agent-backed APIs can execute expensive local work and must never be
-// reachable through the network-facing gateway without a signed-in session.
-// The standalone upstreams bind to loopback; this is the public trust boundary.
+// Derive the guard paths from the same configured mounts as the proxies. This
+// keeps auth and settings checks intact when a base path is overridden.
+const accountAppIds = new Set(['train-eval', 'results-sheet', 'session-viewer', 'openclaw']);
+const accountApiBases = config.apps
+  .filter((entry) => accountAppIds.has(entry.id))
+  .map((entry) => ({
+    id: entry.id,
+    base: entry.apiBase,
+  }));
+
+// Account-scoped APIs must never be reached through the network-facing gateway
+// without a signed-in session. The standalone upstreams bind to loopback; this
+// is the public trust boundary that makes x-ssot-user trustworthy.
 app.use((req, res, next) => {
-  const protectedAgentApi =
-    req.path === '/results/api/agent' ||
-    req.path.startsWith('/results/api/agent/') ||
-    req.path === '/openclaw/api' ||
-    req.path.startsWith('/openclaw/api/');
-  if (protectedAgentApi && !req.ssotUser) {
+  const apiMount = accountApiBases.find(
+    ({ base }) => req.path === base || req.path.startsWith(`${base}/`)
+  );
+  if (apiMount && !req.ssotUser) {
     return res.status(401).json({ error: 'unauthenticated' });
+  }
+  if (req.ssotUser && apiMount?.id === 'session-viewer') {
+    const roots = getSettings(req.ssotUser.id, 'session-viewer');
+    if (!roots.claude_root || !roots.codex_root) {
+      return res.status(409).json({ error: 'session_roots_not_configured' });
+    }
   }
   next();
 });
@@ -72,18 +86,45 @@ app.get('/api/auth/me', (req, res) => {
   const user = req.ssotUser;
   if (!user) return res.status(401).json({ error: 'unauthenticated' });
   const profile = getSettings(user.id, 'profile');
-  const username = profile.username || (user.email ? user.email.split('@')[0] : '');
   res.json({
     user: {
       email: user.email,
       name: user.name || '',
       picture: user.picture || '',
-      username,
+      username: profile.username || '',
     },
   });
 });
 
-registerSettingsRoutes(app);
+const trainEvalApiOrigin = config.apps.find((entry) => entry.id === 'train-eval')?.api?.origin;
+async function fetchTrainEvalWandb(pathname, email, init = {}) {
+  if (!trainEvalApiOrigin) throw new Error('train-eval API is disabled');
+  const response = await fetch(`${trainEvalApiOrigin}/api/wandb/${pathname}`, {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      'x-ssot-user': email,
+    },
+    signal: AbortSignal.timeout(7000),
+  });
+  if (!response.ok) throw new Error(`train-eval returned ${response.status}`);
+  return response.json();
+}
+registerSettingsRoutes(app, {
+  getWandbStatus: trainEvalApiOrigin
+    ? (email) => fetchTrainEvalWandb('status', email)
+    : undefined,
+  validateWandbKey: trainEvalApiOrigin
+    ? (key, email) =>
+        fetchTrainEvalWandb('validate', email, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ key }),
+        })
+    : undefined,
+});
 
 // --- settings page (gateway-served) --------------------------------------
 const settingsHtml = fs.readFileSync(
@@ -177,6 +218,7 @@ function injectHeaders(proxyReq, req, scope) {
 
   if (scope === 'results') {
     const s = getSettings(user.id, 'results-sheet');
+    proxyReq.setHeader('x-ssot-results-configs-configured', s.configs_root ? '1' : '0');
     if (s.configs_root) proxyReq.setHeader('x-ssot-results-configs-root', s.configs_root);
   } else if (scope === 'sessions-api') {
     const s = getSettings(user.id, 'session-viewer');
@@ -195,7 +237,7 @@ for (const a of config.apps) {
   // Backend API for static-mode apps (e.g. /sessions/api/* -> session API's
   // /api/*). Registered before the app mount so it wins.
   if (a.api) {
-    const apiBase = a.basePath + a.api.prefix;
+    const apiBase = a.apiBase;
     app.use(
       createProxyMiddleware({
         pathFilter: (p) => p === apiBase || p.startsWith(apiBase + '/'),

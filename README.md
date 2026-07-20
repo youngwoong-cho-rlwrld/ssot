@@ -54,9 +54,9 @@ git-pull-on-box deploy logic left in any app.
 
 ## Configuration
 
-Everything is configurable through environment variables; `.env.example`
-documents every knob with its default. Nx injects the root `.env` into all
-tasks, and the gateway reads it directly as a fallback. Highlights:
+Deployment and process infrastructure is configurable through environment
+variables; account settings live only in SQLite. `.env.example` documents the
+deployment knobs. Nx injects the root `.env` into all tasks. Highlights:
 
 - `SSOT_HOST` / `SSOT_PORT` - gateway bind (default 0.0.0.0:4000).
 - `SSOT_<APP>_ORIGIN` - where the gateway finds each app.
@@ -64,9 +64,8 @@ tasks, and the gateway reads it directly as a fallback. Highlights:
 - `SSOT_<APP>_ENABLED` - hide an app from the portal and gateway.
 - `SSOT_CONFIG` - optional JSON file overriding the app registry (names,
   descriptions, origins, base paths) without touching env or code.
-- `SSOT_DATA_DIR` - SQLite location (`~/.ssot/ssot.db` by default). The only
-  persistent SSOT state (session-viewer board layout) lives there; a legacy
-  `board.json` is imported automatically on first run.
+- `SSOT_DATA_DIR` - SQLite location (`~/.ssot/ssot.db` by default). Authentication,
+  exact-email account settings, and session-viewer board layout live there.
 - Per-app variables (ports, upstream API bases, scan roots, CORS) are listed
   in `.env.example` under their app's section.
 
@@ -88,9 +87,12 @@ as that person), run the gateway only on a trusted network and treat
 
 **Settings page** (`/settings`, gateway-served) lets a signed-in user edit:
 their username; the train-eval cluster environment settings, Weights & Biases,
-and Slack notifications (pushed to the train-eval API on save, and prefilled
-from it otherwise); the results-sheet configs root; and the session-viewer
-Claude/Codex session roots.
+and Slack notifications; the results-sheet configs root; and the session-viewer
+Claude/Codex session roots. Every account starts empty. SQLite is authoritative:
+the Train / Eval runtime reads the signed-in user's row directly, and does not
+fall back to an owner account, legacy settings files, process credentials, or
+repository cluster templates. Secrets are stored in the private SQLite file
+and are redacted from settings API responses.
 
 **`x-ssot-*` header contract.** On every proxied request that carries a valid
 session, the gateway injects `x-ssot-user` (the signed-in email) for all apps,

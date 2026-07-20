@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
+import shlex
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from . import cluster_settings, user_context
-
-
-_SETTINGS_DIR = Path.home() / ".train-eval-web"
-_FILENAME = "mlxp.json"
-_SETTINGS_FILE = _SETTINGS_DIR / _FILENAME
+from . import cluster_settings
 
 # This application's identity, written as the `tool` label on every Job/Pod it
 # creates and used to scope job listing selectors. Not user config: changing it
@@ -27,13 +20,7 @@ _DEFAULT_DDN_MOUNT = "/data"
 
 
 def _default_user() -> str:
-    user = os.environ.get("TRAIN_EVAL_MLXP_USER") or os.environ.get("USER")
-    if not user:
-        raise RuntimeError(
-            "MLXP user is not configured. Set it on the Settings page, or export "
-            "$TRAIN_EVAL_MLXP_USER (or $USER) in the backend environment."
-        )
-    return user
+    raise RuntimeError("MLXP user is not configured. Set USER for the mlxp cluster.")
 
 
 def _defaults_for(user: str, ddn_mount: str, ddn_home: str) -> dict[str, Any]:
@@ -48,8 +35,7 @@ def _defaults_for(user: str, ddn_mount: str, ddn_home: str) -> dict[str, Any]:
         "ddn_user_home": ddn_home,
         "datasets_dir": f"{ddn_home}/datasets",
         # Training outputs go to the org unified checkpoints root (per-user
-        # folder), not the legacy per-user home. UNIFIED_EXPERIMENTS_DIR (or the
-        # legacy TRAIN_EVAL_MLXP_EXPERIMENTS_DIR) still wins when set.
+        # folder), not the legacy per-user home.
         "experiments_dir": f"{ddn_mount}/rlwrld-unified-checkpoints/{user}/experiments",
         "hf_home": f"{ddn_home}/.cache/huggingface",
         "workspace_dir": f"{ddn_home}/workspace",
@@ -97,10 +83,7 @@ class MlxpSettings(BaseModel):
     image_pull_secret: str = Field(min_length=1)
     zone: str = Field(min_length=1)
     wandb_secret: str = Field(min_length=1)
-    # Additive, response-only: "user" when `user` came from a per-user overlay,
-    # else "global". Only `user` is per-user; every other field (namespace,
-    # image, zone, pvc, GPU facts) is machine-global, and the derived dirs hang
-    # off the effective `user`. Ignored on input.
+    # Response-only source marker retained for API compatibility.
     scope: str | None = None
 
 
@@ -108,11 +91,8 @@ class MlxpSettingsUpdate(BaseModel):
     user: str = Field(min_length=1)
 
 
-# Each settings field resolves from an env var. The primary name follows the
-# slurm cluster-config convention (plain DATA_DIR, ISAAC_DIR, DEXJOCO_DIR, … for
-# concepts shared with kakao/skt; an MLXP_ prefix for MLXP-only concepts). The
-# legacy TRAIN_EVAL_MLXP_* name is still accepted so effective envs saved before
-# this rename keep resolving identically. Priority: primary, then legacy.
+# SQLite stores the MLXP cluster as environment-style keys. The primary names
+# follow the Slurm cluster convention; legacy key names remain readable.
 _FIELD_ENV_NAMES: dict[str, tuple[str, str]] = {
     "user": ("USER", "TRAIN_EVAL_MLXP_USER"),
     "namespace": ("MLXP_NAMESPACE", "TRAIN_EVAL_MLXP_NAMESPACE"),
@@ -137,36 +117,6 @@ _FIELD_ENV_NAMES: dict[str, tuple[str, str]] = {
     "wandb_secret": ("MLXP_WANDB_SECRET", "TRAIN_EVAL_MLXP_WANDB_SECRET"),
 }
 
-# Prefixes considered namespaced-and-safe to read from the process environment.
-# Bare slurm-style names (USER, HF_HOME, DATA_DIR, …) are only honored in the
-# cluster env FILE, never from os.environ, so a stray shell export can't shadow
-# the saved config.
-_PREFIXED = ("MLXP_", "TRAIN_EVAL_MLXP_")
-
-
-def _read_file(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _load_saved() -> dict[str, Any]:
-    return _read_file(_SETTINGS_FILE)
-
-
-def _overlay_saved() -> dict[str, Any]:
-    """The per-user overlay's saved values for this request, or {} when there is
-    no user header or no overlay file yet."""
-    overlay = user_context.overlay_file(_FILENAME)
-    if overlay is None:
-        return {}
-    return _read_file(overlay)
-
-
 def _cluster_env_values() -> dict[str, str]:
     try:
         return cluster_settings.parse_env_text(cluster_settings.load_env_text("mlxp"))
@@ -174,17 +124,11 @@ def _cluster_env_values() -> dict[str, str]:
         return {}
 
 
-def _overrides_from(
-    values: dict[str, str] | os._Environ[str], *, allow_plain: bool
-) -> dict[str, Any]:
-    """Resolve field overrides from ``values``. Each field takes the first of
-    its candidate env names present and non-empty. With ``allow_plain`` false,
-    only prefixed names (MLXP_*, TRAIN_EVAL_MLXP_*) are considered."""
+def _overrides_from(values: dict[str, str]) -> dict[str, Any]:
+    """Resolve each field from the first non-empty compatible SQLite key."""
     out: dict[str, Any] = {}
     for field_name, names in _FIELD_ENV_NAMES.items():
         for name in names:
-            if not allow_plain and not name.startswith(_PREFIXED):
-                continue
             raw = values.get(name)
             if raw is None or raw == "":
                 continue
@@ -200,47 +144,24 @@ def _overrides_from(
 
 
 def get_settings() -> MlxpSettings:
-    saved = _load_saved()
-    overlay = _overlay_saved()
-    # Cluster env FILE accepts plain slurm-style names; the process environment
-    # only namespaced ones. Process env wins over file, file over derived
-    # defaults — matching the historical defaults < file < env order.
-    overrides = {
-        **_overrides_from(_cluster_env_values(), allow_plain=True),
-        **_overrides_from(os.environ, allow_plain=False),
-    }
-    # Only `user` is per-user. Priority: env/cluster-file override, then the
-    # per-user overlay, then the flat global file, then the derived default.
-    # Every other field stays machine-global; the derived dirs (experiments,
-    # datasets, home, …) hang off whichever `user` won here.
-    user = str(
-        overrides.get("user")
-        or overlay.get("user")
-        or saved.get("user")
-        or _default_user()
-    )
-    if overrides.get("user"):
-        scope = "global"
-    elif overlay.get("user"):
-        scope = "user"
-    else:
-        scope = "global"
+    overrides = _overrides_from(_cluster_env_values())
+    user = str(overrides.get("user") or _default_user())
     ddn_mount = str(overrides.get("ddn_mount") or _DEFAULT_DDN_MOUNT)
     ddn_home = str(overrides.get("ddn_user_home") or f"{ddn_mount}/{user}")
     data = _defaults_for(user, ddn_mount, ddn_home)
     data.update(overrides)
     settings = MlxpSettings.model_validate(data)
-    settings.scope = scope
+    settings.scope = "user"
     return settings
 
 
 def save_user(user: str) -> MlxpSettings:
-    """Persist the mlxp job `user` via the owner-gated write policy: a per-user
-    save writes only that user's overlay; the flat global mlxp.json is written
-    for header-absent requests and for the machine owner. See
-    user_context.save_settings_file."""
-    payload = json.dumps({"user": user}, indent=2) + "\n"
-    user_context.save_settings_file(_FILENAME, payload)
+    values = _cluster_env_values()
+    values["USER"] = user
+    payload = "\n".join(
+        f"{key}={shlex.quote(str(value))}" for key, value in values.items()
+    ) + "\n"
+    cluster_settings.save_settings("mlxp", payload)
     return get_settings()
 
 

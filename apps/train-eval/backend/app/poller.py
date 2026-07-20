@@ -21,7 +21,7 @@ import asyncio
 import os
 import time
 
-from . import cache_db, clusters, user_context
+from . import cache_db, clusters, settings_db, user_context
 
 
 def poller_enabled() -> bool:
@@ -43,35 +43,45 @@ DEFAULT_JOBS_WINDOW_HOURS = 24
 # Fire-and-forget poll tasks (job-action triggers) kept referenced so the event
 # loop doesn't garbage-collect them mid-flight.
 _pending: set[asyncio.Task] = set()
-_results_inflight: dict[str, asyncio.Task] = {}
+_results_inflight: dict[tuple[str, str, str], asyncio.Task] = {}
 
 
-async def poll_jobs_once(cluster: str) -> None:
+async def poll_jobs_once(cluster: str, email: str | None = None) -> None:
     """Refresh one cluster's jobs into the cache. Never raises."""
     from . import jobs as jobs_mod
 
-    # Cache writes must never be user-scoped: this task may have inherited a
-    # request user's context (schedule_jobs_poll's create_task copies it), which
-    # would scope the mlxp owner_selector to that user's per-user mlxp user.
-    user_context.use_no_user()
-    t0 = time.monotonic()
-    try:
-        rows = await jobs_mod.list_jobs([cluster], hours=DEFAULT_JOBS_WINDOW_HOURS)
-    except Exception as exc:  # noqa: BLE001 - isolate per-cluster failure
+    scope = user_context.normalize_email(email) or ""
+    with user_context.user_scope(email):
+        fingerprints = clusters.cache_fingerprints()
+        await cache_db.sync_cluster_configs(fingerprints, scope=scope)
+        fingerprint = fingerprints.get(cluster)
+        if fingerprint is None:
+            return
+        t0 = time.monotonic()
+        try:
+            rows = await jobs_mod.list_jobs([cluster], hours=DEFAULT_JOBS_WINDOW_HOURS)
+        except Exception as exc:  # noqa: BLE001 - isolate per-cluster failure
+            await cache_db.record_poll(
+                cluster, "jobs", ok=False,
+                error=str(exc) or type(exc).__name__,
+                duration_ms=int((time.monotonic() - t0) * 1000),
+                scope=scope,
+            )
+            return
+        if clusters.cache_fingerprints().get(cluster) != fingerprint:
+            await cache_db.sync_cluster_configs(
+                clusters.cache_fingerprints(), scope=scope
+            )
+            return
+        await cache_db.upsert_jobs(cluster, rows, scope=scope)
         await cache_db.record_poll(
-            cluster, "jobs", ok=False,
-            error=str(exc) or type(exc).__name__,
+            cluster, "jobs", ok=True, error=None,
             duration_ms=int((time.monotonic() - t0) * 1000),
+            scope=scope,
         )
-        return
-    await cache_db.upsert_jobs(cluster, rows)
-    await cache_db.record_poll(
-        cluster, "jobs", ok=True, error=None,
-        duration_ms=int((time.monotonic() - t0) * 1000),
-    )
 
 
-async def refresh_results(cluster: str):
+async def refresh_results(cluster: str, email: str | None = None):
     """Scan and persist one cluster's eval results.
 
     This is shared by the background poller and the explicit ``fresh=1`` API
@@ -82,12 +92,24 @@ async def refresh_results(cluster: str):
     A scan-level error is returned in the regular ResultsResponse while the
     last good cache row is preserved and returned with the current error.
     """
-    task = _results_inflight.get(cluster)
+    scope = user_context.normalize_email(email) or ""
+    with user_context.user_scope(email):
+        fingerprints = clusters.cache_fingerprints()
+    await cache_db.sync_cluster_configs(fingerprints, scope=scope)
+    fingerprint = fingerprints.get(cluster)
+    if fingerprint is None:
+        return await _cached_results_with_error(
+            cluster, f"Cluster env for {cluster} is not configured", scope=scope
+        )
+    inflight_key = (scope, cluster, fingerprint)
+    task = _results_inflight.get(inflight_key)
     if task is None:
-        task = asyncio.create_task(_refresh_results_once(cluster))
-        _results_inflight[cluster] = task
+        task = asyncio.create_task(_refresh_results_once(cluster, email, fingerprint))
+        _results_inflight[inflight_key] = task
 
-        def clear(completed: asyncio.Task, target: str = cluster) -> None:
+        def clear(
+            completed: asyncio.Task, target: tuple[str, str, str] = inflight_key
+        ) -> None:
             if _results_inflight.get(target) is completed:
                 _results_inflight.pop(target, None)
 
@@ -97,51 +119,65 @@ async def refresh_results(cluster: str):
     return await asyncio.shield(task)
 
 
-async def _refresh_results_once(cluster: str):
+async def _refresh_results_once(
+    cluster: str, email: str | None = None, fingerprint: str | None = None
+):
     from . import results as results_mod
 
-    # The shared cache is the machine-global/owner view, never a request user's
-    # overlay. Non-owner API requests bypass it in main.get_results.
-    user_context.use_no_user()
-    t0 = time.monotonic()
-    try:
-        resp = await results_mod.list_results(cluster)
-    except Exception as exc:
-        error = str(exc) or type(exc).__name__
-        await cache_db.record_poll(
-            cluster, "results", ok=False, error=error,
-            duration_ms=int((time.monotonic() - t0) * 1000),
+    scope = user_context.normalize_email(email) or ""
+    with user_context.user_scope(email):
+        t0 = time.monotonic()
+        try:
+            resp = await results_mod.list_results(cluster)
+        except Exception as exc:
+            error = str(exc) or type(exc).__name__
+            await cache_db.record_poll(
+                cluster, "results", ok=False, error=error,
+                duration_ms=int((time.monotonic() - t0) * 1000),
+                scope=scope,
+            )
+            return await _cached_results_with_error(cluster, error, scope=scope)
+
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        error = next((item.error for item in resp.errors if item.cluster == cluster), None)
+        if error:
+            await cache_db.record_poll(
+                cluster, "results", ok=False, error=error, duration_ms=duration_ms,
+                scope=scope,
+            )
+            return await _cached_results_with_error(cluster, error, scope=scope)
+
+        current_fingerprints = clusters.cache_fingerprints()
+        if fingerprint is not None and current_fingerprints.get(cluster) != fingerprint:
+            await cache_db.sync_cluster_configs(current_fingerprints, scope=scope)
+            return await _cached_results_with_error(
+                cluster, "Cluster settings changed during refresh.", scope=scope
+            )
+
+        fetched_at = time.time()
+        variants = [variant.model_dump() for variant in resp.variants]
+        errors = [item.model_dump() for item in resp.errors]
+        await cache_db.write_results(
+            cluster, variants, errors,
+            fetched_at=fetched_at, duration_ms=duration_ms, error=None,
+            scope=scope,
         )
-        return await _cached_results_with_error(cluster, error)
-
-    duration_ms = int((time.monotonic() - t0) * 1000)
-    error = next((item.error for item in resp.errors if item.cluster == cluster), None)
-    if error:
         await cache_db.record_poll(
-            cluster, "results", ok=False, error=error, duration_ms=duration_ms
+            cluster, "results", ok=True, error=None, duration_ms=duration_ms,
+            scope=scope,
         )
-        return await _cached_results_with_error(cluster, error)
-
-    fetched_at = time.time()
-    variants = [variant.model_dump() for variant in resp.variants]
-    errors = [item.model_dump() for item in resp.errors]
-    await cache_db.write_results(
-        cluster, variants, errors,
-        fetched_at=fetched_at, duration_ms=duration_ms, error=None,
-    )
-    await cache_db.record_poll(
-        cluster, "results", ok=True, error=None, duration_ms=duration_ms
-    )
-    resp.fetched_at = {cluster: fetched_at}
-    resp.stale = False
-    return resp
+        resp.fetched_at = {cluster: fetched_at}
+        resp.stale = False
+        return resp
 
 
-async def _cached_results_with_error(cluster: str, error: str):
+async def _cached_results_with_error(
+    cluster: str, error: str, *, scope: str = ""
+):
     """Return the last good snapshot plus the current refresh error."""
     from . import results as results_mod
 
-    cached = (await cache_db.read_results([cluster])).get(cluster)
+    cached = (await cache_db.read_results([cluster], scope=scope)).get(cluster)
     variants = []
     previous_errors = []
     fetched_at: dict[str, float] = {}
@@ -173,7 +209,7 @@ async def _cached_results_with_error(cluster: str, error: str):
     )
 
 
-async def poll_results_once(cluster: str) -> None:
+async def poll_results_once(cluster: str, email: str | None = None) -> None:
     """Refresh one cluster's eval results into the cache. Never raises.
 
     ``results.list_results`` swallows per-cluster failures into ``.errors``
@@ -182,7 +218,7 @@ async def poll_results_once(cluster: str) -> None:
     failure and leave the previous fragment in place (served stale).
     """
     try:
-        await refresh_results(cluster)
+        await refresh_results(cluster, email)
     except Exception:  # noqa: BLE001 - failure was recorded by refresh_results
         return
 
@@ -197,7 +233,9 @@ def schedule_jobs_poll(cluster: str) -> None:
     if not poller_enabled():
         return
     try:
-        task = asyncio.create_task(poll_jobs_once(cluster))
+        task = asyncio.create_task(
+            poll_jobs_once(cluster, user_context.current_user_email())
+        )
     except RuntimeError:
         # No running loop (e.g. called from a sync/test context) — skip.
         return
@@ -205,12 +243,31 @@ def schedule_jobs_poll(cluster: str) -> None:
     task.add_done_callback(_pending.discard)
 
 
+def schedule_results_poll(cluster: str) -> None:
+    """Start one scoped Results refresh without blocking the request."""
+    if not poller_enabled():
+        return
+    try:
+        task = asyncio.create_task(
+            poll_results_once(cluster, user_context.current_user_email())
+        )
+    except RuntimeError:
+        return
+    _pending.add(task)
+    task.add_done_callback(_pending.discard)
+
+
 async def _poll_all(kind: str) -> None:
     poll = poll_jobs_once if kind == "jobs" else poll_results_once
-    await asyncio.gather(
-        *(poll(c) for c in clusters.list_clusters()),
-        return_exceptions=True,
-    )
+    tasks = []
+    for email in settings_db.list_principals("train-eval"):
+        with user_context.user_scope(email):
+            fingerprints = clusters.cache_fingerprints()
+            await cache_db.sync_cluster_configs(
+                fingerprints, scope=user_context.normalize_email(email) or ""
+            )
+            tasks.extend(poll(cluster, email) for cluster in fingerprints)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _loop(kind: str, interval: float, initial_delay: float = 0.0) -> None:

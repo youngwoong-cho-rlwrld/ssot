@@ -1,18 +1,11 @@
-"""Wandb credentials and project settings endpoints.
-
-The API key is persisted to `~/.netrc` via `wandb.login(key=...)`. The
-project name is persisted to `~/.train-eval-web/wandb.json` (see
-wandb_config) and is used both for the backend's run lookup and as the
-default project passed to training jobs.
-"""
+"""Per-user W&B credentials and project settings endpoints."""
 from __future__ import annotations
 
 
 import asyncio
 from pydantic import BaseModel
 
-from . import user_context
-from .wandb_config import WANDB_ENTITY_OVERRIDE, get_project, project_scope, set_project
+from .wandb_config import get_api_key, get_project, project_scope, set_api_key, set_project
 
 
 class WandbStatus(BaseModel):
@@ -34,30 +27,47 @@ class ProjectRequest(BaseModel):
 
 
 async def get_status() -> WandbStatus:
-    """Probe wandb to see whether the local netrc/key works."""
+    """Probe W&B using only the current user's SQLite-backed API key."""
+
+    key = get_api_key()
+    if not key:
+        return WandbStatus(
+            logged_in=False,
+            entity=None,
+            project=get_project(),
+            scope=project_scope(),
+        )
 
     def _probe() -> tuple[str | None, str | None]:
         try:
             import wandb
-            api = wandb.Api(timeout=5)
-            entity = WANDB_ENTITY_OVERRIDE or api.default_entity
+            api = wandb.Api(api_key=key, timeout=5)
+            entity = api.default_entity
             return entity, None
         except Exception as e:
             return None, str(e)
 
     entity, err = await asyncio.to_thread(_probe)
-    # The netrc login and its entity are the machine owner's identity. An
-    # identified non-owner without their own project overlay sees blanks, same
-    # policy as the cluster-env scaffold: keys are contract, values personal.
-    if user_context.current_user_slug() is not None and not user_context.is_owner_request():
-        scope = project_scope()
-        return WandbStatus(
-            logged_in=entity is not None,
-            entity=None,
-            project=get_project() if scope == "user" else "",
-            error=err,
-            scope="user",
-        )
+    return WandbStatus(
+        logged_in=entity is not None,
+        entity=entity,
+        project=get_project(),
+        error=err,
+        scope=project_scope(),
+    )
+
+
+async def validate(key: str) -> WandbStatus:
+    """Validate a key without persisting it."""
+    def _do() -> tuple[str | None, str | None]:
+        try:
+            import wandb
+            api = wandb.Api(api_key=key.strip(), timeout=5)
+            return api.default_entity, None
+        except Exception as e:
+            return None, str(e)
+
+    entity, err = await asyncio.to_thread(_do)
     return WandbStatus(
         logged_in=entity is not None,
         entity=entity,
@@ -68,32 +78,17 @@ async def get_status() -> WandbStatus:
 
 
 async def login(key: str) -> WandbStatus:
-    """Persist the API key via wandb.login (writes ~/.netrc)."""
+    """Validate and save the current user's API key in SSOT SQLite."""
     from . import details
 
-    def _do() -> tuple[str | None, str | None]:
-        try:
-            import wandb
-            ok = wandb.login(key=key.strip(), relogin=True, force=True, verify=True)
-            if not ok:
-                return None, "wandb.login returned false"
-            api = wandb.Api(timeout=5)
-            return WANDB_ENTITY_OVERRIDE or api.default_entity, None
-        except Exception as e:
-            return None, str(e)
-
-    entity, err = await asyncio.to_thread(_do)
+    status = await validate(key)
+    if status.logged_in:
+        set_api_key(key)
 
     # Clear cached wandb identity data so the next request re-resolves it.
-    details._wandb_entity_cache = None
+    details._wandb_entity_cache.clear()
     details._wandb_workspace_cache.clear()
-    return WandbStatus(
-        logged_in=entity is not None,
-        entity=entity,
-        project=get_project(),
-        error=err,
-        scope=project_scope(),
-    )
+    return status
 
 
 async def set_project_endpoint(project: str) -> WandbStatus:

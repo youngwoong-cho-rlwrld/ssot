@@ -24,7 +24,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from . import clusters, jobs, notifications_config
+from . import clusters, jobs, notifications_config, settings_db, user_context
 from .jobs import short_state
 
 _STATE_FILE = Path.home() / ".train-eval-web" / "notify_state.json"
@@ -133,7 +133,7 @@ class _Monitor:
 
     def __init__(self) -> None:
         self.state: dict[str, dict] = {}
-        self.primed = False
+        self.primed: set[str] = set()
         self._loaded = False
 
     def _load_state(self) -> None:
@@ -145,11 +145,15 @@ class _Monitor:
         except (OSError, json.JSONDecodeError):
             return
         if isinstance(data, dict):
-            self.state = data
+            self.state = {
+                key: value
+                for key, value in data.items()
+                if isinstance(value, dict) and value.get("email")
+            }
             # Do not notify on the first tick after process start. The jobs
             # list intentionally includes recent terminal jobs, so a persisted
             # diff would replay historical completions when Slack is enabled.
-            self.primed = False
+            self.primed.clear()
 
     def _persist(self) -> None:
         try:
@@ -158,7 +162,7 @@ class _Monitor:
         except OSError:
             pass
 
-    async def _collect(self) -> dict[str, dict]:
+    async def _collect(self, email: str) -> dict[str, dict]:
         """Current jobs keyed by id. Fetches per cluster and, on a cluster
         error, preserves that cluster's prior entries so a transient SSH
         failure can't drop-then-readd a job and cause a spurious re-notify."""
@@ -168,14 +172,15 @@ class _Monitor:
                 js = await jobs.list_jobs([c], hours=24)
             except Exception:
                 for jid, ent in self.state.items():
-                    if ent.get("cluster") == c:
+                    if ent.get("email") == email and ent.get("cluster") == c:
                         current[jid] = dict(ent)
                 continue
             for j in js:
                 # Slurm job ids are only unique within one cluster. Kakao and
                 # SKT can both have (for example) job 153064; keying by the bare
                 # id silently overwrote one transition and lost its Slack ping.
-                current[f"{c}/{j.job_id}"] = {
+                current[f"{email}|{c}/{j.job_id}"] = {
+                    "email": email,
                     "cluster": c,
                     "event": _event_for_state(j.state),
                     "_job": j,  # transient; stripped before persist
@@ -185,20 +190,31 @@ class _Monitor:
     @staticmethod
     def _persistable(current: dict[str, dict]) -> dict[str, dict]:
         return {
-            jid: {"cluster": e["cluster"], "event": e["event"]}
+            jid: {
+                "email": e["email"],
+                "cluster": e["cluster"],
+                "event": e["event"],
+            }
             for jid, e in current.items()
         }
 
-    async def _tick(self) -> None:
+    def _replace_user_state(self, email: str, current: dict[str, dict]) -> None:
+        self.state = {
+            key: value
+            for key, value in self.state.items()
+            if value.get("email") != email
+        }
+        self.state.update(self._persistable(current))
+
+    async def _tick_user(self, email: str) -> None:
         s = notifications_config.get_settings()
         if not (s.enabled and s.configured):
-            self.primed = False  # re-seed cleanly when re-enabled
+            self.primed.discard(email)
             return
-        current = await self._collect()
-        if not self.primed:
-            self.state = self._persistable(current)
-            self.primed = True
-            self._persist()
+        current = await self._collect(email)
+        if email not in self.primed:
+            self._replace_user_state(email, current)
+            self.primed.add(email)
             return
         for state_key, e in current.items():
             previous = self.state.get(state_key)
@@ -216,7 +232,12 @@ class _Monitor:
                     new,
                     getattr(j, "state", "") if j else "",
                 ))
-        self.state = self._persistable(current)
+        self._replace_user_state(email, current)
+
+    async def _tick(self) -> None:
+        for email in settings_db.list_principals("train-eval"):
+            with user_context.user_scope(email):
+                await self._tick_user(email)
         self._persist()
 
     async def run(self) -> None:

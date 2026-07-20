@@ -53,7 +53,7 @@ test("rejects invalid clusters before contacting upstream", async () => {
   }
 });
 
-test("forwards one cluster and returns the upstream payload unchanged", async () => {
+test("forwards one cluster, exact user, and returns the upstream payload unchanged", async () => {
   const originalFetch = globalThis.fetch;
   const requestedUrls = [];
   const payload = {
@@ -61,15 +61,19 @@ test("forwards one cluster and returns the upstream payload unchanged", async ()
     variants: [{ cluster: "cluster-one", variant: "experiment", tasks: [] }],
     errors: [],
   };
-  globalThis.fetch = async (url) => {
+  let requestedHeaders;
+  globalThis.fetch = async (url, init) => {
     requestedUrls.push(String(url));
+    requestedHeaders = new Headers(init?.headers);
     return Response.json(payload);
   };
 
   try {
     const { GET } = await importFreshRoute();
     const response = await GET(
-      new Request("http://viewer.test/api/results?cluster=cluster-one"),
+      new Request("http://viewer.test/api/results?cluster=cluster-one", {
+        headers: { "x-ssot-user": "person@example.com" },
+      }),
     );
 
     assert.equal(response.status, 200);
@@ -78,6 +82,7 @@ test("forwards one cluster and returns the upstream payload unchanged", async ()
     const upstream = new URL(requestedUrls[0]);
     assert.equal(upstream.pathname, "/api/results");
     assert.equal(upstream.searchParams.get("cluster"), "cluster-one");
+    assert.equal(requestedHeaders.get("x-ssot-user"), "person@example.com");
   } finally {
     globalThis.fetch = originalFetch;
   }

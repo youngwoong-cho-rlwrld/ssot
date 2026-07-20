@@ -42,19 +42,27 @@ class NotificationMonitorTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(notifications.jobs, "list_jobs", list_jobs),
         ):
-            current = await monitor._collect()
+            current = await monitor._collect("person@example.com")
 
-        self.assertEqual(set(current), {"kakao/153064", "skt/153064"})
+        self.assertEqual(
+            set(current),
+            {
+                "person@example.com|kakao/153064",
+                "person@example.com|skt/153064",
+            },
+        )
 
     async def test_both_cluster_transitions_are_notified(self):
-        async def collect():
+        async def collect(email):
             return {
-                "kakao/153064": {
+                f"{email}|kakao/153064": {
+                    "email": email,
                     "cluster": "kakao",
                     "event": "completed",
                     "_job": job("kakao", "COMPLETED"),
                 },
-                "skt/153064": {
+                f"{email}|skt/153064": {
+                    "email": email,
                     "cluster": "skt",
                     "event": "failed",
                     "_job": job("skt", "FAILED"),
@@ -62,10 +70,14 @@ class NotificationMonitorTests(unittest.IsolatedAsyncioTestCase):
             }
 
         monitor = notifications._Monitor()
-        monitor.primed = True
+        monitor.primed = {"person@example.com"}
         monitor.state = {
-            "kakao/153064": {"cluster": "kakao", "event": "running"},
-            "skt/153064": {"cluster": "skt", "event": "running"},
+            "person@example.com|kakao/153064": {
+                "email": "person@example.com", "cluster": "kakao", "event": "running"
+            },
+            "person@example.com|skt/153064": {
+                "email": "person@example.com", "cluster": "skt", "event": "running"
+            },
         }
         monitor._collect = collect
         monitor._persist = Mock()
@@ -82,6 +94,11 @@ class NotificationMonitorTests(unittest.IsolatedAsyncioTestCase):
                 return_value=True,
             ),
             patch.object(notifications, "_post", post),
+            patch.object(
+                notifications.settings_db,
+                "list_principals",
+                return_value=["person@example.com"],
+            ),
         ):
             await monitor._tick()
 

@@ -10,6 +10,7 @@ small questions over SSH (slurm) or kubectl (mlxp) to compute progress.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import shlex
@@ -57,10 +58,10 @@ from .variants import load_variant
 
 
 from .wandb_config import (
-    WANDB_ENTITY_OVERRIDE,
-    WANDB_WORKSPACE_OVERRIDE,
+    get_api_key,
     get_project,
 )
+from . import user_context
 
 # Wandb config:
 #   - run id: WANDB_RUN_ID pinned by submit.py (slurm) / body script
@@ -1703,15 +1704,21 @@ def _append_wandb_workspace(url: str, workspace: str | None) -> str:
 
 async def _wandb_workspace(entity: str) -> str | None:
     """Return W&B's browser workspace selector for the entity, if known."""
-    if WANDB_WORKSPACE_OVERRIDE:
-        return WANDB_WORKSPACE_OVERRIDE
-    if entity in _wandb_workspace_cache:
-        return _wandb_workspace_cache[entity] or None
+    api_key = get_api_key()
+    if not api_key:
+        return None
+    cache_key = (
+        user_context.current_user_email() or "",
+        entity,
+        hashlib.sha256(api_key.encode()).hexdigest(),
+    )
+    if cache_key in _wandb_workspace_cache:
+        return _wandb_workspace_cache[cache_key] or None
 
     def _query() -> str | None:
         try:
             import wandb
-            api = wandb.Api(timeout=10)
+            api = wandb.Api(api_key=api_key, timeout=10)
             viewer = api.viewer
             username = getattr(viewer, "username", None)
             if username == entity:
@@ -1731,11 +1738,11 @@ async def _wandb_workspace(entity: str) -> str | None:
         return None
 
     workspace = await asyncio.to_thread(_query)
-    _wandb_workspace_cache[entity] = workspace or ""
+    _wandb_workspace_cache[cache_key] = workspace or ""
     return workspace
 
 
-_wandb_workspace_cache: dict[str, str] = {}
+_wandb_workspace_cache: dict[tuple[str, str, str], str] = {}
 
 
 async def _wandb_url(run_id: str, project: str | None = None) -> str | None:
@@ -1743,6 +1750,9 @@ async def _wandb_url(run_id: str, project: str | None = None) -> str | None:
     if not entity:
         return None
     resolved_project = project or get_project()
+    api_key = get_api_key()
+    if not api_key or not resolved_project:
+        return None
     workspace = await _wandb_workspace(entity)
     fallback = _append_wandb_workspace(
         f"https://wandb.ai/{quote(entity, safe='')}/{quote(resolved_project, safe='')}/runs/{quote(run_id, safe='')}",
@@ -1752,7 +1762,7 @@ async def _wandb_url(run_id: str, project: str | None = None) -> str | None:
     def _query() -> str | None:
         try:
             import wandb
-            api = wandb.Api(timeout=10)
+            api = wandb.Api(api_key=api_key, timeout=10)
             run = api.run(f"{entity}/{resolved_project}/{run_id}")
             return _append_wandb_workspace(run.url or fallback, workspace)
         except Exception as exc:
@@ -1771,26 +1781,28 @@ async def _wandb_url(run_id: str, project: str | None = None) -> str | None:
     return await asyncio.to_thread(_query)
 
 
-_wandb_entity_cache: str | None = None
+_wandb_entity_cache: dict[tuple[str, str], str] = {}
 
 
 async def _wandb_entity() -> str | None:
-    """Resolve the wandb entity once. Order: env override → API default."""
-    global _wandb_entity_cache
-    if WANDB_ENTITY_OVERRIDE:
-        return WANDB_ENTITY_OVERRIDE
-    if _wandb_entity_cache is not None:
-        return _wandb_entity_cache or None
+    """Resolve and cache the W&B entity for the current exact user."""
+    principal = user_context.current_user_email() or ""
+    api_key = get_api_key()
+    if not principal or not api_key:
+        return None
+    cache_key = (principal, hashlib.sha256(api_key.encode()).hexdigest())
+    if cache_key in _wandb_entity_cache:
+        return _wandb_entity_cache[cache_key] or None
 
     def _default() -> str:
         try:
             import wandb
-            return wandb.Api(timeout=10).default_entity or ""
+            return wandb.Api(api_key=api_key, timeout=10).default_entity or ""
         except Exception:
             return ""
 
-    _wandb_entity_cache = await asyncio.to_thread(_default)
-    return _wandb_entity_cache or None
+    _wandb_entity_cache[cache_key] = await asyncio.to_thread(_default)
+    return _wandb_entity_cache[cache_key] or None
 
 
 async def _wandb_step(run_id: str, project: str | None = None) -> int | None:
@@ -1799,11 +1811,14 @@ async def _wandb_step(run_id: str, project: str | None = None) -> int | None:
     if not entity:
         return None
     resolved_project = project or get_project()
+    api_key = get_api_key()
+    if not api_key or not resolved_project:
+        return None
 
     def _query() -> int | None:
         try:
             import wandb
-            api = wandb.Api(timeout=10)
+            api = wandb.Api(api_key=api_key, timeout=10)
             run = api.run(f"{entity}/{resolved_project}/{run_id}")
             # train/global_step is the actual training-loop step. wandb's
             # built-in `_step` counts wandb.log() calls, which is

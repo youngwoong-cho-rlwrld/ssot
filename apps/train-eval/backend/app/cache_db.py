@@ -72,38 +72,91 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         f"{_quote(c)} TEXT" if c not in ("queue_position", "restarts") else f"{_quote(c)} INTEGER"
         for c in _JOB_COLUMNS
     )
+    legacy: list[str] = []
+    for table in ("jobs", "results_cache", "poll_meta"):
+        columns = {
+            row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if columns and "scope" not in columns:
+            legacy_name = f"{table}_unscoped_v1"
+            conn.execute(f"DROP TABLE IF EXISTS {legacy_name}")
+            conn.execute(f"ALTER TABLE {table} RENAME TO {legacy_name}")
+            legacy.append(table)
+
     conn.executescript(
         f"""
         CREATE TABLE IF NOT EXISTS jobs (
+            scope TEXT NOT NULL,
             {cols_ddl},
             first_seen_at REAL NOT NULL,
             updated_at REAL NOT NULL,
             is_terminal INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (cluster, job_id)
+            PRIMARY KEY (scope, cluster, job_id)
         );
-        CREATE INDEX IF NOT EXISTS jobs_cluster_updated
-            ON jobs (cluster, updated_at);
+        CREATE INDEX IF NOT EXISTS jobs_scope_cluster_updated
+            ON jobs (scope, cluster, updated_at);
 
         CREATE TABLE IF NOT EXISTS results_cache (
-            cluster TEXT PRIMARY KEY,
+            scope TEXT NOT NULL,
+            cluster TEXT NOT NULL,
             variants_json TEXT NOT NULL DEFAULT '[]',
             errors_json TEXT NOT NULL DEFAULT '[]',
             fetched_at REAL NOT NULL,
             duration_ms INTEGER,
-            error TEXT
+            error TEXT,
+            PRIMARY KEY (scope, cluster)
         );
 
         CREATE TABLE IF NOT EXISTS poll_meta (
+            scope TEXT NOT NULL,
             cluster TEXT NOT NULL,
             kind TEXT NOT NULL,
             fetched_at REAL NOT NULL,
             ok INTEGER NOT NULL,
             error TEXT,
             duration_ms INTEGER,
-            PRIMARY KEY (cluster, kind)
+            PRIMARY KEY (scope, cluster, kind)
+        );
+
+        CREATE TABLE IF NOT EXISTS cache_configs (
+            scope TEXT NOT NULL,
+            cluster TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            PRIMARY KEY (scope, cluster)
         );
         """
     )
+    job_columns = ", ".join(_quote(column) for column in _JOB_COLUMNS)
+    if "jobs" in legacy:
+        conn.execute(
+            f"""
+            INSERT OR IGNORE INTO jobs
+              (scope, {job_columns}, first_seen_at, updated_at, is_terminal)
+            SELECT '', {job_columns}, first_seen_at, updated_at, is_terminal
+            FROM jobs_unscoped_v1
+            """
+        )
+        conn.execute("DROP TABLE jobs_unscoped_v1")
+    if "results_cache" in legacy:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO results_cache
+              (scope, cluster, variants_json, errors_json, fetched_at, duration_ms, error)
+            SELECT '', cluster, variants_json, errors_json, fetched_at, duration_ms, error
+            FROM results_cache_unscoped_v1
+            """
+        )
+        conn.execute("DROP TABLE results_cache_unscoped_v1")
+    if "poll_meta" in legacy:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO poll_meta
+              (scope, cluster, kind, fetched_at, ok, error, duration_ms)
+            SELECT '', cluster, kind, fetched_at, ok, error, duration_ms
+            FROM poll_meta_unscoped_v1
+            """
+        )
+        conn.execute("DROP TABLE poll_meta_unscoped_v1")
     conn.commit()
 
 
@@ -161,9 +214,61 @@ async def init() -> None:
     await _aexec(lambda _conn: None)
 
 
+async def sync_cluster_configs(
+    fingerprints: dict[str, str], *, scope: str = ""
+) -> None:
+    """Invalidate cache fragments whose configured cluster identity changed.
+
+    Cluster names are user-editable aliases. Keeping only ``(email, name)`` as
+    the cache key can mix data after its SSH alias or paths are changed. This
+    transaction also purges removed cluster names so they cannot be returned by
+    an explicit or empty-list cache read.
+    """
+
+    def _op(conn: sqlite3.Connection) -> None:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            current = {
+                row["cluster"]: row["fingerprint"]
+                for row in conn.execute(
+                    "SELECT cluster, fingerprint FROM cache_configs WHERE scope = ?",
+                    (scope,),
+                ).fetchall()
+            }
+            affected = {
+                cluster
+                for cluster in set(current) | set(fingerprints)
+                if current.get(cluster) != fingerprints.get(cluster)
+            }
+            for cluster in affected:
+                conn.execute(
+                    "DELETE FROM jobs WHERE scope = ? AND cluster = ?",
+                    (scope, cluster),
+                )
+                conn.execute(
+                    "DELETE FROM results_cache WHERE scope = ? AND cluster = ?",
+                    (scope, cluster),
+                )
+                conn.execute(
+                    "DELETE FROM poll_meta WHERE scope = ? AND cluster = ?",
+                    (scope, cluster),
+                )
+            conn.execute("DELETE FROM cache_configs WHERE scope = ?", (scope,))
+            conn.executemany(
+                "INSERT INTO cache_configs (scope, cluster, fingerprint) VALUES (?, ?, ?)",
+                [(scope, cluster, value) for cluster, value in fingerprints.items()],
+            )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+
+    await _aexec(_op)
+
+
 # ── jobs ──
 
-async def upsert_jobs(cluster: str, rows: list[Job]) -> None:
+async def upsert_jobs(cluster: str, rows: list[Job], *, scope: str = "") -> None:
     """Insert/update this cluster's jobs.
 
     Terminal rows are write-once: if a job is already stored terminal and its
@@ -178,8 +283,8 @@ async def upsert_jobs(cluster: str, rows: list[Job]) -> None:
             r["job_id"]: r
             for r in conn.execute(
                 'SELECT job_id, state, is_terminal, restarts, "end" '
-                "FROM jobs WHERE cluster = ?",
-                (cluster,),
+                "FROM jobs WHERE scope = ? AND cluster = ?",
+                (scope, cluster),
             )
         }
         placeholders = ", ".join(_quote(c) for c in _JOB_COLUMNS)
@@ -187,9 +292,9 @@ async def upsert_jobs(cluster: str, rows: list[Job]) -> None:
         update_cols = [c for c in _JOB_COLUMNS if c not in ("cluster", "job_id")]
         set_clause = ", ".join(f"{_quote(c)}=excluded.{_quote(c)}" for c in update_cols)
         sql = (
-            f"INSERT INTO jobs ({placeholders}, first_seen_at, updated_at, is_terminal) "
-            f"VALUES ({qmarks}, ?, ?, ?) "
-            f"ON CONFLICT(cluster, job_id) DO UPDATE SET {set_clause}, "
+            f"INSERT INTO jobs (scope, {placeholders}, first_seen_at, updated_at, is_terminal) "
+            f"VALUES (?, {qmarks}, ?, ?, ?) "
+            f"ON CONFLICT(scope, cluster, job_id) DO UPDATE SET {set_clause}, "
             f"updated_at=excluded.updated_at, is_terminal=excluded.is_terminal"
         )
         for job in rows:
@@ -208,7 +313,7 @@ async def upsert_jobs(cluster: str, rows: list[Job]) -> None:
                 # restarts/end correction (e.g. a preempted-then-re-failed job
                 # keeping the same state) still falls through and updates.
                 continue
-            values = [data.get(c) for c in _JOB_COLUMNS]
+            values = [scope, *(data.get(c) for c in _JOB_COLUMNS)]
             values += [now, now, 1 if terminal else 0]
             conn.execute(sql, values)
         conn.commit()
@@ -219,6 +324,8 @@ async def upsert_jobs(cluster: str, rows: list[Job]) -> None:
 async def read_jobs(
     clusters: list[str] | None,
     since_epoch: float | None,
+    *,
+    scope: str = "",
 ) -> list[dict]:
     """Return cached jobs as Job-shaped dicts.
 
@@ -230,9 +337,11 @@ async def read_jobs(
 
     def _op(conn: sqlite3.Connection) -> list[dict]:
         cols = ", ".join(_quote(c) for c in _JOB_COLUMNS)
-        where = []
-        params: list[Any] = []
-        if clusters:
+        where = ["scope = ?"]
+        params: list[Any] = [scope]
+        if clusters == []:
+            return []
+        if clusters is not None:
             where.append(f"cluster IN ({', '.join('?' for _ in clusters)})")
             params.extend(clusters)
         if since_epoch is not None:
@@ -256,14 +365,16 @@ async def write_results(
     fetched_at: float,
     duration_ms: int | None,
     error: str | None,
+    *,
+    scope: str = "",
 ) -> None:
     def _op(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT INTO results_cache
-                (cluster, variants_json, errors_json, fetched_at, duration_ms, error)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(cluster) DO UPDATE SET
+                (scope, cluster, variants_json, errors_json, fetched_at, duration_ms, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(scope, cluster) DO UPDATE SET
                 variants_json=excluded.variants_json,
                 errors_json=excluded.errors_json,
                 fetched_at=excluded.fetched_at,
@@ -271,6 +382,7 @@ async def write_results(
                 error=excluded.error
             """,
             (
+                scope,
                 cluster,
                 json.dumps(variants),
                 json.dumps(errors),
@@ -284,18 +396,24 @@ async def write_results(
     await _aexec(_op)
 
 
-async def read_results(clusters: list[str] | None) -> dict[str, dict]:
+async def read_results(
+    clusters: list[str] | None, *, scope: str = ""
+) -> dict[str, dict]:
     """Return {cluster: {variants, errors, fetched_at, error}} for stored rows."""
 
     def _op(conn: sqlite3.Connection) -> dict[str, dict]:
-        if clusters:
+        if clusters == []:
+            return {}
+        if clusters is not None:
             placeholders = ", ".join("?" for _ in clusters)
             rows = conn.execute(
-                f"SELECT * FROM results_cache WHERE cluster IN ({placeholders})",
-                clusters,
+                f"SELECT * FROM results_cache WHERE scope = ? AND cluster IN ({placeholders})",
+                [scope, *clusters],
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM results_cache").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM results_cache WHERE scope = ?", (scope,)
+            ).fetchall()
         out: dict[str, dict] = {}
         for r in rows:
             out[r["cluster"]] = {
@@ -317,37 +435,43 @@ async def record_poll(
     ok: bool,
     error: str | None,
     duration_ms: int | None,
+    *,
+    scope: str = "",
 ) -> None:
     now = time.time()
 
     def _op(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
-            INSERT INTO poll_meta (cluster, kind, fetched_at, ok, error, duration_ms)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(cluster, kind) DO UPDATE SET
+            INSERT INTO poll_meta (scope, cluster, kind, fetched_at, ok, error, duration_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(scope, cluster, kind) DO UPDATE SET
                 fetched_at=excluded.fetched_at,
                 ok=excluded.ok,
                 error=excluded.error,
                 duration_ms=excluded.duration_ms
             """,
-            (cluster, kind, now, 1 if ok else 0, error, duration_ms),
+            (scope, cluster, kind, now, 1 if ok else 0, error, duration_ms),
         )
         conn.commit()
 
     await _aexec(_op)
 
 
-async def read_poll_meta(kind: str | None = None) -> dict[str, dict]:
+async def read_poll_meta(
+    kind: str | None = None, *, scope: str = ""
+) -> dict[str, dict]:
     """Return {cluster: {fetched_at, ok, error, duration_ms}} for one kind."""
 
     def _op(conn: sqlite3.Connection) -> dict[str, dict]:
         if kind:
             rows = conn.execute(
-                "SELECT * FROM poll_meta WHERE kind = ?", (kind,)
+                "SELECT * FROM poll_meta WHERE scope = ? AND kind = ?", (scope, kind)
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM poll_meta").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM poll_meta WHERE scope = ?", (scope,)
+            ).fetchall()
         return {
             r["cluster"]: {
                 "fetched_at": r["fetched_at"],

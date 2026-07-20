@@ -88,9 +88,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Resolve the gateway-injected `x-ssot-user` into a contextvar so the per-user
-# settings overlay (user_config / wandb_config / mlxp_config) applies for the
-# request. Header-absent requests resolve to no user -> flat global config.
+# Resolve the gateway-injected exact email into a contextvar. Header-absent
+# requests have no account settings; there is no owner/global fallback.
 app.add_middleware(user_context.SsotUserMiddleware)
 
 
@@ -299,7 +298,7 @@ async def put_cluster_settings(name: str, req: cluster_settings.ClusterEnvSettin
 
             invalidate_pods_cache()
         return saved
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         raise HTTPException(404, str(e))
 
 
@@ -859,11 +858,23 @@ async def get_jobs(
     since: str | None = None,
     fresh: int = 0,
 ):
-    target = [cluster] if cluster else None
+    scope = user_context.current_user_email() or ""
+    fingerprints = clusters.cache_fingerprints()
+    if cluster and cluster not in fingerprints:
+        raise HTTPException(404, f"cluster {cluster} not found")
+    targets = [cluster] if cluster else list(fingerprints)
+    target = targets if cluster else None
+    if poller.poller_enabled():
+        await cache_db.sync_cluster_configs(fingerprints, scope=scope)
     # A live fetch is forced when the poller is off, when ?fresh=1, or when an
     # explicit start/end range is requested (arbitrary ranges aren't windowed
     # in the cache — serve them straight from the source, and upsert the rows).
-    if not poller.poller_enabled() or fresh or start or end:
+    if (
+        not poller.poller_enabled()
+        or fresh
+        or start
+        or end
+    ):
         try:
             js = await jobs.list_jobs(target, hours=hours, start=start, end=end)
         except RuntimeError as e:
@@ -872,18 +883,11 @@ async def get_jobs(
             # Opportunistic write-through: a cache failure here must not turn a
             # good live fetch into a 500 — log and still return the live jobs.
             #
-            # Invariant: only user-agnostic fetches may be cached (the shared
-            # cache is read by everyone). When a per-user request is active, the
-            # mlxp fetch above ran with that user's owner_selector, so its rows
-            # are user-scoped — serve them to this requester but do NOT upsert
-            # them. Slurm rows are machine identity (`squeue -u $USER`) either
-            # way, so they stay cacheable.
-            skip_mlxp = user_context.current_user_slug() is not None
             try:
                 for c in {j.cluster for j in js}:
-                    if c == "mlxp" and skip_mlxp:
-                        continue
-                    await cache_db.upsert_jobs(c, [j for j in js if j.cluster == c])
+                    await cache_db.upsert_jobs(
+                        c, [j for j in js if j.cluster == c], scope=scope
+                    )
             except Exception as exc:  # noqa: BLE001 - cache is best-effort here
                 print(f"[cache] live-path upsert failed (serving live anyway): {exc}")
         return {
@@ -892,9 +896,13 @@ async def get_jobs(
             "stale": False,
         }
 
-    targets = target or clusters.list_clusters()
-    rows = await cache_db.read_jobs(target, _parse_since(since, hours))
-    meta = await cache_db.read_poll_meta("jobs")
+    rows = await cache_db.read_jobs(
+        targets, _parse_since(since, hours), scope=scope
+    )
+    meta = await cache_db.read_poll_meta("jobs", scope=scope)
+    for target_cluster in targets:
+        if target_cluster not in meta:
+            poller.schedule_jobs_poll(target_cluster)
     return {
         "jobs": rows,
         "source": "cache",
@@ -1048,14 +1056,13 @@ async def delete_job(cluster: str, job_id: str):
 
 @app.get("/api/results", response_model=results.ResultsResponse)
 async def get_results(cluster: str | None = None, fresh: int = 0):
-    # The background cache is the machine-global/owner view. A non-owner's
-    # cluster paths and credentials are user-scoped, so serve those requests
-    # live rather than leaking the owner's cached result roots.
-    shared_cache_scope = (
-        user_context.current_user_slug() is None
-        or user_context.is_owner_request()
-    )
-    if not poller.poller_enabled() or not shared_cache_scope:
+    email = user_context.current_user_email()
+    scope = email or ""
+    fingerprints = clusters.cache_fingerprints()
+    if cluster and cluster not in fingerprints:
+        raise HTTPException(404, f"cluster {cluster} not found")
+    targets = [cluster] if cluster else list(fingerprints)
+    if not poller.poller_enabled():
         try:
             return await results.list_results(cluster)
         except FileNotFoundError as e:
@@ -1064,9 +1071,9 @@ async def get_results(cluster: str | None = None, fresh: int = 0):
             raise HTTPException(500, str(e))
 
     if fresh and poller.poller_enabled():
-        targets = [cluster] if cluster else clusters.list_clusters()
+        await cache_db.sync_cluster_configs(fingerprints, scope=scope)
         refreshed = await asyncio.gather(
-            *(poller.refresh_results(c) for c in targets),
+            *(poller.refresh_results(c, email) for c in targets),
             return_exceptions=True,
         )
         variants: list[results.ResultVariant] = []
@@ -1094,9 +1101,11 @@ async def get_results(cluster: str | None = None, fresh: int = 0):
             stale=stale,
         )
 
-    targets = [cluster] if cluster else clusters.list_clusters()
-    cached = await cache_db.read_results([cluster] if cluster else None)
-    meta = await cache_db.read_poll_meta("results")
+    await cache_db.sync_cluster_configs(fingerprints, scope=scope)
+    cached = await cache_db.read_results(
+        targets, scope=scope
+    )
+    meta = await cache_db.read_poll_meta("results", scope=scope)
     variants: list[dict] = []
     errors: list[dict] = []
     fetched_at: dict[str, float] = {}
@@ -1106,6 +1115,7 @@ async def get_results(cluster: str | None = None, fresh: int = 0):
         if entry is None:
             stale = True
             errors.append({"cluster": c, "error": "Results cache is warming up."})
+            poller.schedule_results_poll(c)
             continue
         variants.extend(entry["variants"])
         errors.extend(entry["errors"])
@@ -1269,6 +1279,13 @@ async def post_wandb_login(req: wandb_auth.LoginRequest):
     if not req.key.strip():
         raise HTTPException(400, "key must not be empty")
     return await wandb_auth.login(req.key)
+
+
+@app.post("/api/wandb/validate", response_model=wandb_auth.WandbStatus)
+async def post_wandb_validate(req: wandb_auth.LoginRequest):
+    if not user_context.current_user_email():
+        raise HTTPException(401, "authenticated SSOT user required")
+    return await wandb_auth.validate(req.key)
 
 
 @app.post("/api/wandb/project", response_model=wandb_auth.WandbStatus)

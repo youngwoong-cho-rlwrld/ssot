@@ -18,6 +18,8 @@ import {
 // The gateway injects the signed-in user's experiment-configs root override on
 // proxied requests. It is absent when the app is reached without the gateway.
 const CONFIGS_ROOT_HEADER = "x-ssot-results-configs-root";
+const CONFIGS_CONFIGURED_HEADER = "x-ssot-results-configs-configured";
+const USER_HEADER = "x-ssot-user";
 type ResultsPayload = {
   clusters?: unknown[];
   variants?: unknown[];
@@ -44,14 +46,22 @@ export async function GET(request: Request) {
     );
   }
 
-  const configsRoot = resultsConfigsRoot(request.headers.get(CONFIGS_ROOT_HEADER));
+  const configsRoot =
+    request.headers.get(CONFIGS_CONFIGURED_HEADER) === "0"
+      ? null
+      : resultsConfigsRoot(request.headers.get(CONFIGS_ROOT_HEADER));
 
   try {
     const payload = await fetchResultsPayload(
       cluster,
       incoming.searchParams.get("fresh") === "1",
+      request.headers.get(USER_HEADER),
     );
-    return Response.json(await enrichResultsPayloadWithConfigs(payload, configsRoot));
+    return Response.json(
+      configsRoot
+        ? await enrichResultsPayloadWithConfigs(payload, configsRoot)
+        : payload,
+    );
   } catch (error) {
     return Response.json(
       {
@@ -73,11 +83,19 @@ function badRequest(error: string) {
   return Response.json({ error }, { status: 400 });
 }
 
-async function fetchResultsPayload(cluster: string, fresh: boolean): Promise<ResultsPayload> {
+async function fetchResultsPayload(
+  cluster: string,
+  fresh: boolean,
+  user: string | null,
+): Promise<ResultsPayload> {
   const upstream = new URL("/api/results", API_BASE);
   upstream.searchParams.set("cluster", cluster);
   if (fresh) upstream.searchParams.set("fresh", "1");
-  return fetchUpstreamJson<ResultsPayload>(upstream, RESULT_CLUSTER_TIMEOUT_MS);
+  return fetchUpstreamJson<ResultsPayload>(
+    upstream,
+    RESULT_CLUSTER_TIMEOUT_MS,
+    user ? { [USER_HEADER]: user } : {},
+  );
 }
 
 function errorMessage(error: unknown) {

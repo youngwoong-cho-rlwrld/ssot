@@ -25,6 +25,10 @@ class ResultsPollerTests(unittest.IsolatedAsyncioTestCase):
         }
 
         with (
+            patch.object(
+                poller.clusters, "cache_fingerprints", return_value={"kakao": "v1"}
+            ),
+            patch.object(poller.cache_db, "sync_cluster_configs", AsyncMock()),
             patch.object(results, "list_results", AsyncMock(return_value=failed)),
             patch.object(poller.cache_db, "read_results", AsyncMock(return_value=cached)),
             patch.object(poller.cache_db, "record_poll", AsyncMock()),
@@ -42,14 +46,20 @@ class ResultsPollerTests(unittest.IsolatedAsyncioTestCase):
         calls = 0
         response = results.ResultsResponse(clusters=["kakao"], variants=[])
 
-        async def scan(_cluster):
+        async def scan(_cluster, _email=None, _fingerprint=None):
             nonlocal calls
             calls += 1
             started.set()
             await release.wait()
             return response
 
-        with patch.object(poller, "_refresh_results_once", side_effect=scan):
+        with (
+            patch.object(
+                poller.clusters, "cache_fingerprints", return_value={"kakao": "v1"}
+            ),
+            patch.object(poller.cache_db, "sync_cluster_configs", AsyncMock()),
+            patch.object(poller, "_refresh_results_once", side_effect=scan),
+        ):
             first = asyncio.create_task(poller.refresh_results("kakao"))
             await started.wait()
             second = asyncio.create_task(poller.refresh_results("kakao"))
@@ -59,6 +69,40 @@ class ResultsPollerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, 1)
         self.assertIs(resolved[0], response)
         self.assertIs(resolved[1], response)
+
+    async def test_different_users_do_not_share_an_inflight_scan(self):
+        calls = []
+        release = asyncio.Event()
+
+        async def scan(cluster, email=None, _fingerprint=None):
+            calls.append((cluster, email))
+            await release.wait()
+            return results.ResultsResponse(clusters=[cluster], variants=[])
+
+        with (
+            patch.object(
+                poller.clusters, "cache_fingerprints", return_value={"kakao": "v1"}
+            ),
+            patch.object(poller.cache_db, "sync_cluster_configs", AsyncMock()),
+            patch.object(poller, "_refresh_results_once", side_effect=scan),
+        ):
+            one = asyncio.create_task(
+                poller.refresh_results("kakao", "one@example.com")
+            )
+            two = asyncio.create_task(
+                poller.refresh_results("kakao", "two@example.com")
+            )
+            await asyncio.sleep(0)
+            release.set()
+            await asyncio.gather(one, two)
+
+        self.assertCountEqual(
+            calls,
+            [
+                ("kakao", "one@example.com"),
+                ("kakao", "two@example.com"),
+            ],
+        )
 
 
 if __name__ == "__main__":

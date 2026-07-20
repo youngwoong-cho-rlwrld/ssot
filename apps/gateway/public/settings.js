@@ -28,8 +28,11 @@
       window.location.href = '/auth/login?next=/settings';
       throw new Error('unauthenticated');
     }
-    if (!res.ok) throw new Error('save failed (' + res.status + ')');
-    return res.json();
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload.detail || payload.error || 'save failed (' + res.status + ')');
+    }
+    return payload;
   }
 
   // --- train-eval cluster rows -------------------------------------------
@@ -129,17 +132,37 @@
     $('te-wandb-entity').value = w.entity || '';
     $('te-wandb-project').value = w.project || '';
     const ws = $('te-wandb-status');
-    if (ws) ws.textContent = w.logged_in ? 'signed in' : (w.entity || w.project ? '' : 'not signed in');
+    if (ws) ws.textContent = w.configured ? 'configured' : 'not configured';
     // API key intentionally never echoed back; left blank.
     const n = te.notifications || {};
     $('te-notify-enabled').checked = !!n.enabled;
     // The webhook secret is never returned; leave blank (placeholder explains).
     $('te-slack-webhook').value = '';
-    $('te-notify-submitted').checked = n.notify_submitted !== false;
+    $('te-notify-submitted').checked = !!n.notify_submitted;
     $('te-notify-running').checked = !!n.notify_running;
-    $('te-notify-completed').checked = n.notify_completed !== false;
-    $('te-notify-failed').checked = n.notify_failed !== false;
-    $('te-notify-cancelled').checked = n.notify_cancelled !== false;
+    $('te-notify-completed').checked = !!n.notify_completed;
+    $('te-notify-failed').checked = !!n.notify_failed;
+    $('te-notify-cancelled').checked = !!n.notify_cancelled;
+  }
+
+  async function refreshWandbStatus() {
+    const ws = $('te-wandb-status');
+    try {
+      const response = await api('/api/settings/wandb-status');
+      if (!response.ok) throw new Error('status unavailable');
+      const status = await response.json();
+      $('te-wandb-entity').value = status.entity || '';
+      if (ws) {
+        ws.textContent = status.logged_in
+          ? 'connected'
+          : status.error
+            ? 'connection failed'
+            : 'not configured';
+      }
+    } catch {
+      $('te-wandb-entity').value = '';
+      if (ws) ws.textContent = 'status unavailable';
+    }
   }
 
   async function load() {
@@ -160,16 +183,8 @@
     $('sv-claude-root').value = sv.claude_root || '';
     $('sv-codex-root').value = sv.codex_root || '';
 
-    let te = s['train-eval'] || {};
-    const hasStored = te && (te.clusters || te.wandb || te.notifications);
-    if (!hasStored) {
-      // Prefill from the train-eval API's current effective values.
-      try {
-        const b = await api('/api/settings/train-eval/bootstrap');
-        if (b.ok) te = await b.json();
-      } catch { /* leave empty */ }
-    }
-    fillTrainEval(te);
+    fillTrainEval(s['train-eval'] || {});
+    void refreshWandbStatus();
 
     // Account email comes from /api/auth/me since it is not in profile settings.
     try {
@@ -177,7 +192,6 @@
       if (me.ok) {
         const { user } = await me.json();
         $('acct-email').value = user.email || '';
-        if (!$('acct-username').value) $('acct-username').value = user.username || '';
       }
     } catch { /* ignore */ }
   }
@@ -207,8 +221,12 @@
       };
       const key = $('te-wandb-key').value;
       if (key) body.wandb.api_key = key;
+      if ($('te-wandb-clear').checked) body.wandb.clear_api_key = true;
       const hook = $('te-slack-webhook').value.trim();
       if (hook) body.notifications.slack_webhook_url = hook;
+      if ($('te-slack-clear').checked) {
+        body.notifications.clear_slack_webhook_url = true;
+      }
       return body;
     },
   };
@@ -219,11 +237,15 @@
       setStatus(ns, 'Saving...', '');
       try {
         const result = await putNamespace(ns, savers[ns]());
-        let msg = 'Saved';
-        if (result && result.synced === false) msg = 'Saved (train-eval sync failed)';
-        else if (result && result.synced === true) msg = 'Saved and synced';
-        setStatus(ns, msg, 'ok');
-        if (ns === 'train-eval') $('te-wandb-key').value = '';
+        setStatus(ns, 'Saved', 'ok');
+        if (ns === 'train-eval') {
+          fillTrainEval(result);
+          $('te-wandb-key').value = '';
+          $('te-slack-webhook').value = '';
+          $('te-wandb-clear').checked = false;
+          $('te-slack-clear').checked = false;
+          void refreshWandbStatus();
+        }
       } catch (err) {
         setStatus(ns, err.message || 'Save failed', 'err');
       }

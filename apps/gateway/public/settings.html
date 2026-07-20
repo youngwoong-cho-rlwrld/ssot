@@ -72,7 +72,7 @@
       </div>
       <div class="field">
         <label for="acct-username">Username</label>
-        <input type="text" id="acct-username" class="ssot-input" placeholder="defaults to your email local part" />
+        <input type="text" id="acct-username" class="ssot-input" />
       </div>
       <div class="sec-foot">
         <button class="ssot-btn ssot-btn-primary" data-save="profile">Save</button>
@@ -100,7 +100,8 @@
       </div>
       <div class="field">
         <label for="te-wandb-key">API key</label>
-        <input type="password" id="te-wandb-key" class="ssot-input" placeholder="leave blank to keep unchanged" />
+        <input type="password" id="te-wandb-key" class="ssot-input" autocomplete="new-password" placeholder="leave blank to keep unchanged" />
+        <label class="check"><input type="checkbox" id="te-wandb-clear" /> Clear saved API key</label>
       </div>
 
       <hr />
@@ -108,7 +109,8 @@
       <label class="check"><input type="checkbox" id="te-notify-enabled" /> Enable Slack notifications</label>
       <div class="field">
         <label for="te-slack-webhook">Slack webhook URL</label>
-        <input type="text" id="te-slack-webhook" class="ssot-input mono" placeholder="https://hooks.slack.com/services/... (leave blank to keep saved secret)" />
+        <input type="password" id="te-slack-webhook" class="ssot-input mono" autocomplete="new-password" placeholder="https://hooks.slack.com/services/... (leave blank to keep saved secret)" />
+        <label class="check"><input type="checkbox" id="te-slack-clear" /> Clear saved webhook</label>
       </div>
       <div class="checks">
         <label class="check"><input type="checkbox" id="te-notify-submitted" /> Submitted</label>

@@ -8,7 +8,7 @@ const chromePath = process.env.CHROME_BIN;
 const target = process.env.VIEWER_URL ?? "http://127.0.0.1:5173/urdf/";
 const parquetPath = process.env.OPENARM_PARQUET;
 const screenshotPath = process.env.OPENARM_SCREENSHOT ?? join(tmpdir(), "openarm-xhand1-viewer.png");
-const basePath = process.env.URDF_BASE_PATH ?? "/urdf/";
+const basePath = process.env.URDF_BASE_PATH ?? process.env.SSOT_URDF_BASE_PATH ?? "/urdf/";
 const expectedUrdfPath = `${basePath}assets/openarm-xhand1/openarm_xhand1.urdf`.replace(/\/{2,}/g, "/");
 const urdfText = await readFile(
   new URL("../public/assets/openarm-xhand1/openarm_xhand1.urdf", import.meta.url),

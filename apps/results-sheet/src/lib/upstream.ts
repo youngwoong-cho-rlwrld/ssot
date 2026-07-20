@@ -13,13 +13,17 @@ export const RESULT_CLUSTER_TIMEOUT_MS = positiveIntegerEnv(
 
 // Fetch with an abort-based timeout. Throws a "timed out after Nms" error on
 // timeout so callers can surface a clear message.
-export async function fetchUpstream(url: URL, timeoutMs: number): Promise<Response> {
+export async function fetchUpstream(
+  url: URL,
+  timeoutMs: number,
+  headers: HeadersInit = {},
+): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
       cache: "no-store",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...Object.fromEntries(new Headers(headers)) },
       signal: controller.signal,
     });
   } catch (error) {
@@ -33,8 +37,12 @@ export async function fetchUpstream(url: URL, timeoutMs: number): Promise<Respon
 }
 
 // fetchUpstream plus response.ok check and JSON parsing.
-export async function fetchUpstreamJson<T>(url: URL, timeoutMs: number): Promise<T> {
-  const response = await fetchUpstream(url, timeoutMs);
+export async function fetchUpstreamJson<T>(
+  url: URL,
+  timeoutMs: number,
+  headers: HeadersInit = {},
+): Promise<T> {
+  const response = await fetchUpstream(url, timeoutMs, headers);
   const body = await response.text();
   if (!response.ok) {
     throw new Error(`${url.toString()} returned ${response.status}: ${body.slice(0, 240)}`);
