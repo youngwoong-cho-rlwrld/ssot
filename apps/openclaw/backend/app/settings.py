@@ -8,6 +8,7 @@ use without any env set.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
@@ -24,15 +25,50 @@ def _expand(value: str) -> Path:
 # launched via nx/uvicorn the login shell PATH is not inherited, so Homebrew's
 # bin dir must be on PATH for the binary to resolve.
 _EXTRA_PATH = os.environ.get("OPENCLAW_EXTRA_PATH", "/opt/homebrew/bin:/usr/local/bin")
+CONFIG_PATH: Path = _expand(
+    os.environ.get("OPENCLAW_CONFIG_PATH", "~/.openclaw/openclaw.json")
+).resolve()
+
+
+def _gateway_credentials_from_config() -> dict[str, str]:
+    """Read inline gateway credentials without exposing them in argv.
+
+    OpenClaw's websocket control commands require explicit client credentials.
+    Some CLI versions do not reuse ``gateway.auth`` consistently for those
+    commands, so pass the configured secret through the child environment. A
+    malformed file or a secret-reference object is left to the CLI to handle.
+    """
+    try:
+        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    auth = config.get("gateway", {}).get("auth", {})
+    if not isinstance(auth, dict):
+        return {}
+    mode = auth.get("mode")
+    key = "password" if mode == "password" else "token"
+    value = auth.get(key)
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    env_key = (
+        "OPENCLAW_GATEWAY_PASSWORD"
+        if key == "password"
+        else "OPENCLAW_GATEWAY_TOKEN"
+    )
+    return {env_key: value.strip()}
 
 
 def subprocess_env() -> dict[str, str]:
-    """Return an environment for openclaw subprocesses with PATH augmented."""
+    """Return a PATH- and gateway-auth-aware OpenClaw child environment."""
     env = dict(os.environ)
     existing = env.get("PATH", "")
     parts = [p for p in _EXTRA_PATH.split(os.pathsep) if p]
     parts += [p for p in existing.split(os.pathsep) if p and p not in parts]
     env["PATH"] = os.pathsep.join(parts)
+    if not (
+        env.get("OPENCLAW_GATEWAY_TOKEN") or env.get("OPENCLAW_GATEWAY_PASSWORD")
+    ):
+        env.update(_gateway_credentials_from_config())
     return env
 
 

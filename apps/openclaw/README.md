@@ -3,9 +3,10 @@
 Integrates the locally-running OpenClaw agent gateway into the SSOT portal:
 watch what the agent is doing, browse session transcripts, and chat with it.
 
-Everything goes through the local `openclaw` CLI (which owns the gateway auth
-token). The browser never talks to the OpenClaw gateway directly; the backend
-shells out to the CLI and the SSOT gateway proxies the frontend + API.
+Everything goes through the local `openclaw` CLI. The browser never talks to
+the OpenClaw gateway directly; the backend shells out to the CLI and the SSOT
+gateway proxies the frontend + API. Gateway credentials are read from the
+OpenClaw config and passed only through the CLI child environment, never argv.
 
 ## Layout
 

@@ -1,9 +1,68 @@
 import asyncio
+import json
+import os
 import signal
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from app import cli
+from app import cli, settings
+
+
+class SubprocessEnvironmentTests(unittest.TestCase):
+    def test_inline_gateway_token_is_passed_through_the_child_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "openclaw.json"
+            config_path.write_text(
+                json.dumps({"gateway": {"auth": {"mode": "token", "token": "secret"}}}),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(settings, "CONFIG_PATH", config_path),
+                patch.dict(os.environ, {"PATH": "/usr/bin"}, clear=True),
+            ):
+                env = settings.subprocess_env()
+
+        self.assertEqual(env["OPENCLAW_GATEWAY_TOKEN"], "secret")
+        self.assertNotIn("OPENCLAW_GATEWAY_PASSWORD", env)
+
+    def test_explicit_gateway_environment_wins_over_the_config_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "openclaw.json"
+            config_path.write_text(
+                json.dumps({"gateway": {"auth": {"mode": "token", "token": "file"}}}),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(settings, "CONFIG_PATH", config_path),
+                patch.dict(
+                    os.environ,
+                    {"PATH": "/usr/bin", "OPENCLAW_GATEWAY_TOKEN": "environment"},
+                    clear=True,
+                ),
+            ):
+                env = settings.subprocess_env()
+
+        self.assertEqual(env["OPENCLAW_GATEWAY_TOKEN"], "environment")
+
+    def test_password_auth_uses_the_password_environment_variable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "openclaw.json"
+            config_path.write_text(
+                json.dumps(
+                    {"gateway": {"auth": {"mode": "password", "password": "secret"}}}
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(settings, "CONFIG_PATH", config_path),
+                patch.dict(os.environ, {"PATH": "/usr/bin"}, clear=True),
+            ):
+                env = settings.subprocess_env()
+
+        self.assertEqual(env["OPENCLAW_GATEWAY_PASSWORD"], "secret")
+        self.assertNotIn("OPENCLAW_GATEWAY_TOKEN", env)
 
 
 class SingleFlightCacheTests(unittest.IsolatedAsyncioTestCase):

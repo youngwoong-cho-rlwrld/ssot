@@ -1,10 +1,10 @@
 """Thin wrappers around the local ``openclaw`` CLI.
 
-The CLI owns the gateway auth token and wraps the token-auth WS RPC; the browser
-must never reach the gateway directly (no CORS), so every call goes through here
-as an argument-list subprocess (never a shell string). We never pass
-``--deliver`` or ``--channel`` to ``openclaw agent`` — those would push a turn to
-Slack rather than keeping it local.
+The browser must never reach the gateway directly (no CORS), so every call goes
+through here as an argument-list subprocess (never a shell string). Gateway
+credentials are supplied only through the child environment, never argv. We
+never pass ``--deliver`` or ``--channel`` to ``openclaw agent`` — those would
+push a turn to Slack rather than keeping it local.
 """
 
 from __future__ import annotations
