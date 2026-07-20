@@ -39,6 +39,7 @@
   function clusterBlock(cluster) {
     const wrap = document.createElement('div');
     wrap.className = 'cluster';
+    wrap.dataset.builtIn = cluster.built_in ? 'true' : 'false';
 
     const head = document.createElement('div');
     head.className = 'cluster-head';
@@ -48,11 +49,14 @@
     nameInput.placeholder = 'cluster name';
     nameInput.value = cluster.name || '';
     nameInput.dataset.role = 'cluster-name';
+    nameInput.readOnly = !!cluster.built_in;
     const delBtn = document.createElement('button');
     delBtn.className = 'ssot-btn del';
     delBtn.textContent = '×';
     delBtn.title = 'Remove cluster';
     delBtn.onclick = () => wrap.remove();
+    delBtn.style.visibility = cluster.built_in ? 'hidden' : '';
+    delBtn.tabIndex = cluster.built_in ? -1 : 0;
     head.append(nameInput, delBtn);
     wrap.appendChild(head);
 
@@ -66,9 +70,18 @@
     wrap.appendChild(rows);
 
     const env = cluster.env || {};
+    const lockedKeys = new Set(cluster.locked_keys || []);
+    const defaultValues = cluster.default_values || {};
     const keys = Object.keys(env);
     if (keys.length === 0) keys.push('');
-    for (const k of keys) rows.appendChild(kvRow(k, k ? env[k] : ''));
+    for (const k of keys) {
+      rows.appendChild(
+        kvRow(k, k ? env[k] : '', {
+          locked: lockedKeys.has(k),
+          defaultValue: defaultValues[k],
+        }),
+      );
+    }
 
     const add = document.createElement('button');
     add.className = 'ssot-btn add-btn';
@@ -79,7 +92,7 @@
     return wrap;
   }
 
-  function kvRow(key, value) {
+  function kvRow(key, value, { locked = false, defaultValue = '' } = {}) {
     const row = document.createElement('div');
     row.className = 'row';
     const k = document.createElement('input');
@@ -88,16 +101,21 @@
     k.className = 'ssot-input';
     k.value = key || '';
     k.dataset.role = 'kv-key';
+    k.dataset.locked = locked ? 'true' : 'false';
+    k.readOnly = locked;
     const v = document.createElement('input');
     v.type = 'text';
     v.placeholder = 'value';
     v.className = 'ssot-input';
     v.value = value != null ? value : '';
     v.dataset.role = 'kv-value';
+    v.dataset.defaultValue = defaultValue != null ? String(defaultValue) : '';
     const del = document.createElement('button');
     del.className = 'ssot-btn del';
     del.textContent = '×';
     del.onclick = () => row.remove();
+    del.style.visibility = locked ? 'hidden' : '';
+    del.tabIndex = locked ? -1 : 0;
     row.append(k, v, del);
     return row;
   }
@@ -114,12 +132,22 @@
     for (const block of $('te-clusters').querySelectorAll('.cluster')) {
       const name = block.querySelector('[data-role="cluster-name"]').value.trim();
       const env = {};
+      let hasConfiguredValue = block.dataset.builtIn !== 'true';
       for (const row of block.querySelectorAll('[data-role="kv-rows"] .row')) {
-        const k = row.querySelector('[data-role="kv-key"]').value.trim();
-        const v = row.querySelector('[data-role="kv-value"]').value;
+        const keyInput = row.querySelector('[data-role="kv-key"]');
+        const valueInput = row.querySelector('[data-role="kv-value"]');
+        const k = keyInput.value.trim();
+        const v = valueInput.value;
         if (k) env[k] = v;
+        if (keyInput.dataset.locked === 'true') {
+          if (v !== valueInput.dataset.defaultValue) hasConfiguredValue = true;
+        } else if (k && v) {
+          hasConfiguredValue = true;
+        }
       }
-      if (name || Object.keys(env).length) out.push({ name, env });
+      if (hasConfiguredValue && (name || Object.keys(env).length)) {
+        out.push({ name, env });
+      }
     }
     return out;
   }

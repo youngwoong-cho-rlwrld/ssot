@@ -9,7 +9,7 @@ process.env.SSOT_DATA_DIR = dataDir;
 
 const { db, dbPath, getSettings, upsertUser } = await import('./db.mjs');
 const { default: express } = await import('express');
-const { registerSettingsRoutes } = await import('./settings.mjs');
+const { DEFAULT_CLUSTER_ENVS, registerSettingsRoutes } = await import('./settings.mjs');
 
 const owner = upsertUser({ email: 'youngwoong.cho@rlwrld.ai' });
 const other = upsertUser({ email: 'other@example.com' });
@@ -38,7 +38,7 @@ async function withServer(user, callback, options) {
   }
 }
 
-test('SQLite file is private and every account starts empty', async () => {
+test('SQLite values start empty while built-in cluster keys are available', async () => {
   assert.equal(statSync(dataDir).mode & 0o777, 0o700);
   assert.equal(statSync(dbPath).mode & 0o777, 0o600);
 
@@ -46,12 +46,21 @@ test('SQLite file is private and every account starts empty', async () => {
     await withServer(user, async (origin) => {
       const response = await fetch(`${origin}/api/settings`);
       assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), {
-        profile: {},
-        'train-eval': {},
-        'results-sheet': {},
-        'session-viewer': {},
-      });
+      const settings = await response.json();
+      assert.deepEqual(settings.profile, {});
+      assert.deepEqual(settings['results-sheet'], {});
+      assert.deepEqual(settings['session-viewer'], {});
+      assert.deepEqual(
+        settings['train-eval'].clusters.map((cluster) => cluster.name),
+        Object.keys(DEFAULT_CLUSTER_ENVS),
+      );
+      for (const cluster of settings['train-eval'].clusters) {
+        assert.equal(cluster.built_in, true);
+        assert.equal(cluster.configured, false);
+        assert.deepEqual(cluster.locked_keys, Object.keys(DEFAULT_CLUSTER_ENVS[cluster.name]));
+        assert.deepEqual(cluster.env, DEFAULT_CLUSTER_ENVS[cluster.name]);
+      }
+      assert.deepEqual(getSettings(user.id, 'train-eval'), {});
     });
   }
 });
@@ -123,7 +132,36 @@ test('train-eval settings are stored once in SQLite and secrets are redacted', a
 
   await withServer(other, async (origin) => {
     const response = await fetch(`${origin}/api/settings`);
-    assert.deepEqual((await response.json())['train-eval'], {});
+    const trainEval = (await response.json())['train-eval'];
+    assert.equal(trainEval.clusters.length, 3);
+    assert.ok(trainEval.clusters.every((cluster) => !cluster.configured));
+    assert.deepEqual(getSettings(other.id, 'train-eval'), {});
+  });
+});
+
+test('built-in cluster keys are restored server-side and custom keys remain supported', async () => {
+  await withServer(other, async (origin) => {
+    const response = await fetch(`${origin}/api/settings/train-eval`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        clusters: [{ name: 'kakao', env: { SSH_ALIAS: 'host', CUSTOM_VALUE: 'yes' } }],
+      }),
+    });
+    assert.equal(response.status, 200);
+    const trainEval = await response.json();
+    const kakao = trainEval.clusters.find((cluster) => cluster.name === 'kakao');
+    assert.equal(kakao.env.CLUSTER, 'kakao');
+    assert.equal(kakao.env.PARTITION, '');
+    assert.equal(kakao.env.SSH_ALIAS, 'host');
+    assert.equal(kakao.env.CUSTOM_VALUE, 'yes');
+    assert.ok(kakao.locked_keys.includes('PARTITION'));
+    assert.ok(!kakao.locked_keys.includes('CUSTOM_VALUE'));
+
+    const stored = getSettings(other.id, 'train-eval').clusters[0].env_text;
+    assert.match(stored, /^CLUSTER=kakao$/m);
+    assert.match(stored, /^PARTITION=$/m);
+    assert.match(stored, /^CUSTOM_VALUE=yes$/m);
   });
 });
 

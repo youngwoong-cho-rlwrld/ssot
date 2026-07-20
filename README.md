@@ -88,7 +88,9 @@ as that person), run the gateway only on a trusted network and treat
 **Settings page** (`/settings`, gateway-served) lets a signed-in user edit:
 their username; the train-eval cluster environment settings, Weights & Biases,
 and Slack notifications; the results-sheet configs root; and the session-viewer
-Claude/Codex session roots. Every account starts empty. SQLite is authoritative:
+Claude/Codex session roots. Built-in cluster names and environment keys are
+shown as a fixed schema, while every account's editable values start empty or
+at the documented non-user-specific defaults. SQLite is authoritative:
 the Train / Eval runtime reads the signed-in user's row directly, and does not
 fall back to an owner account, legacy settings files, process credentials, or
 repository cluster templates. Secrets are stored in the private SQLite file

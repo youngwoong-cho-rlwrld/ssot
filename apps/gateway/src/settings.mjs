@@ -9,6 +9,81 @@ const BARE_ENV_VALUE = /^[A-Za-z0-9._/:@=+,-]+$/;
 const USERNAME = /^[A-Za-z0-9._-]+$/;
 const RESERVED_USERNAME_TOKENS = new Set(['train', 'eval', 'resume']);
 
+// Built-in cluster setting contracts. These are UI/schema defaults only;
+// account values still come exclusively from SQLite. The keys mirror the
+// existing train-eval cluster templates and runtime configuration fields.
+export const DEFAULT_CLUSTER_ENVS = Object.freeze({
+  kakao: Object.freeze({
+    CLUSTER: 'kakao',
+    SSH_ALIAS: '',
+    PARTITION: '',
+    REPO_ROOT: '',
+    GROOT_DIR: '',
+    GROOT_N16_DIR: '',
+    GROOT_N17_DIR: '',
+    PHYSIXEL_DIR: '',
+    GAM_DIR: '',
+    ISAAC_DIR: '',
+    DATA_DIR: '',
+    LOG_DIR: '',
+    SBATCH_EXCLUDE: '',
+    SLURM_EXCLUDE_NODES: '',
+    LD_LIBRARY_PATH: '',
+    DEXJOCO_DIR: '',
+    MICROMAMBA_BIN: '',
+    MAMBA_ROOT_PREFIX: '',
+    DEXJOCO_EVAL_ENV: '',
+    DEXJOCO_OPENPI_ENV: '',
+    UNIFIED_EXPERIMENTS_DIR: '',
+  }),
+  skt: Object.freeze({
+    CLUSTER: 'skt',
+    SSH_ALIAS: '',
+    PARTITION: '',
+    REPO_ROOT: '',
+    GROOT_DIR: '',
+    GROOT_N16_DIR: '',
+    GROOT_N17_DIR: '',
+    PHYSIXEL_DIR: '',
+    GAM_DIR: '',
+    ISAAC_DIR: '',
+    DATA_DIR: '',
+    LOG_DIR: '',
+    SBATCH_EXCLUDE: '',
+    SLURM_EXCLUDE_NODES: '',
+    LD_LIBRARY_PATH: '',
+    DEXJOCO_DIR: '',
+    MICROMAMBA_BIN: '',
+    MAMBA_ROOT_PREFIX: '',
+    DEXJOCO_EVAL_ENV: '',
+    DEXJOCO_OPENPI_ENV: '',
+    UNIFIED_EXPERIMENTS_DIR: '',
+  }),
+  mlxp: Object.freeze({
+    USER: '',
+    MLXP_NAMESPACE: 'p-rlwrld',
+    MLXP_GPUS_PER_NODE: '8',
+    MLXP_DDN_MOUNT: '/data',
+    MLXP_HOME: '',
+    DATA_DIR: '',
+    UNIFIED_EXPERIMENTS_DIR: '',
+    HF_HOME: '',
+    WORKSPACE_DIR: '',
+    ISAAC_DIR: '',
+    DEXJOCO_DIR: '',
+    MICROMAMBA_BIN: '',
+    MAMBA_ROOT_PREFIX: '',
+    DEXJOCO_EVAL_ENV: '',
+    DEXJOCO_OPENPI_ENV: '',
+    MLXP_DATA_POD: '',
+    MLXP_DDN_PVC: 'ddn-rlwrld-shared',
+    MLXP_IMAGE: '',
+    MLXP_IMAGE_PULL_SECRET: 'mlxp-registry',
+    MLXP_ZONE: 'private-h200-rlwrld-0',
+    MLXP_WANDB_SECRET: '',
+  }),
+});
+
 function requireUser(req, res) {
   if (!req.ssotUser) {
     res.status(401).json({ error: 'unauthenticated' });
@@ -70,13 +145,14 @@ function normalizeClusters(clusters) {
     if (!CLUSTER_NAME.test(name)) throw new Error(`invalid cluster name: ${name || '(empty)'}`);
     if (seen.has(name)) throw new Error(`duplicate cluster name: ${name}`);
     seen.add(name);
-    return {
-      name,
-      env_text:
-        typeof cluster.env_text === 'string'
-          ? cluster.env_text
-          : serializeEnv(cluster.env || {}),
-    };
+    const suppliedEnv =
+      typeof cluster.env_text === 'string'
+        ? parseEnvText(cluster.env_text)
+        : cluster.env || {};
+    const env = DEFAULT_CLUSTER_ENVS[name]
+      ? { ...DEFAULT_CLUSTER_ENVS[name], ...suppliedEnv }
+      : suppliedEnv;
+    return { name, env_text: serializeEnv(env) };
   });
 }
 
@@ -184,14 +260,41 @@ function normalizeNamespace(namespace, body, current) {
 
 function publicTrainEval(settings) {
   const out = {};
-  if (Array.isArray(settings.clusters)) {
-    out.clusters = settings.clusters.map((cluster) => ({
+  const storedClusters = Array.isArray(settings.clusters) ? settings.clusters : [];
+  const storedByName = new Map(
+    storedClusters
+      .filter((cluster) => cluster && typeof cluster === 'object')
+      .map((cluster) => [cluster.name, cluster]),
+  );
+  out.clusters = Object.entries(DEFAULT_CLUSTER_ENVS).map(([name, defaults]) => {
+    const stored = storedByName.get(name);
+    const storedEnv = stored
+      ? stored.env && typeof stored.env === 'object' && !Array.isArray(stored.env)
+        ? stored.env
+        : parseEnvText(stored.env_text)
+      : {};
+    storedByName.delete(name);
+    return {
+      name,
+      env: { ...defaults, ...storedEnv },
+      default_values: defaults,
+      locked_keys: Object.keys(defaults),
+      built_in: true,
+      configured: !!stored,
+    };
+  });
+  for (const cluster of storedByName.values()) {
+    out.clusters.push({
       name: cluster.name,
       env:
         cluster.env && typeof cluster.env === 'object' && !Array.isArray(cluster.env)
           ? cluster.env
           : parseEnvText(cluster.env_text),
-    }));
+      default_values: {},
+      locked_keys: [],
+      built_in: false,
+      configured: true,
+    });
   }
   if (settings.wandb && typeof settings.wandb === 'object') {
     const { api_key: apiKey, ...wandb } = settings.wandb;
