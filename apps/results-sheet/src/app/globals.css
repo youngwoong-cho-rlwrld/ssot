@@ -424,36 +424,15 @@ body.panelResizing * {
   gap: 8px;
 }
 
-.agentModelSelect {
+.agentModelControl {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
-.agentModelSelect select {
-  min-width: 0;
+.agentModelSelect.ssot-select-trigger {
   max-width: 190px;
-  height: 26px;
-  border: 1px solid var(--border-subtle-2);
-  border-radius: 4px;
-  background: var(--button-tableButton);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: var(--ssot-weight-semibold);
-  line-height: 1;
-  outline: none;
-  padding: 0 22px 0 7px;
-}
-
-.agentModelSelect select:hover:not(:disabled),
-.agentModelSelect select:focus {
-  border-color: var(--border-interactive);
-}
-
-.agentModelSelect select:disabled {
-  cursor: default;
-  opacity: 0.6;
 }
 
 .agentPanelClose {
@@ -755,11 +734,11 @@ body.panelResizing * {
   background: var(--button-tableButton-hover);
 }
 
-/* Compact sizing for the chart-header grouping/type selects. The canonical
+/* Compact sizing for dense header selects. The canonical
    look (border, hover-accent, focus ring, value/arrow layout) and the open
    dropdown come from .ssot-select-trigger + .ssot-listbox (controls.css); these
-   overrides just shrink the trigger to fit the dense chart toolbar. */
-.chartTypeSelect.ssot-select-trigger {
+   overrides just shrink the trigger to fit the toolbars. */
+.compactSelect.ssot-select-trigger {
   flex: 0 0 auto;
   align-self: flex-start;
   height: 24px;

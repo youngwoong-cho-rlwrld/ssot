@@ -400,14 +400,14 @@ export function ResultsChartPanel({
           </button>
         )}
         <SsotSelect
-          className="chartTypeSelect"
+          className="compactSelect"
           aria-label="Chart grouping"
           value={groupBy}
           options={CHART_GROUP_SELECT_OPTIONS}
           onChange={(value) => onGroupByChange(value as ChartGroupMode)}
         />
         <SsotSelect
-          className="chartTypeSelect"
+          className="compactSelect"
           aria-label="Chart type"
           value={chartType}
           options={CHART_TYPE_SELECT_OPTIONS}
@@ -542,7 +542,7 @@ const TaskChart = memo(function TaskChart({
       <div className="taskChartHeader">
         <div className="taskChartTitle">{task.label}</div>
         <SsotSelect
-          className="chartTypeSelect"
+          className="compactSelect"
           aria-label={`Grouping for ${task.label}`}
           value={groupOverride}
           options={TASK_GROUP_SELECT_OPTIONS}

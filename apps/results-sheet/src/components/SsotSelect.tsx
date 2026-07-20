@@ -13,6 +13,7 @@ type SsotSelectProps = {
   variant?: "default" | "pill";
   className?: string;
   title?: string;
+  disabled?: boolean;
   "aria-label"?: string;
 };
 
@@ -38,6 +39,7 @@ export function SsotSelect({
   variant = "default",
   className,
   title,
+  disabled = false,
   "aria-label": ariaLabel,
 }: SsotSelectProps) {
   const [open, setOpen] = useState(false);
@@ -167,6 +169,7 @@ export function SsotSelect({
       <button
         ref={triggerRef}
         type="button"
+        disabled={disabled}
         className={triggerClass}
         role="combobox"
         aria-haspopup="listbox"

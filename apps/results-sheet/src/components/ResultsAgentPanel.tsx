@@ -21,6 +21,7 @@ import type {
   AgentModel,
 } from "@/lib/agentTypes";
 import { PanelResizeHandle } from "@/components/PanelResizeHandle";
+import { SsotSelect, type SsotSelectOption } from "@/components/SsotSelect";
 
 type ResultsAgentPanelProps = {
   open: boolean;
@@ -97,6 +98,13 @@ export function ResultsAgentPanel({
     "--panel-min-width": `${minWidth}px`,
     "--panel-max-width": `${maxWidth}px`,
   } as CSSProperties;
+  const availableModels: SsotSelectOption[] = models
+    .filter((model) => model.available)
+    .map((model) => ({ value: model.key, label: model.name }));
+  const modelOptions = availableModels.length > 0
+    ? availableModels
+    : [{ value: "", label: "No model" }];
+  const statusTitle = statusDetail ? `${status}: ${statusDetail}` : status;
 
   return (
     <aside className="agentPanel" style={panelStyle} aria-label="Results chat agent">
@@ -115,25 +123,18 @@ export function ResultsAgentPanel({
             <IconMessageCircle size={16} stroke={1.5} aria-hidden="true" />
             <span>Chat</span>
           </div>
-          <label
-            className="agentModelSelect"
-            title={statusDetail ? `${status}: ${statusDetail}` : status}
-          >
-            <span className={`agentStatusDot agentStatusDot-${status}`} />
-            <select
+          <div className="agentModelControl" title={statusTitle}>
+            <span className={`agentStatusDot agentStatusDot-${status}`} aria-hidden="true" />
+            <SsotSelect
+              className="compactSelect agentModelSelect"
               aria-label="Chat model"
+              title={statusTitle}
               value={selectedModel}
-              disabled={pending || models.every((model) => !model.available)}
-              onChange={(event) => onModelChange(event.currentTarget.value)}
-            >
-              {!selectedModel && <option value="">No model</option>}
-              {models.map((model) => (
-                <option key={model.key} value={model.key} disabled={!model.available}>
-                  {model.name}{model.available ? "" : " (unavailable)"}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={modelOptions}
+              disabled={pending || availableModels.length === 0}
+              onChange={onModelChange}
+            />
+          </div>
         </div>
         <button className="agentPanelClose" type="button" aria-label="Close agent panel" onClick={onClose}>
           <IconChevronLeft size={18} stroke={1.4} aria-hidden="true" />
