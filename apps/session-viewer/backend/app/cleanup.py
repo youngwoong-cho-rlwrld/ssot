@@ -14,7 +14,9 @@ safety guard used by single-session deletion.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -22,7 +24,13 @@ from pathlib import Path
 from typing import Iterable, Literal, Optional
 
 from . import board_store, cache
-from .sources import _claude_text_from_content, _codex_text_from_content, _iter_records
+from .sources import (
+    _claude_text_from_content,
+    _codex_text_from_content,
+    _iter_openclaw_messages,
+    _iter_records,
+    _openclaw_text_from_content,
+)
 from .trash import DeleteNotAllowed, delete_permanently
 
 log = logging.getLogger("session_board.cleanup")
@@ -42,6 +50,7 @@ class CleanupCandidate:
     path: Path
     categories: frozenset[CleanupCategory]
     uid: Optional[str] = None
+    agent: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +129,19 @@ def _codex_categories(path: Path) -> set[CleanupCategory]:
     return categories
 
 
+def _openclaw_categories(path: Path) -> set[CleanupCategory]:
+    """Classify OpenClaw cron-run transcripts as disposable system sessions."""
+    try:
+        for _, message in _iter_openclaw_messages(path):
+            if message.get("role") != "user":
+                continue
+            text = _openclaw_text_from_content(message.get("content"))
+            return {"system"} if text.lstrip().lower().startswith("[cron:") else set()
+    except OSError:
+        pass
+    return set()
+
+
 def _classification_fingerprint(path: Path) -> Optional[tuple[int, int, int, int]]:
     try:
         stat = path.stat()
@@ -142,6 +164,8 @@ def _cached_categories(path: Path, agent: str) -> set[CleanupCategory]:
         categories = _claude_categories(path)
     elif agent == "codex":
         categories = _codex_categories(path)
+    elif agent == "openclaw":
+        categories = _openclaw_categories(path)
     else:
         categories = set()
     after = _classification_fingerprint(path)
@@ -168,10 +192,9 @@ def discover(
         else cache.list_all(claude_root, codex_root, openclaw_root)
     )
     for session in sessions:
-        # OpenClaw owns additional session indexes and trajectory sidecars.
-        # Session Viewer exposes those sessions read-only instead of partially
-        # deleting their primary JSONL file.
-        if session.agent == "openclaw":
+        # The OpenClaw gateway may rewrite a live session while cleanup is in
+        # progress. Keep active OpenClaw sessions out of every cleanup category.
+        if session.agent == "openclaw" and session.active:
             continue
         path = Path(session.path)
         categories = _cached_categories(path, session.agent)
@@ -186,6 +209,7 @@ def discover(
                 path=path,
                 categories=frozenset(categories),
                 uid=session.uid,
+                agent=session.agent,
             )
 
     return list(candidates.values())
@@ -210,6 +234,45 @@ def summarize(
         affected=len(matched),
         affected_uids=affected_uids,
     )
+
+
+def _delete_openclaw_session(path: Path, openclaw_root: Path) -> None:
+    """Delete an OpenClaw transcript, sidecars, and matching store entry."""
+    resolved = path.resolve()
+    root = openclaw_root.resolve()
+    if not resolved.is_relative_to(root):
+        raise DeleteNotAllowed(f"refusing to delete path outside session roots: {path}")
+    if resolved.parent.name != "sessions" or resolved.parent.parent.parent != root:
+        raise DeleteNotAllowed(f"invalid OpenClaw session path: {path}")
+
+    session_id = resolved.name.removesuffix(".jsonl")
+    sessions_dir = resolved.parent
+    store = sessions_dir / "sessions.json"
+    if store.is_file():
+        with store.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if isinstance(data, dict):
+            kept = {
+                key: entry
+                for key, entry in data.items()
+                if not (isinstance(entry, dict) and entry.get("sessionId") == session_id)
+            }
+            if len(kept) != len(data):
+                tmp = store.with_name(store.name + ".tmp")
+                with tmp.open("w", encoding="utf-8") as handle:
+                    json.dump(kept, handle, ensure_ascii=False, indent=2)
+                os.chmod(tmp, store.stat().st_mode & 0o777)
+                os.replace(tmp, store)
+
+    matched = [
+        candidate
+        for candidate in sessions_dir.iterdir()
+        if candidate.is_file() and candidate.name.startswith(f"{session_id}.")
+    ]
+    if not matched:
+        raise FileNotFoundError(path)
+    for candidate in matched:
+        delete_permanently(candidate, allowed_roots=(root,))
 
 
 def clean(
@@ -244,14 +307,19 @@ def clean(
 
     for candidate in targets:
         try:
-            delete_permanently(
-                candidate.path,
-                allowed_roots=tuple(
-                    root
-                    for root in (claude_root, codex_root, openclaw_root)
-                    if root is not None
-                ),
-            )
+            if candidate.agent == "openclaw":
+                if openclaw_root is None:
+                    raise DeleteNotAllowed("OpenClaw root is not configured")
+                _delete_openclaw_session(candidate.path, openclaw_root)
+            else:
+                delete_permanently(
+                    candidate.path,
+                    allowed_roots=tuple(
+                        root
+                        for root in (claude_root, codex_root, openclaw_root)
+                        if root is not None
+                    ),
+                )
         except (DeleteNotAllowed, OSError) as exc:
             failed += 1
             log.warning("cleanup failed for %s: %s", candidate.path, exc)
