@@ -7,6 +7,7 @@ the other SSOT app backends.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 
@@ -73,6 +74,43 @@ def model_name() -> str:
 def anthropic_api_key() -> str | None:
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     return key or None
+
+
+def claude_cli_path() -> str | None:
+    """Path to a usable ``claude`` CLI, or None.
+
+    ``CLAUDE_CLI_PATH`` overrides discovery; otherwise ``claude`` is looked up on
+    PATH. The CLI runtime drives it headlessly against the user's logged-in
+    Claude Code subscription (OAuth) — no ANTHROPIC_API_KEY required.
+    """
+    override = os.environ.get("CLAUDE_CLI_PATH", "").strip()
+    if override:
+        return override if os.path.isfile(override) and os.access(override, os.X_OK) else None
+    return shutil.which("claude")
+
+
+def active_runtime() -> str:
+    """Which generation runtime a new run will use: ``sdk`` | ``claude-cli`` | ``none``.
+
+    ANTHROPIC_API_KEY wins (the SDK loop, unchanged); else a logged-in Claude
+    Code CLI; else no runtime is configured and runs end ``credentials_not_configured``.
+    """
+    if anthropic_api_key():
+        return "sdk"
+    if claude_cli_path():
+        return "claude-cli"
+    return "none"
+
+
+def api_host() -> str:
+    return os.environ.get("MODEL_DIAGRAM_API_HOST", "127.0.0.1").strip() or "127.0.0.1"
+
+
+def api_port() -> int:
+    try:
+        return int(os.environ.get("MODEL_DIAGRAM_API_PORT", "8791"))
+    except ValueError:
+        return 8791
 
 
 def paper_max_bytes() -> int:

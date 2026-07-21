@@ -111,7 +111,13 @@ export interface CreateRunResult {
   run_id: number;
 }
 
+// Which generation runtime the backend will use: the Anthropic SDK (API key),
+// the logged-in Claude Code CLI, or none configured. `anthropic_configured` is
+// retained for backward compatibility.
+export type Runtime = "sdk" | "claude-cli" | "none";
+
 export interface HealthResult {
   status: string;
   anthropic_configured: boolean;
+  runtime: Runtime;
 }

@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-from . import cluster_settings, db, paper as paper_mod, runs, settings, user_context
+from . import callback, cluster_settings, db, paper as paper_mod, runs, settings, user_context
+from .callback import BridgeAuthError
 from .paper import PaperResult
 from .pathcheck import precheck_path
 from .schemas import CreateDiagramRequest, PaperRef, ReprovisionRequest, ValidateRequest
@@ -94,7 +95,35 @@ def _run_detail(run: dict) -> dict:
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "anthropic_configured": settings.anthropic_api_key() is not None}
+    # `runtime` reports which generation path a new run would take; `anthropic_configured`
+    # is kept for backward compatibility.
+    return {
+        "status": "ok",
+        "anthropic_configured": settings.anthropic_api_key() is not None,
+        "runtime": settings.active_runtime(),
+    }
+
+
+# ── internal loopback callback (CLI runtime's MCP bridge) ───────────────────
+# Not under /api, so the gateway never proxies it; the backend binds loopback only.
+# Authenticated by the per-run token in the body (not x-ssot-user).
+
+
+@app.post("/internal/mcp/tool")
+async def internal_mcp_tool(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        run_id = int(body.get("run_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "invalid run_id")
+    token = str(body.get("token") or "")
+    tool = str(body.get("tool") or "")
+    args = body.get("args") or {}
+    try:
+        result, is_error = await callback.dispatch_tool(run_id, token, tool, args)
+    except BridgeAuthError:
+        raise HTTPException(403, "invalid callback token")
+    return JSONResponse({"result": result, "is_error": is_error})
 
 
 @app.get("/api/clusters")

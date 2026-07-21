@@ -1,6 +1,9 @@
 import pytest
 
-from app.fsaccess import FsAccess, FsError, PathEscape
+from app import fsaccess
+from app.clusters import ClusterEnv
+from app.fsaccess import ClusterAccessError, FsAccess, FsError, PathEscape, resolve_access
+from app.ssh import SSHResult
 
 
 async def test_local_list_and_read(tmp_path):
@@ -62,3 +65,64 @@ async def test_remote_path_guard_is_lexical(tmp_path):
         await fs.read_file("../../etc/passwd")
     with pytest.raises(PathEscape):
         await fs.read_file("/etc/passwd")
+
+
+# ── pre-resolved access (the cluster-propagation fix) ────────────────────────
+
+
+async def test_preresolved_ssh_access_bypasses_settings_lookup(monkeypatch):
+    """With access passed in, list_dir takes the ssh path and NEVER calls
+    load_cluster — the bug was the out-of-process worker doing that lookup with
+    no identity, yielding 'cluster kakao is not configured'."""
+    calls: dict = {}
+
+    async def fake_ssh_run(host, cmd, timeout=60.0, input_text=None):
+        calls["host"] = host
+        calls["cmd"] = cmd
+        return SSHResult(returncode=0, stdout="a.py\nsub/\n", stderr="")
+
+    def boom(*_a, **_k):
+        raise AssertionError("load_cluster must not be called when access is pre-resolved")
+
+    monkeypatch.setattr(fsaccess, "ssh_run", fake_ssh_run)
+    monkeypatch.setattr(fsaccess, "load_cluster", boom)
+
+    fs = FsAccess("kakao", "/rlwrld2/home/u/model", access={"kind": "ssh", "ssh_alias": "kakao-login-1"})
+    entries = await fs.list_dir("")
+    by_name = {e["name"]: e["kind"] for e in entries}
+    assert by_name == {"a.py": "file", "sub": "dir"}
+    assert calls["host"] == "kakao-login-1"
+
+
+async def test_resolve_access_local():
+    assert await resolve_access("local") == {"kind": "local"}
+
+
+async def test_resolve_access_ssh(monkeypatch):
+    async def fake_load_cluster(name):
+        return ClusterEnv(name=name, vars={"SSH_ALIAS": "kakao-login-2"})
+
+    monkeypatch.setattr(fsaccess, "load_cluster", fake_load_cluster)
+    assert await resolve_access("kakao") == {"kind": "ssh", "ssh_alias": "kakao-login-2"}
+
+
+async def test_resolve_access_unconfigured_is_actionable(monkeypatch):
+    async def missing(name):
+        raise FileNotFoundError(f"cluster {name} is not configured")
+
+    monkeypatch.setattr(fsaccess, "load_cluster", missing)
+    with pytest.raises(ClusterAccessError) as excinfo:
+        await resolve_access("kakao")
+    msg = str(excinfo.value)
+    assert "not configured" in msg
+    assert "Settings" in msg  # actionable: points the user at cluster settings
+
+
+async def test_resolve_access_ssh_missing_alias(monkeypatch):
+    async def no_alias(name):
+        return ClusterEnv(name=name, vars={"PARTITION": "gpu"})
+
+    monkeypatch.setattr(fsaccess, "load_cluster", no_alias)
+    with pytest.raises(ClusterAccessError) as excinfo:
+        await resolve_access("kakao")
+    assert "SSH_ALIAS" in str(excinfo.value)

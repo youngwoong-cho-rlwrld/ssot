@@ -176,6 +176,31 @@ def load_paper_block(paper_row: dict) -> list[dict]:
     return [{"type": "text", "text": f"ATTACHED PAPER (extracted text):\n\n{text}"}]
 
 
+def load_paper_text(paper_row: dict) -> Optional[str]:
+    """Extract the paper as plain text for the CLI runtime's virtual read_file.
+
+    The CLI path can't take a base64 document block in the initial message, so the
+    paper is exposed through OUR read_file tool at ``__paper__``. PDFs are
+    text-extracted with pypdf; HTML/text papers are already stored as ``.txt``.
+    Returns None if no usable text can be produced.
+    """
+    stored_path = paper_row.get("stored_path")
+    if not stored_path:
+        return None
+    path = Path(stored_path)
+    if not path.is_file():
+        return None
+    if (paper_row.get("content_type") or "") == "application/pdf":
+        try:
+            reader = PdfReader(io.BytesIO(path.read_bytes()))
+            pages = [page.extract_text() or "" for page in reader.pages]
+        except Exception:
+            return None
+        text = "\n\n".join(pages).strip()
+        return text or None
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
 # ── internals ──────────────────────────────────────────────────────────────
 
 

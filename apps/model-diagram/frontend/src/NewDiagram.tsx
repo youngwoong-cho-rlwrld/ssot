@@ -47,7 +47,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
   const [paperError, setPaperError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [credsMissing, setCredsMissing] = useState(false);
+  const [runtime, setRuntime] = useState<"sdk" | "claude-cli" | "none" | null>(null);
 
   // Populate the cluster list and the credentials warning from the backend.
   useEffect(() => {
@@ -60,7 +60,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
         // keep the static fallback list
       });
     getHealth(controller.signal)
-      .then((h) => setCredsMissing(!h.anthropic_configured))
+      .then((h) => setRuntime(h.runtime))
       .catch(() => {
         // health probe is best-effort; don't block the form
       });
@@ -183,16 +183,25 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
             void onSubmit();
           }}
         >
-          {credsMissing && (
+          {runtime === "none" && (
             <div className="notice notice--warn form__notice">
               <AlertTriangle size={15} />
               <div>
                 <strong>Agent credentials not configured.</strong>
                 <p>
-                  <code>ANTHROPIC_API_KEY</code> is unset, so runs will fail until
-                  it is provided in the repo <code>.env</code>.
+                  Runs will fail until the backend has a generation runtime. Either
+                  set <code>ANTHROPIC_API_KEY</code> in the repo <code>.env</code>,
+                  or log in to the Claude Code CLI (run <code>claude</code> and sign
+                  in), then restart the backend.
                 </p>
               </div>
+            </div>
+          )}
+          {runtime === "claude-cli" && (
+            <div className="notice form__notice">
+              <p>
+                Runs use the logged-in Claude Code CLI (no API key set).
+              </p>
             </div>
           )}
 

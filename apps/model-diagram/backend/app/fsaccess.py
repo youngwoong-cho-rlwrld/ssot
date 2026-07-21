@@ -33,11 +33,61 @@ class FsError(Exception):
     """A read failed (missing path, transport error, oversize, etc.)."""
 
 
+class ClusterAccessError(FsError):
+    """The cluster's access config could not be resolved (not configured)."""
+
+
+async def resolve_access(cluster: str) -> dict:
+    """Resolve a cluster to a self-contained access config, in the backend.
+
+    This runs where the request's identity is available (settings live in
+    ssot.db keyed by the user's email), so the resolved config can be handed to
+    an out-of-process worker — the MCP server on the CLI runtime — that has no
+    identity of its own. The returned dict is one of:
+
+    - ``{"kind": "local"}``
+    - ``{"kind": "ssh", "ssh_alias": <alias>}``
+    - ``{"kind": "kubectl", "namespace": <ns>, "pod": <pod>}``  (mlxp)
+
+    Raises :class:`ClusterAccessError` with an actionable message when the
+    cluster isn't configured for this account.
+    """
+    if cluster == "local":
+        return {"kind": "local"}
+    if cluster == "mlxp":
+        try:
+            s = mlxp_config.get_settings()
+            pod = await mlxp_data_pod.ensure_listing_pod()
+        except Exception as exc:
+            raise ClusterAccessError(
+                f"cluster 'mlxp' is not available: {exc}. Configure MLXP settings in Settings, then retry."
+            ) from exc
+        return {"kind": "kubectl", "namespace": s.namespace, "pod": pod}
+    try:
+        env = await load_cluster(cluster)
+    except FileNotFoundError as exc:
+        raise ClusterAccessError(
+            f"cluster '{cluster}' is not configured for your account. Add its SSH settings in "
+            "Settings (cluster configuration), then retry."
+        ) from exc
+    alias = env.ssh_alias
+    if not alias:
+        raise ClusterAccessError(
+            f"cluster '{cluster}' has no SSH_ALIAS configured. Set it in Settings (cluster "
+            "configuration), then retry."
+        )
+    return {"kind": "ssh", "ssh_alias": alias}
+
+
 class FsAccess:
     """Read-only accessor scoped to one cluster + absolute model root."""
 
-    def __init__(self, cluster: str, root: str):
+    def __init__(self, cluster: str, root: str, access: Optional[dict] = None):
         self.cluster = cluster
+        # Pre-resolved access config (backend). When None, it is resolved lazily
+        # via resolve_access() on first remote call — fine in-process (identity
+        # is set), but an out-of-process worker MUST pass access explicitly.
+        self._access = access
         if cluster == "local":
             self.local_root: Optional[Path] = Path(root).expanduser().resolve()
             self.root = str(self.local_root)
@@ -180,24 +230,31 @@ class FsAccess:
             return None
         return out if out in ("dir", "file") else None
 
+    async def _get_access(self) -> dict:
+        if self._access is None:
+            self._access = await resolve_access(self.cluster)
+        return self._access
+
     async def _remote_run(self, script: str, timeout: float) -> str:
-        if self.cluster == "mlxp":
-            return await self._kubectl_bash(script, timeout)
-        env = await load_cluster(self.cluster)
-        alias = env.ssh_alias
+        access = await self._get_access()
+        if access.get("kind") == "kubectl":
+            return await self._kubectl_bash(script, timeout, access)
+        alias = access.get("ssh_alias", "")
         if not alias:
-            raise FsError(f"cluster {self.cluster} has no SSH_ALIAS configured")
+            raise ClusterAccessError(f"cluster {self.cluster!r} has no SSH_ALIAS configured")
         result = await ssh_run(alias, script, timeout=timeout)
         if result.returncode != 0:
             raise FsError(result.stderr.strip() or result.stdout.strip() or f"remote command failed: {script}")
         return result.stdout
 
     @staticmethod
-    async def _kubectl_bash(script: str, timeout: float) -> str:
-        settings = mlxp_config.get_settings()
-        pod = await mlxp_data_pod.ensure_listing_pod()
+    async def _kubectl_bash(script: str, timeout: float, access: dict) -> str:
+        namespace = access.get("namespace") or ""
+        pod = access.get("pod") or ""
+        if not namespace or not pod:
+            raise ClusterAccessError("mlxp access config is missing namespace/pod")
         proc = await asyncio.create_subprocess_exec(
-            "kubectl", "exec", "-n", settings.namespace, pod, "--", "bash", "-lc", script,
+            "kubectl", "exec", "-n", namespace, pod, "--", "bash", "-lc", script,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
