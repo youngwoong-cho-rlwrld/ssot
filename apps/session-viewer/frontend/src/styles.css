@@ -17,6 +17,8 @@
   --claude-bg: #fef3e2;
   --codex: #2563eb;
   --codex-bg: #e7f0ff;
+  --openclaw: #15803d;
+  --openclaw-bg: #e3f5e1;
 
   /* Board + elevation chrome. These are theme tokens (overridden for dark
      below), not one-off literals: the react-flow dot grid follows the border
@@ -907,6 +909,10 @@ body {
   background: rgba(37, 99, 235, 0.45);
 }
 
+.sk--chip.sk--openclaw {
+  background: rgba(21, 128, 61, 0.45);
+}
+
 .sk--line {
   width: 100%;
   height: 13px;
@@ -939,6 +945,11 @@ body {
 .chip--codex {
   background: var(--codex-bg);
   color: var(--codex);
+}
+
+.chip--openclaw {
+  background: var(--openclaw-bg);
+  color: var(--openclaw);
 }
 
 .star-btn {

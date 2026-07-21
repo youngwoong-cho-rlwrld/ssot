@@ -222,6 +222,9 @@ function injectHeaders(proxyReq, req, scope) {
     const s = getSettings(user.id, 'session-viewer');
     if (s.claude_root) proxyReq.setHeader('x-ssot-sessions-claude-root', s.claude_root);
     if (s.codex_root) proxyReq.setHeader('x-ssot-sessions-codex-root', s.codex_root);
+    if (s.openclaw_root) {
+      proxyReq.setHeader('x-ssot-sessions-openclaw-root', s.openclaw_root);
+    }
   }
 }
 

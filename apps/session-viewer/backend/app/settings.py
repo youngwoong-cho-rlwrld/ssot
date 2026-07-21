@@ -39,6 +39,9 @@ CLAUDE_ROOT: Path = _expand(
 CODEX_ROOT: Path = _expand(
     os.environ.get("SESSIONS_CODEX_ROOT", "~/.codex/sessions")
 )
+OPENCLAW_ROOT: Path = _expand(
+    os.environ.get("SESSIONS_OPENCLAW_ROOT", "~/.openclaw/agents")
+)
 
 
 def _default_trash_dir() -> Path:

@@ -27,7 +27,11 @@ async def lifespan(app: FastAPI):
     # Rehydrate small persisted metadata and let the dedicated indexer handle
     # changed transcripts. Startup never parses the source corpus.
     try:
-        cache.prime(settings.CLAUDE_ROOT, settings.CODEX_ROOT)
+        cache.prime(
+            settings.CLAUDE_ROOT,
+            settings.CODEX_ROOT,
+            settings.OPENCLAW_ROOT,
+        )
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("session_board").warning("startup scan failed: %s", exc)
     yield
@@ -52,6 +56,7 @@ app.add_middleware(
 class HealthCounts(BaseModel):
     claude: int
     codex: int
+    openclaw: int
 
 
 class Health(BaseModel):
@@ -107,8 +112,9 @@ class CleanupResult(BaseModel):
 def resolve_roots(
     x_ssot_sessions_claude_root: Optional[str] = Header(default=None),
     x_ssot_sessions_codex_root: Optional[str] = Header(default=None),
-) -> tuple[Path, Path]:
-    """Resolve the (claude_root, codex_root) for this request.
+    x_ssot_sessions_openclaw_root: Optional[str] = Header(default=None),
+) -> tuple[Path, Path, Path]:
+    """Resolve the Claude, Codex, and OpenClaw roots for this request.
 
     The gateway injects per-user override headers (trusted; the backend binds to
     localhost and direct exposure is unsupported). When a header is absent, fall
@@ -125,7 +131,12 @@ def resolve_roots(
         if x_ssot_sessions_codex_root
         else settings.CODEX_ROOT
     )
-    return claude_root, codex_root
+    openclaw_root = (
+        settings.expand_root(x_ssot_sessions_openclaw_root)
+        if x_ssot_sessions_openclaw_root
+        else settings.OPENCLAW_ROOT
+    )
+    return claude_root, codex_root, openclaw_root
 
 
 # ---------------------------------------------------------------------------
@@ -183,9 +194,14 @@ def _updated_key(sess: Session) -> Any:
 
 
 @app.get("/api/health", response_model=Health)
-def health(roots: tuple[Path, Path] = Depends(resolve_roots)) -> Health:
+def health(roots: tuple[Path, Path, Path] = Depends(resolve_roots)) -> Health:
     c = cache.counts(*roots)
-    return Health(status="ok", counts=HealthCounts(claude=c["claude"], codex=c["codex"]))
+    return Health(
+        status="ok",
+        counts=HealthCounts(
+            claude=c["claude"], codex=c["codex"], openclaw=c["openclaw"]
+        ),
+    )
 
 
 @app.get("/api/sessions", response_model=list[Session])
@@ -194,7 +210,7 @@ def list_sessions(
     project: Optional[str] = None,
     q: Optional[str] = None,
     since: Optional[str] = None,
-    roots: tuple[Path, Path] = Depends(resolve_roots),
+    roots: tuple[Path, Path, Path] = Depends(resolve_roots),
 ) -> list[Session]:
     sessions = cache.list_all(*roots)
 
@@ -222,7 +238,7 @@ def list_sessions(
 def session_detail(
     agent: str,
     id: str,
-    roots: tuple[Path, Path] = Depends(resolve_roots),
+    roots: tuple[Path, Path, Path] = Depends(resolve_roots),
 ) -> SessionDetail:
     uid = f"{agent}:{id}"
     detail = cache.get_detail(uid, *roots)
@@ -239,10 +255,12 @@ def board() -> list[BoardNode]:
 @app.get("/api/cleanup", response_model=CleanupPreview)
 def cleanup_preview(
     categories: list[cleanup_service.CleanupCategory] = Query(default=[]),
-    roots: tuple[Path, Path] = Depends(resolve_roots),
+    roots: tuple[Path, Path, Path] = Depends(resolve_roots),
 ) -> CleanupPreview:
     summary = cleanup_service.summarize(
-        cleanup_service.discover(*roots, exact=False),
+        cleanup_service.discover(
+            roots[0], roots[1], exact=False, openclaw_root=roots[2]
+        ),
         categories,
     )
     return CleanupPreview(
@@ -255,9 +273,15 @@ def cleanup_preview(
 @app.delete("/api/cleanup", response_model=CleanupResult)
 def cleanup_sessions(
     body: CleanupSelection,
-    roots: tuple[Path, Path] = Depends(resolve_roots),
+    roots: tuple[Path, Path, Path] = Depends(resolve_roots),
 ) -> CleanupResult:
-    outcome = cleanup_service.clean(*roots, body.categories, body.affected_uids)
+    outcome = cleanup_service.clean(
+        roots[0],
+        roots[1],
+        body.categories,
+        body.affected_uids,
+        openclaw_root=roots[2],
+    )
     return CleanupResult(
         status="deleted" if outcome.failed == 0 else "partial",
         affected=outcome.affected,
@@ -277,11 +301,16 @@ def update_board(uid: str, body: BoardUpdate) -> BoardNode:
 def delete_session(
     agent: str,
     id: str,
-    roots: tuple[Path, Path] = Depends(resolve_roots),
+    roots: tuple[Path, Path, Path] = Depends(resolve_roots),
 ) -> DeleteResult:
     """Delete a session entirely: move its .jsonl to the Trash and drop it from
     the cache and the board."""
     uid = f"{agent}:{id}"
+    if agent == "openclaw":
+        raise HTTPException(
+            status_code=409,
+            detail="delete OpenClaw sessions from the OpenClaw app",
+        )
     session = cache.get_session(uid, *roots)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")

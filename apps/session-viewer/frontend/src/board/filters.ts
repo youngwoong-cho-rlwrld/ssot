@@ -1,6 +1,6 @@
 import type { Session } from "../types";
 
-export type AgentFilter = "all" | "claude" | "codex";
+export type AgentFilter = "all" | "claude" | "codex" | "openclaw";
 export type DatePreset = "any" | "24h" | "7d" | "30d" | "custom";
 
 export interface FilterState {

@@ -30,7 +30,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 export interface SessionsParams {
-  agent?: "claude" | "codex";
+  agent?: "claude" | "codex" | "openclaw";
   project?: string;
   q?: string;
   since?: string;

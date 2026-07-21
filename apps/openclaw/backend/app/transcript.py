@@ -83,6 +83,67 @@ def _iter_records(path: Path) -> Iterable[dict[str, Any]]:
                 yield rec
 
 
+def _message_identity(message: dict[str, Any]) -> Optional[str]:
+    """Return OpenClaw's stable identity for a mirrored message record."""
+    key = message.get("idempotencyKey")
+    if isinstance(key, str) and key:
+        return key
+    metadata = message.get("__openclaw")
+    if isinstance(metadata, dict):
+        mirror = metadata.get("mirrorIdentity")
+        if isinstance(mirror, str) and mirror:
+            return mirror
+    return None
+
+
+def _message_signature(message: dict[str, Any]) -> str:
+    """Stable role/content signature used only for channel delivery echoes."""
+    try:
+        content = json.dumps(
+            message.get("content"), ensure_ascii=False, sort_keys=True, default=str
+        )
+    except (TypeError, ValueError):
+        content = str(message.get("content"))
+    return f"{message.get('role')}\0{content}"
+
+
+def _iter_visible_messages(
+    path: Path,
+) -> Iterator[tuple[dict[str, Any], dict[str, Any]]]:
+    """Yield message records once, excluding Slack mirror/delivery copies.
+
+    OpenClaw records an inbound Slack prompt twice with the same idempotency
+    identity. It also records the final channel delivery as ``channel-final:*``
+    after the model-authored assistant message. Both are useful for delivery
+    recovery, but only one copy belongs in a human transcript.
+    """
+    seen_identities: set[str] = set()
+    assistant_signatures: set[str] = set()
+    for rec in _iter_records(path):
+        if rec.get("type") != "message":
+            continue
+        message = rec.get("message") or {}
+        if not isinstance(message, dict):
+            continue
+
+        identity = _message_identity(message)
+        if identity is not None:
+            if identity in seen_identities:
+                continue
+            seen_identities.add(identity)
+
+        signature = _message_signature(message)
+        if (
+            isinstance(identity, str)
+            and identity.startswith("channel-final:")
+            and signature in assistant_signatures
+        ):
+            continue
+        if message.get("role") == "assistant":
+            assistant_signatures.add(signature)
+        yield rec, message
+
+
 class _Builder:
     """Accumulates Turns plus a tool-call id index for attaching outputs."""
 
@@ -209,12 +270,7 @@ def _ingest_message(b: _Builder, role: Any, content: Any, ts: Optional[str]) -> 
 
 def _build_turns(path: Path) -> list[Turn]:
     b = _Builder()
-    for rec in _iter_records(path):
-        if rec.get("type") != "message":
-            continue
-        msg = rec.get("message") or {}
-        if not isinstance(msg, dict):
-            continue
+    for rec, msg in _iter_visible_messages(path):
         ts = rec.get("timestamp") if isinstance(rec.get("timestamp"), str) else None
         _ingest_message(b, msg.get("role"), msg.get("content"), ts)
     return b.turns
@@ -239,15 +295,15 @@ def build_detail(agent_id: str, session_id: str, path: Path) -> TranscriptDetail
                 if ts:
                     created_at = ts
                 continue
-            if rtype == "message":
-                message_count += 1
-                if ts:
-                    updated_at = ts
-                msg = rec.get("message") or {}
-                if isinstance(msg, dict):
-                    m = msg.get("model")
-                    if isinstance(m, str) and m:
-                        model = m
+        message_count = 0
+        for rec, msg in _iter_visible_messages(path):
+            message_count += 1
+            ts = rec.get("timestamp") if isinstance(rec.get("timestamp"), str) else None
+            if ts:
+                updated_at = ts
+            m = msg.get("model")
+            if isinstance(m, str) and m:
+                model = m
         turns = _build_turns(path)
     except Exception as exc:  # noqa: BLE001 - keep detail usable on partial fail
         log.warning("failed to build transcript for %s: %s", path, exc)

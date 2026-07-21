@@ -87,7 +87,7 @@ both identifier allowlists narrow.
 **Settings page** (`/settings`, gateway-served) lets a signed-in user edit:
 their username; the train-eval cluster environment settings, Weights & Biases,
 and Slack notifications; the results-sheet configs root; and the session-viewer
-Claude/Codex session roots. Built-in cluster names and environment keys are
+Claude/Codex/OpenClaw session roots. Built-in cluster names and environment keys are
 shown as a fixed schema, while every account's editable values start empty or
 at the documented non-user-specific defaults. SQLite is authoritative:
 the Train / Eval runtime reads the signed-in user's row directly, and does not
@@ -98,8 +98,9 @@ and are redacted from settings API responses.
 **`x-ssot-*` header contract.** On every proxied request that carries a valid
 session, the gateway injects `x-ssot-user` (the signed-in email) for all apps,
 `x-ssot-results-configs-root` on `/results` requests, and
-`x-ssot-sessions-claude-root` / `x-ssot-sessions-codex-root` on `/sessions/api`
-requests (each only when the user has set it). Any client-supplied `x-ssot-*`
+`x-ssot-sessions-claude-root`, `x-ssot-sessions-codex-root`, and
+`x-ssot-sessions-openclaw-root` on `/sessions/api` requests (each only when the
+user has set it). Any client-supplied `x-ssot-*`
 header is stripped before proxying, so apps can trust these as
 gateway-asserted identity.
 

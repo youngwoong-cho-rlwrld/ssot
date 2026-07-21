@@ -216,6 +216,7 @@
     const sv = s['session-viewer'] || {};
     $('sv-claude-root').value = sv.claude_root || '';
     $('sv-codex-root').value = sv.codex_root || '';
+    $('sv-openclaw-root').value = sv.openclaw_root || '';
 
     fillTrainEval(s['train-eval'] || {});
     $('te-wandb-key').value = '';
@@ -266,6 +267,7 @@
     'session-viewer': () => ({
       claude_root: $('sv-claude-root').value.trim(),
       codex_root: $('sv-codex-root').value.trim(),
+      openclaw_root: $('sv-openclaw-root').value.trim(),
     }),
     'train-eval': () => {
       const body = {

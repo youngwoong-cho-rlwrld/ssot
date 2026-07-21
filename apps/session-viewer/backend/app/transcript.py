@@ -19,6 +19,8 @@ from .sources import (
     _claude_text_from_content,
     _codex_text_from_content,
     _iter_records,
+    _iter_openclaw_messages,
+    _openclaw_text_from_content,
 )
 
 log = logging.getLogger("session_board.transcript")
@@ -268,6 +270,96 @@ def _build_codex_turns(path: Path) -> list[Turn]:
 
 
 # ---------------------------------------------------------------------------
+# OpenClaw
+# ---------------------------------------------------------------------------
+
+
+def _build_openclaw_turns(path: Path) -> list[Turn]:
+    b = _Builder()
+    for rec, message in _iter_openclaw_messages(path):
+        role = message.get("role")
+        content = message.get("content")
+        ts = rec.get("timestamp") if isinstance(rec.get("timestamp"), str) else None
+
+        if role == "assistant":
+            turn = Turn(role="assistant", text="", ts=ts)
+            text_parts: list[str] = []
+            if isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type")
+                    if block_type == "text" and isinstance(block.get("text"), str):
+                        text_parts.append(block["text"])
+                    elif block_type in ("toolCall", "tool_use"):
+                        raw = block.get("arguments")
+                        if raw is None:
+                            raw = block.get("input", {})
+                        b.add_call(
+                            turn,
+                            str(block.get("name") or "tool"),
+                            _stringify(raw),
+                            block.get("id"),
+                        )
+            elif isinstance(content, str):
+                text_parts.append(content)
+            turn.text = _truncate("\n".join(text_parts))
+            if turn.text or turn.tool_calls:
+                b.turns.append(turn)
+            continue
+
+        if role in ("toolResult", "tool"):
+            if isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    output = block.get("text")
+                    if not isinstance(output, str):
+                        output = _stringify(block.get("content"))
+                    tool_id = (
+                        block.get("toolCallId")
+                        or block.get("toolUseId")
+                        or block.get("tool_use_id")
+                        or block.get("id")
+                    )
+                    b.attach_output(tool_id, output)
+            continue
+
+        if role == "user":
+            if isinstance(content, list):
+                results = [
+                    block
+                    for block in content
+                    if isinstance(block, dict)
+                    and block.get("type") in ("toolResult", "tool_result")
+                ]
+                non_results = [
+                    block
+                    for block in content
+                    if isinstance(block, dict)
+                    and block.get("type") not in ("toolResult", "tool_result")
+                ]
+                if results and not non_results:
+                    for block in results:
+                        output = block.get("text")
+                        if not isinstance(output, str):
+                            output = _stringify(block.get("content"))
+                        tool_id = (
+                            block.get("toolCallId")
+                            or block.get("toolUseId")
+                            or block.get("tool_use_id")
+                            or block.get("id")
+                        )
+                        b.attach_output(tool_id, output)
+                    continue
+            text = _openclaw_text_from_content(content).strip()
+            if text:
+                b.turns.append(Turn(role="user", text=_truncate(text), ts=ts))
+
+    return b.turns
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -281,6 +373,8 @@ def build_detail(session: Session) -> SessionDetail:
             turns = _build_claude_turns(path)
         elif session.agent == "codex":
             turns = _build_codex_turns(path)
+        elif session.agent == "openclaw":
+            turns = _build_openclaw_turns(path)
     except Exception as exc:  # noqa: BLE001 - keep detail usable on partial fail
         log.warning("failed to build transcript for %s: %s", session.path, exc)
         turns = []

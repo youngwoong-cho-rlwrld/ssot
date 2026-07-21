@@ -159,23 +159,24 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           </dl>
         )}
 
-        <div className="drawer__resume">
-          <code className="drawer__cmd" title={cmd}>
-            {cmd || "..."}
-          </code>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={onCopy}
-            disabled={!cmd}
-            title="Copy resume command"
-            aria-label="Copy resume command"
-          >
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-          </button>
-        </div>
+        {cmd && (
+          <div className="drawer__resume">
+            <code className="drawer__cmd" title={cmd}>
+              {cmd}
+            </code>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={onCopy}
+              title="Copy resume command"
+              aria-label="Copy resume command"
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </div>
+        )}
 
-        <div className="drawer__danger">
+        {agent !== "openclaw" && <div className="drawer__danger">
           {!confirmingDelete ? (
             <button type="button" className="danger-btn" onClick={onDelete}>
               <Trash2 size={14} />
@@ -202,7 +203,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
               </button>
             </div>
           )}
-        </div>
+        </div>}
 
         <div className="drawer__controls">
           <div className="swatches" role="group" aria-label="Card color">

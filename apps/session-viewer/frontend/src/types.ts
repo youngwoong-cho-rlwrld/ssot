@@ -1,6 +1,6 @@
 // Shared API contract types. These MUST match the backend pydantic models exactly.
 
-export type Agent = "claude" | "codex";
+export type Agent = "claude" | "codex" | "openclaw";
 
 export interface Session {
   uid: string; // `${agent}:${id}`

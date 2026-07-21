@@ -249,6 +249,7 @@ function normalizePathNamespace(namespace, body) {
   return {
     claude_root: stringValue(body.claude_root, 'claude_root') ?? '',
     codex_root: stringValue(body.codex_root, 'codex_root') ?? '',
+    openclaw_root: stringValue(body.openclaw_root, 'openclaw_root') ?? '',
   };
 }
 

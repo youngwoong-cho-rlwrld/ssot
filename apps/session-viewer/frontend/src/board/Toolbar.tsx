@@ -19,6 +19,7 @@ const AGENT_LABEL: Record<FilterState["agent"], string> = {
   all: "All agents",
   claude: "Claude",
   codex: "Codex",
+  openclaw: "OpenClaw",
 };
 
 const DATE_LABEL: Record<FilterState["datePreset"], string> = {

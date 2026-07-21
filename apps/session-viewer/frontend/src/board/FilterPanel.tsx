@@ -25,6 +25,7 @@ const AGENT_OPTIONS: { value: AgentFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "claude", label: "Claude" },
   { value: "codex", label: "Codex" },
+  { value: "openclaw", label: "OpenClaw" },
 ];
 
 const DATE_OPTIONS: { value: DatePreset; label: string }[] = [

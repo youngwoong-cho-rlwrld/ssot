@@ -19,7 +19,7 @@ function PostItNodeImpl({ data, selected }: NodeProps<PostItNodeType>) {
   const { session, color, starred, highlighted, lod, onToggleStar } = data;
   const bg = color ?? defaultColorFor(session.agent);
   const rotation = rotationFor(session.uid);
-  const isClaude = session.agent === "claude";
+  const agentClass = session.agent;
 
   // Zoomed out: text is unreadable anyway, so skip all text + SVG icons (the
   // expensive part to lay out and paint) and render a lightweight placeholder.
@@ -30,7 +30,7 @@ function PostItNodeImpl({ data, selected }: NodeProps<PostItNodeType>) {
         style={{ background: bg, transform: `rotate(${rotation}deg)` }}
       >
         <span
-          className={`sk sk--chip sk--${isClaude ? "claude" : "codex"}`}
+          className={`sk sk--chip sk--${agentClass}`}
         />
         <span className="sk sk--line" />
         <span className="sk sk--line" />
@@ -45,7 +45,7 @@ function PostItNodeImpl({ data, selected }: NodeProps<PostItNodeType>) {
       style={{ background: bg, transform: `rotate(${rotation}deg)` }}
     >
       <div className="postit__top">
-        <span className={`chip chip--${isClaude ? "claude" : "codex"}`}>
+        <span className={`chip chip--${agentClass}`}>
           {session.agent}
         </span>
         {session.active && (

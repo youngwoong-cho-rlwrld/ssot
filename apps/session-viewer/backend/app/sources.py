@@ -1,10 +1,12 @@
 """Session file scanning + light metadata parsing.
 
-Two agents are supported:
+Three agents are supported:
 
 - Claude Code: ``~/.claude/projects/*/*.jsonl`` (one JSON record per line).
 - Codex CLI:   ``~/.codex/sessions/**/*.jsonl`` (one JSON record per line,
   each ``{"timestamp", "type", "payload"}``).
+- OpenClaw:    ``~/.openclaw/agents/*/sessions/*.jsonl`` (OpenClaw message
+  envelopes; trajectory sidecars are ignored).
 
 Parsing is deliberately defensive: every file is wrapped in try/except and a
 failed file is logged and skipped; individual unparseable lines are skipped too.
@@ -20,7 +22,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from . import settings
 from .models import Session
@@ -463,4 +465,156 @@ def scan_codex() -> list[Session]:
         sess = parse_codex_meta(path)
         if sess is not None:
             out.append(sess)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# OpenClaw
+# ---------------------------------------------------------------------------
+
+
+def _openclaw_text_from_content(content: Any) -> str:
+    """Extract text from an OpenClaw string or text-block list."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts)
+    return ""
+
+
+def _openclaw_message_identity(message: dict[str, Any]) -> Optional[str]:
+    key = message.get("idempotencyKey")
+    if isinstance(key, str) and key:
+        return key
+    metadata = message.get("__openclaw")
+    if isinstance(metadata, dict):
+        mirror = metadata.get("mirrorIdentity")
+        if isinstance(mirror, str) and mirror:
+            return mirror
+    return None
+
+
+def _openclaw_message_signature(message: dict[str, Any]) -> str:
+    try:
+        content = json.dumps(
+            message.get("content"), ensure_ascii=False, sort_keys=True, default=str
+        )
+    except (TypeError, ValueError):
+        content = str(message.get("content"))
+    return f"{message.get('role')}\0{content}"
+
+
+def _iter_openclaw_messages(
+    path: Path,
+) -> Iterator[tuple[dict[str, Any], dict[str, Any]]]:
+    """Yield visible OpenClaw messages without Slack mirror copies."""
+    seen_identities: set[str] = set()
+    assistant_signatures: set[str] = set()
+    for rec in _iter_records(path):
+        if rec.get("type") != "message":
+            continue
+        message = rec.get("message") or {}
+        if not isinstance(message, dict):
+            continue
+        identity = _openclaw_message_identity(message)
+        if identity is not None:
+            if identity in seen_identities:
+                continue
+            seen_identities.add(identity)
+        signature = _openclaw_message_signature(message)
+        if (
+            isinstance(identity, str)
+            and identity.startswith("channel-final:")
+            and signature in assistant_signatures
+        ):
+            continue
+        if message.get("role") == "assistant":
+            assistant_signatures.add(signature)
+        yield rec, message
+
+
+def parse_openclaw_meta(path: Path) -> Optional[Session]:
+    """Parse one OpenClaw session envelope file into board metadata."""
+    try:
+        session_id = path.name.removesuffix(".jsonl")
+        agent_id = path.parent.parent.name or "main"
+        cwd = ""
+        created_at: Optional[str] = None
+        timestamps: list[str] = []
+
+        for rec in _iter_records(path):
+            if rec.get("type") != "session":
+                continue
+            if isinstance(rec.get("cwd"), str):
+                cwd = rec["cwd"]
+            ts = rec.get("timestamp")
+            if isinstance(ts, str) and ts:
+                created_at = ts
+                timestamps.append(ts)
+            break
+
+        first_prompt: Optional[str] = None
+        last_prompt: Optional[str] = None
+        model: Optional[str] = None
+        message_count = 0
+        for rec, message in _iter_openclaw_messages(path):
+            ts = rec.get("timestamp")
+            if isinstance(ts, str) and ts:
+                timestamps.append(ts)
+            role = message.get("role")
+            if role not in ("user", "assistant"):
+                continue
+            message_count += 1
+            if role == "user":
+                text = _openclaw_text_from_content(message.get("content")).strip()
+                if text:
+                    first_prompt = first_prompt or text
+                    last_prompt = text
+            elif role == "assistant":
+                value = message.get("model")
+                if isinstance(value, str) and value:
+                    model = value
+
+        title = _cap_title(first_prompt or session_id[:8])
+        _, last_ts = _min_max(timestamps)
+        return Session(
+            uid=f"openclaw:{session_id}",
+            agent="openclaw",
+            id=session_id,
+            path=str(path),
+            project=f"openclaw/{agent_id}",
+            cwd=cwd,
+            title=title,
+            last_prompt=last_prompt,
+            model=model,
+            git_branch=None,
+            cli_version=None,
+            created_at=created_at,
+            updated_at=last_ts or _mtime_iso(path),
+            message_count=message_count,
+            active=_is_active(path),
+        )
+    except Exception as exc:  # noqa: BLE001 - defensive per-file isolation
+        log.warning("failed to parse openclaw session %s: %s", path, exc)
+        return None
+
+
+def scan_openclaw() -> list[Session]:
+    """Scan OpenClaw agent session envelopes, excluding trajectory sidecars."""
+    base = settings.OPENCLAW_ROOT
+    out: list[Session] = []
+    if not base.exists():
+        return out
+    for path in base.glob("*/sessions/*.jsonl"):
+        if path.name.endswith(".trajectory.jsonl"):
+            continue
+        session = parse_openclaw_meta(path)
+        if session is not None:
+            out.append(session)
     return out

@@ -10,7 +10,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-Agent = Literal["claude", "codex"]
+Agent = Literal["claude", "codex", "openclaw"]
 Role = Literal["user", "assistant", "system"]
 
 

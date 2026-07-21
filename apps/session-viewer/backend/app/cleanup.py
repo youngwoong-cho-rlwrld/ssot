@@ -138,9 +138,12 @@ def _cached_categories(path: Path, agent: str) -> set[CleanupCategory]:
     if cached is not None and cached[0] == before:
         return set(cached[1])
 
-    categories = (
-        _claude_categories(path) if agent == "claude" else _codex_categories(path)
-    )
+    if agent == "claude":
+        categories = _claude_categories(path)
+    elif agent == "codex":
+        categories = _codex_categories(path)
+    else:
+        categories = set()
     after = _classification_fingerprint(path)
     if after == before:
         with _category_lock:
@@ -153,17 +156,23 @@ def discover(
     codex_root: Path,
     *,
     exact: bool = True,
+    openclaw_root: Optional[Path] = None,
 ) -> list[CleanupCandidate]:
     """Return cleanup candidates keyed exactly like dashboard cards."""
     now = time.time()
     candidates: dict[str, CleanupCandidate] = {}
 
     sessions = (
-        cache.scan_all(claude_root, codex_root)
+        cache.scan_all(claude_root, codex_root, openclaw_root)
         if exact
-        else cache.list_all(claude_root, codex_root)
+        else cache.list_all(claude_root, codex_root, openclaw_root)
     )
     for session in sessions:
+        # OpenClaw owns additional session indexes and trajectory sidecars.
+        # Session Viewer exposes those sessions read-only instead of partially
+        # deleting their primary JSONL file.
+        if session.agent == "openclaw":
+            continue
         path = Path(session.path)
         categories = _cached_categories(path, session.agent)
         if _is_old(path, now):
@@ -208,6 +217,8 @@ def clean(
     codex_root: Path,
     selected: Iterable[CleanupCategory],
     affected_uids: Iterable[str],
+    *,
+    openclaw_root: Optional[Path] = None,
 ) -> CleanupOutcome:
     """Permanently delete the previewed card union and clear references.
 
@@ -219,7 +230,12 @@ def clean(
     requested_uids = set(affected_uids)
     targets = [
         candidate
-        for candidate in discover(claude_root, codex_root, exact=False)
+        for candidate in discover(
+            claude_root,
+            codex_root,
+            exact=False,
+            openclaw_root=openclaw_root,
+        )
         if candidate.uid in requested_uids
         and candidate.categories & selected_set
     ]
@@ -230,7 +246,11 @@ def clean(
         try:
             delete_permanently(
                 candidate.path,
-                allowed_roots=(claude_root, codex_root),
+                allowed_roots=tuple(
+                    root
+                    for root in (claude_root, codex_root, openclaw_root)
+                    if root is not None
+                ),
             )
         except (DeleteNotAllowed, OSError) as exc:
             failed += 1
@@ -239,7 +259,7 @@ def clean(
 
         deleted += 1
         if candidate.uid:
-            cache.forget(candidate.uid, claude_root, codex_root)
+            cache.forget(candidate.uid, claude_root, codex_root, openclaw_root)
             try:
                 board_store.delete(candidate.uid)
             except Exception as exc:  # noqa: BLE001 - file is already deleted

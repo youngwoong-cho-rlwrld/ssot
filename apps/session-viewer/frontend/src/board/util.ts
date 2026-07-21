@@ -22,7 +22,9 @@ export function rotationFor(uid: string): number {
 
 /** Default sticky-note background per agent when no custom color is set. */
 export function defaultColorFor(agent: Agent): string {
-  return agent === "claude" ? "#fdf0d5" : "#e7f0ff";
+  if (agent === "claude") return "#fdf0d5";
+  if (agent === "openclaw") return "#e3f5e1";
+  return "#e7f0ff";
 }
 
 /** Relative time string like "just now", "5m ago", "2h ago", "3d ago". */
