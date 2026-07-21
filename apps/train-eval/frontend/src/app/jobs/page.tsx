@@ -148,7 +148,7 @@ export default function JobsPage() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-8 py-12">
+    <div className="ssot-page">
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold tracking-tight">Jobs</h1>
         <RefreshButton

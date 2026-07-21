@@ -1277,7 +1277,7 @@ export default function SubmitPage() {
     submit.isPending || preflightPending ? "Submitting..." : "Submit";
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+    <div className="ssot-page">
       <h1 className="text-xl font-semibold tracking-tight">Submit a job</h1>
       <SubmitStepper
         activeStep={submitStep}
@@ -1287,7 +1287,7 @@ export default function SubmitPage() {
       />
 
       <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {submitStep === "job" && (
           <Card>
             <CardHeader>
@@ -1297,6 +1297,9 @@ export default function SubmitPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
+              {/* Compact selectors laid out in a responsive grid so they don't
+                  span the full width of a wide monitor. */}
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Cluster">
                 <Select value={cluster} onValueChange={changeCluster}>
                   <SelectTrigger>
@@ -1473,7 +1476,10 @@ export default function SubmitPage() {
                   )}
                 </>
               )}
+              </div>
 
+              {/* Text identifiers share a two-column row on wider screens. */}
+              <div className="grid gap-4 sm:grid-cols-2">
               <JobNameField
                 value={shownJobName}
                 defaultValue={defaultJobName}
@@ -1508,6 +1514,8 @@ export default function SubmitPage() {
                 }}
                 onReset={() => setTrainNoteEdit(null)}
               />
+              </div>
+
               <div className="flex justify-end border-t border-slate-100 pt-5 dark:border-slate-900">
                 <Button
                   onClick={() => setSubmitStep("config")}
@@ -1595,7 +1603,7 @@ export default function SubmitPage() {
           )}
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+        <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
           {isSlurm && (
             partitions.data ? (
               <AvailabilityCard cluster={cluster} partitions={partitions.data} />
@@ -1809,7 +1817,7 @@ function SubmitStepper({
     { key: "modality", label: "modality.py", enabled: modalityEnabled },
   ];
   return (
-    <div className="mt-6 rounded-lg border border-[var(--ssot-border)] bg-[var(--ssot-surface)] p-2 shadow-sm">
+    <div className="mt-6 border-t border-[var(--ssot-border)] pt-2">
       <div className="grid gap-2 sm:grid-cols-3">
         {steps.map((step, index) => {
           const active = step.key === activeStep;

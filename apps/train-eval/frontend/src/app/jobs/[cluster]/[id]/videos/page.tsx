@@ -327,7 +327,7 @@ export default function JobVideos({
   }, [runParam, isLoading]);
 
   return (
-    <div className="mx-auto max-w-7xl px-8 py-12">
+    <div className="ssot-page">
       <Link
         href={jobDetailHref(cluster, id)!}
         className="inline-flex items-center gap-1 text-sm text-[var(--ssot-text-soft)] transition-colors hover:text-slate-900 dark:hover:text-slate-50"

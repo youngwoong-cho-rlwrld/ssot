@@ -12,7 +12,7 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-7xl px-8 py-12">
+    <div className="ssot-page">
       <p className="text-sm text-slate-600 dark:text-slate-400">
         Redirecting to{" "}
         <a href={settingsUrl} className="text-[var(--ssot-accent)] hover:underline">

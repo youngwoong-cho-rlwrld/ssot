@@ -43,7 +43,7 @@ export default function MonitorPage() {
     }) > 0;
 
   return (
-    <div className="mx-auto max-w-7xl px-8 py-12">
+    <div className="ssot-page">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">GPU monitor</h1>
         <RefreshButton

@@ -37,7 +37,7 @@ export default function ExperimentDetail({ params }: { params: Promise<{ name: s
   });
 
   return (
-    <div className="mx-auto max-w-7xl px-8 py-12">
+    <div className="ssot-page">
       <Link
         href="/experiments"
         className="inline-flex items-center gap-1 text-sm text-[var(--ssot-text-soft)] transition-colors hover:text-slate-900 dark:hover:text-slate-50"

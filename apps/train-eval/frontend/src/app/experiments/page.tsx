@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { api, type VariantSummary } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -28,7 +28,7 @@ export default function ExperimentsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-7xl px-8 py-12">
+    <div className="ssot-page">
       <h1 className="text-xl font-semibold tracking-tight">Experiments</h1>
 
       {summaries.isLoading && (
@@ -49,6 +49,7 @@ export default function ExperimentsPage() {
 function ExperimentsBrowser({ summaries }: { summaries: VariantSummary[] }) {
   const [modelId, setModelId] = useState<string>(ALL_MODELS);
   const [datasets, setDatasets] = useState<string[]>([]);
+  const [search, setSearch] = useState<string>("");
 
   const modelOptions = useMemo(
     () =>
@@ -76,14 +77,19 @@ function ExperimentsBrowser({ summaries }: { summaries: VariantSummary[] }) {
     [datasets, datasetOptions],
   );
 
+  // Case-insensitive substring match on the experiment name and its model id.
+  const searchNeedle = search.trim().toLowerCase();
   const filtered = useMemo(
     () =>
       modelFiltered.filter(
         (s) =>
-          activeDatasets.length === 0 ||
-          s.dataset_names.some((d) => activeDatasets.includes(d)),
+          (activeDatasets.length === 0 ||
+            s.dataset_names.some((d) => activeDatasets.includes(d))) &&
+          (searchNeedle === "" ||
+            s.name.toLowerCase().includes(searchNeedle) ||
+            (s.model_id?.toLowerCase().includes(searchNeedle) ?? false)),
       ),
-    [modelFiltered, activeDatasets],
+    [modelFiltered, activeDatasets, searchNeedle],
   );
 
   function toggleDataset(name: string) {
@@ -92,16 +98,42 @@ function ExperimentsBrowser({ summaries }: { summaries: VariantSummary[] }) {
     );
   }
 
-  const hasFilters = modelId !== ALL_MODELS || activeDatasets.length > 0;
+  const hasFilters =
+    modelId !== ALL_MODELS || activeDatasets.length > 0 || searchNeedle !== "";
+
+  function clearFilters() {
+    setModelId(ALL_MODELS);
+    setDatasets([]);
+    setSearch("");
+  }
 
   return (
     <>
       <Card className="mt-8">
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle>Filters</CardTitle>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 text-xs text-[var(--ssot-text-soft)] transition-colors hover:text-[var(--ssot-accent)]"
+            >
+              <X className="h-3.5 w-3.5" /> Clear filters
+            </button>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-end gap-4">
+            <div className="w-64 space-y-1.5">
+              <Label htmlFor="experiment-search">Search</Label>
+              <Input
+                id="experiment-search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="filter by name..."
+                className="font-mono text-xs"
+              />
+            </div>
             <div className="w-64 space-y-1.5">
               <Label>MODEL_ID</Label>
               <Select value={modelId} onValueChange={setModelId}>
@@ -118,19 +150,6 @@ function ExperimentsBrowser({ summaries }: { summaries: VariantSummary[] }) {
                 </SelectContent>
               </Select>
             </div>
-            {hasFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1"
-                onClick={() => {
-                  setModelId(ALL_MODELS);
-                  setDatasets([]);
-                }}
-              >
-                <X className="h-3.5 w-3.5" /> Clear filters
-              </Button>
-            )}
           </div>
 
           <div className="space-y-1.5">

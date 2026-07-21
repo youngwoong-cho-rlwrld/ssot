@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "@fontsource-variable/inter";
 import "@ssot/theme/tokens.css";
+import "@ssot/theme/base.css";
 import "@ssot/theme/header.css";
+import "@ssot/theme/controls.css";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Nav } from "@/components/nav";
@@ -32,16 +34,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
-        {/* Apply the persisted theme before first paint to avoid a flash of
-            the wrong theme. Mirrors libs/theme/README.md; the shared
-            <ssot-theme-toggle> re-applies on load and across tabs. */}
-        <Script id="ssot-theme-init" strategy="beforeInteractive">
-          {`(function(){try{var t=localStorage.getItem('ssot-theme')==='dark'?'dark':'light';var r=document.documentElement;r.dataset.ssotTheme=t;r.classList.toggle('dark',t==='dark');r.setAttribute('data-mantine-color-scheme',t);}catch(e){}})();`}
-        </Script>
+        <Script src="/portal-assets/theme/theme-init.js" strategy="beforeInteractive" />
       </head>
       <body className="h-full overflow-hidden">
         <Providers>
-          <div className="flex h-screen flex-col overflow-hidden">
+          <div className="ssot-app">
             <header className="ssot-header">
               <a className="ssot-brand" href={portalUrl}>
                 SSOT
@@ -53,12 +50,7 @@ export default function RootLayout({
               <ssot-user></ssot-user>
             </header>
             <Script
-              src="/portal-assets/theme/ssot-theme-toggle.js"
-              type="module"
-              strategy="afterInteractive"
-            />
-            <Script
-              src="/portal-assets/theme/ssot-user.js"
+              src="/portal-assets/theme/runtime.js"
               type="module"
               strategy="afterInteractive"
             />

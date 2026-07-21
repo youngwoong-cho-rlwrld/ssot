@@ -106,7 +106,7 @@ export default function ResultsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-8 py-12">
+    <div className="ssot-page">
       <div className="flex items-baseline justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Results</h1>
@@ -301,11 +301,11 @@ function ExperimentGroup({
   );
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[var(--ssot-border)] bg-[var(--ssot-surface)]">
+    <section className="border-t border-[var(--ssot-border)]">
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-900"
+        className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors hover:text-[var(--ssot-accent)]"
       >
         <span className="flex min-w-0 items-center gap-2">
           {expanded ? (
@@ -340,12 +340,12 @@ function ExperimentGroup({
         </span>
       </button>
       {expanded && (
-        <div className="divide-y divide-slate-200 border-t border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+        <div className="divide-y divide-[var(--ssot-border)] border-t border-[var(--ssot-border)]">
           {group.members.map((variant) => (
             <ResultCard
               key={resultVariantKey(variant)}
               variant={variant}
-              className="rounded-none border-0 shadow-none"
+              className="border-t-0"
             />
           ))}
         </div>
