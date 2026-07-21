@@ -1,0 +1,559 @@
+/*
+ * Model Diagram — app-specific layout only. Structural chrome (.ssot-app,
+ * .panel*, controls) comes from @ssot/theme; everything here is composed from
+ * design tokens so light and dark both resolve correctly.
+ */
+
+.app__main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ssot-bg);
+}
+
+.app__main > .panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Shared spinner used across progress + buttons. */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+/* ------------------------------ Diagram list ---------------------------- */
+
+.diagrams__refresh {
+  margin-left: auto;
+}
+
+.diagram-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diagram-row {
+  position: relative;
+}
+
+.diagram {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--ssot-border);
+  border-radius: var(--ssot-radius);
+  background: var(--ssot-surface);
+  padding: 11px 13px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: inherit;
+  color: var(--ssot-text);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    background 0.12s;
+}
+
+.diagram:hover {
+  border-color: var(--ssot-accent);
+  background: var(--ssot-accent-soft);
+}
+
+.diagram__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diagram__cluster {
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.diagram__commit {
+  margin-left: auto;
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-faint);
+}
+
+.diagram__title {
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-semibold);
+  color: var(--ssot-text);
+}
+
+.diagram__path {
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-soft);
+  word-break: break-all;
+}
+
+/* Status pill */
+.status {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-semibold);
+  padding: 2px 8px;
+  border-radius: var(--ssot-radius-sm);
+  border: 1px solid transparent;
+}
+
+.status--ok {
+  background: var(--ssot-success-soft);
+  color: var(--ssot-success);
+}
+
+.status--run {
+  background: var(--ssot-accent-soft);
+  color: var(--ssot-accent);
+}
+
+.status--err {
+  background: var(--ssot-danger-soft);
+  color: var(--ssot-danger);
+}
+
+.paper-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-medium);
+  padding: 2px 7px;
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface-muted);
+  color: var(--ssot-text-soft);
+}
+
+.paper-badge--warn {
+  background: var(--ssot-warning-soft);
+  color: var(--ssot-warning);
+}
+
+/* Row actions (re-run + delete), revealed on row hover. */
+.diagram__actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.diagram-row:hover .diagram__actions,
+.diagram__actions:focus-within {
+  opacity: 1;
+}
+
+.diagram__act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface);
+  color: var(--ssot-text-faint);
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.diagram__act:hover {
+  color: var(--ssot-accent);
+  border-color: var(--ssot-accent);
+  background: var(--ssot-accent-soft);
+}
+
+.diagram__act--del:hover {
+  color: var(--ssot-danger);
+  border-color: var(--ssot-danger);
+  background: var(--ssot-danger-soft);
+}
+
+.diagram__confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--ssot-danger);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface);
+  box-shadow: var(--ssot-shadow);
+}
+
+.diagram__confirm-msg {
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-soft);
+}
+
+.diagram__confirm-yes,
+.diagram__confirm-no {
+  font: inherit;
+  font-size: var(--ssot-text-xs);
+  padding: 2px 8px;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface-muted);
+  color: var(--ssot-text);
+  cursor: pointer;
+}
+
+.diagram__confirm-yes {
+  border-color: var(--ssot-danger);
+  background: var(--ssot-danger);
+  color: #fff;
+}
+
+/* ------------------------------ New diagram ----------------------------- */
+
+.newdiag__body {
+  display: flex;
+  justify-content: center;
+}
+
+.form {
+  width: 100%;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field--grow {
+  flex: 1 1 auto;
+}
+
+.field__label {
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ssot-text-faint);
+}
+
+.field__err {
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-danger);
+}
+
+.form__err {
+  padding: 8px 10px;
+  font-size: var(--ssot-text-sm);
+  color: var(--ssot-danger);
+  background: var(--ssot-danger-soft);
+  border: 1px solid var(--ssot-danger);
+  border-radius: var(--ssot-radius-sm);
+}
+
+.form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Segmented toggle for the paper source (URL / PDF / none). */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface-muted);
+  width: fit-content;
+}
+
+.segmented__opt {
+  font: inherit;
+  font-size: var(--ssot-text-sm);
+  padding: 4px 12px;
+  border: none;
+  border-radius: var(--ssot-radius-sm);
+  background: transparent;
+  color: var(--ssot-text-soft);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.segmented__opt--on {
+  background: var(--ssot-surface);
+  color: var(--ssot-accent);
+  box-shadow: var(--ssot-shadow);
+}
+
+.newdiag__paper-input {
+  margin-top: 8px;
+}
+
+.newdiag__pdf {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.newdiag__pdf-btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.newdiag__pdf-pages {
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-faint);
+  white-space: nowrap;
+}
+
+/* Credentials warning sits at the top of the form; align its icon + text. */
+.form__notice {
+  max-width: none;
+}
+
+.form__notice code {
+  font-family: var(--ssot-font-mono);
+  font-size: 0.92em;
+}
+
+/* ----------------------------- Run progress ----------------------------- */
+
+.runprog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+
+.stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--ssot-radius-sm);
+  font-size: var(--ssot-text-sm);
+}
+
+.stage__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: var(--ssot-text-faint);
+}
+
+.stage__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ssot-border-strong);
+}
+
+.stage__label {
+  color: var(--ssot-text-soft);
+}
+
+.stage__detail {
+  margin-left: auto;
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-faint);
+  font-family: var(--ssot-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+
+.stage--done .stage__marker {
+  color: var(--ssot-success);
+}
+
+.stage--done .stage__label {
+  color: var(--ssot-text);
+}
+
+.stage--active {
+  background: var(--ssot-accent-soft);
+}
+
+.stage--active .stage__marker {
+  color: var(--ssot-accent);
+}
+
+.stage--active .stage__label {
+  color: var(--ssot-text);
+  font-weight: var(--ssot-weight-medium);
+}
+
+.runprog__waiting {
+  margin: 0;
+  font-size: var(--ssot-text-sm);
+  color: var(--ssot-text-faint);
+}
+
+/* Notices (mismatch warning, terminal error). */
+.notice {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--ssot-radius);
+  border: 1px solid transparent;
+}
+
+.notice p {
+  margin: 6px 0 0;
+  font-size: var(--ssot-text-sm);
+  line-height: 1.5;
+}
+
+.notice__hint {
+  color: var(--ssot-text-soft);
+}
+
+.notice strong {
+  font-size: var(--ssot-text-sm);
+}
+
+.notice button {
+  margin-top: 12px;
+}
+
+.notice--warn {
+  background: var(--ssot-warning-soft);
+  border-color: var(--ssot-warning);
+  color: var(--ssot-warning);
+}
+
+.notice--err {
+  background: var(--ssot-danger-soft);
+  border-color: var(--ssot-danger);
+  color: var(--ssot-danger);
+}
+
+/* -------------------------------- Viewer -------------------------------- */
+
+.viewer {
+  height: 100%;
+}
+
+.viewer__head {
+  gap: 10px;
+}
+
+.viewer__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--ssot-font-mono);
+}
+
+.viewer__spacer {
+  flex: 1 1 auto;
+}
+
+.viewer__runs {
+  min-width: 240px;
+}
+
+.viewer__banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: var(--ssot-text-sm);
+  color: var(--ssot-warning);
+  background: var(--ssot-warning-soft);
+  border-bottom: 1px solid var(--ssot-warning);
+}
+
+.viewer__frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.viewer__iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: var(--ssot-bg);
+}
+
+/* Re-provision inline form, dropped below the viewer head. */
+.reprovision {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--ssot-border);
+  background: var(--ssot-surface);
+}
+
+.reprovision__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.reprovision__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

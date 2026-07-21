@@ -55,7 +55,13 @@ registerAuthRoutes(app);
 
 // Derive the guard paths from the same configured mounts as the proxies. This
 // keeps auth and settings checks intact when a base path is overridden.
-const accountAppIds = new Set(['train-eval', 'results-sheet', 'session-viewer', 'openclaw']);
+const accountAppIds = new Set([
+  'train-eval',
+  'results-sheet',
+  'session-viewer',
+  'openclaw',
+  'model-diagram',
+]);
 const accountApiBases = config.apps
   .filter((entry) => accountAppIds.has(entry.id))
   .map((entry) => ({

@@ -1,0 +1,191 @@
+import type {
+  CreateDiagramResult,
+  CreateRunResult,
+  DiagramDetail,
+  DiagramListItem,
+  HealthResult,
+  PaperInput,
+  RunDetail,
+  RunEvent,
+  UploadResult,
+  ValidateResult,
+} from "./types";
+
+// import.meta.env.BASE_URL is the Vite base ("/model-diagram/"), so this
+// resolves to "/model-diagram/api" under the gateway and dev proxy alike.
+const BASE = `${import.meta.env.BASE_URL}api`;
+
+// Non-2xx responses carry the `{ error, detail? }` envelope (plan §10). Callers
+// that surface field-scoped errors (broken_path / broken_paper) read `.error`.
+export class ApiError extends Error {
+  readonly status: number;
+  readonly error: string | null;
+  readonly detail: string | null;
+  constructor(status: number, error: string | null, detail: string | null) {
+    super(detail || error || `request failed: ${status}`);
+    this.name = "ApiError";
+    this.status = status;
+    this.error = error;
+    this.detail = detail;
+  }
+}
+
+async function readError(res: Response): Promise<ApiError> {
+  let error: string | null = null;
+  let detail: string | null = null;
+  try {
+    const body = await res.json();
+    error = typeof body?.error === "string" ? body.error : null;
+    detail = typeof body?.detail === "string" ? body.detail : null;
+  } catch {
+    // non-JSON body
+  }
+  return new ApiError(res.status, error, detail);
+}
+
+async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+  if (!res.ok) throw await readError(res);
+  return (await res.json()) as T;
+}
+
+function jsonBody(body: unknown): RequestInit {
+  return {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
+
+export async function getClusters(signal?: AbortSignal): Promise<string[]> {
+  const { clusters } = await requestJson<{ clusters: string[] }>(
+    `${BASE}/clusters`,
+    { signal },
+  );
+  return clusters;
+}
+
+export async function getHealth(signal?: AbortSignal): Promise<HealthResult> {
+  return requestJson<HealthResult>(`${BASE}/health`, { signal });
+}
+
+export interface NewDiagramInput {
+  cluster: string;
+  path: string;
+  paper?: PaperInput | null;
+}
+
+/** Synchronous broken_path + broken_paper prechecks. Always resolves (HTTP 200). */
+export async function validate(input: NewDiagramInput): Promise<ValidateResult> {
+  return requestJson<ValidateResult>(`${BASE}/validate`, jsonBody(input));
+}
+
+/** Upload + immediately validate a PDF. Throws ApiError(broken_paper) on 400. */
+export async function uploadPaper(file: File): Promise<UploadResult> {
+  const form = new FormData();
+  form.append("file", file);
+  return requestJson<UploadResult>(`${BASE}/papers/upload`, {
+    method: "POST",
+    body: form,
+  });
+}
+
+/** Create a diagram + first run. Throws ApiError(broken_path|broken_paper) on 400. */
+export async function createDiagram(
+  input: NewDiagramInput,
+): Promise<CreateDiagramResult> {
+  return requestJson<CreateDiagramResult>(`${BASE}/diagrams`, jsonBody(input));
+}
+
+export interface ReprovisionInput {
+  cluster?: string;
+  path?: string;
+  paper?: PaperInput | null;
+}
+
+/** New run under an existing diagram; omitted fields inherit the latest run. */
+export async function createRun(
+  diagramId: number,
+  input: ReprovisionInput,
+): Promise<CreateRunResult> {
+  return requestJson<CreateRunResult>(
+    `${BASE}/diagrams/${diagramId}/runs`,
+    jsonBody(input),
+  );
+}
+
+export async function getDiagrams(
+  signal?: AbortSignal,
+): Promise<DiagramListItem[]> {
+  const { diagrams } = await requestJson<{ diagrams: DiagramListItem[] }>(
+    `${BASE}/diagrams`,
+    { signal },
+  );
+  return diagrams;
+}
+
+export async function getDiagram(
+  id: number,
+  signal?: AbortSignal,
+): Promise<DiagramDetail> {
+  return requestJson<DiagramDetail>(`${BASE}/diagrams/${id}`, { signal });
+}
+
+export async function getRun(id: number, signal?: AbortSignal): Promise<RunDetail> {
+  return requestJson<RunDetail>(`${BASE}/runs/${id}`, { signal });
+}
+
+export async function deleteDiagram(id: number): Promise<void> {
+  const res = await fetch(`${BASE}/diagrams/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw await readError(res);
+}
+
+/** Self-contained rendered diagram page, embedded in an iframe. */
+export function runPageUrl(runId: number): string {
+  return `${BASE}/runs/${runId}/page`;
+}
+
+export interface RunEventHandlers {
+  onStage?: (stage: string, detail: string, ts: string) => void;
+  onWarning?: (kind: string, detail: string) => void;
+  onDone?: (runId: number) => void;
+  onError?: (kind: string, detail: string) => void;
+}
+
+/**
+ * Subscribe to a run's SSE stream. EventSource replays persisted stages then
+ * tails live events until a terminal frame; it auto-reconnects on transient
+ * drops, so we close it ourselves on `done`/`error`. Returns a disposer.
+ */
+export function openRunEvents(
+  runId: number,
+  handlers: RunEventHandlers,
+): () => void {
+  const es = new EventSource(`${BASE}/runs/${runId}/events`);
+  es.onmessage = (ev) => {
+    let event: RunEvent | null = null;
+    try {
+      event = JSON.parse(ev.data) as RunEvent;
+    } catch {
+      return;
+    }
+    if (!event) return;
+    switch (event.type) {
+      case "stage":
+        handlers.onStage?.(event.stage, event.detail, event.ts);
+        break;
+      case "warning":
+        handlers.onWarning?.(event.kind, event.detail);
+        break;
+      case "done":
+        es.close();
+        handlers.onDone?.(event.run_id);
+        break;
+      case "error":
+        es.close();
+        handlers.onError?.(event.kind, event.detail);
+        break;
+    }
+  };
+  return () => es.close();
+}

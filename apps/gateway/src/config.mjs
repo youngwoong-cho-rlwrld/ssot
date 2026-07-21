@@ -114,6 +114,24 @@ const apps = [
     ws: true,
     enabled: env('SSOT_OPENCLAW_ENABLED', 'true') !== 'false',
   },
+  {
+    id: 'model-diagram',
+    name: 'Model Diagram',
+    description: 'Generate an interactive architecture page for any model codebase.',
+    basePath: env('SSOT_MODEL_DIAGRAM_BASE_PATH', '/model-diagram'),
+    mode: production ? 'static' : 'proxy',
+    origin: env('SSOT_MODEL_DIAGRAM_WEB_DEV_ORIGIN', 'http://127.0.0.1:5176'),
+    staticDir: env(
+      'SSOT_MODEL_DIAGRAM_DIST',
+      path.join(repoRoot, 'apps/model-diagram/frontend/dist')
+    ),
+    api: {
+      origin: env('SSOT_MODEL_DIAGRAM_API_ORIGIN', 'http://127.0.0.1:8791'),
+      prefix: '/api',
+    },
+    ws: true,
+    enabled: env('SSOT_MODEL_DIAGRAM_ENABLED', 'true') !== 'false',
+  },
 ];
 
 // Optional JSON override file for anything above: { host, port, apps: { <id>:

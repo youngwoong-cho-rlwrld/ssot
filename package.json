@@ -23,7 +23,8 @@
     "apps/urdf-viewer",
     "apps/train-eval/frontend",
     "apps/session-viewer/frontend",
-    "apps/openclaw/frontend"
+    "apps/openclaw/frontend",
+    "apps/model-diagram/frontend"
   ],
   "nx": {
     "includedScripts": []
