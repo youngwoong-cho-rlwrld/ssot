@@ -1,7 +1,7 @@
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { GizmoHelper, GizmoViewport, Line, OrbitControls } from "@react-three/drei";
 import { Box3, Matrix4, OrthographicCamera, PerspectiveCamera, Quaternion, Sphere, Vector3 } from "three";
-import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { UNGROUPED_JOINT_COLOR } from "./colors";
 import type { JointAppearance, PoseState, UrdfModel } from "./types";
@@ -12,11 +12,53 @@ type SceneViewProps = {
   appearances: Record<string, JointAppearance>;
   hoveredJoint: string | null;
   setHoveredJoint: (name: string | null) => void;
-  showJointGizmos: boolean;
   nodeSize: number;
 };
 
 type OrbitControlsRef = OrbitControlsImpl | null;
+
+type SceneColors = {
+  background: string;
+  gridMajor: string;
+  gridMinor: string;
+  edge: string;
+  label: string;
+};
+
+const LIGHT_SCENE_COLORS: SceneColors = {
+  background: "#f7f8fa",
+  gridMajor: "#d6dbe3",
+  gridMinor: "#eef1f5",
+  edge: "#8e99a8",
+  label: "#111827",
+};
+
+const DARK_SCENE_COLORS: SceneColors = {
+  background: "#111318",
+  gridMajor: "#2b3140",
+  gridMinor: "#1c2029",
+  edge: "#6b7688",
+  label: "#e5e7eb",
+};
+
+// Mirror the shared theme (html[data-ssot-theme]) into the WebGL scene, which
+// cannot read CSS custom properties directly.
+function useSceneColors(): SceneColors {
+  const [dark, setDark] = useState<boolean>(() =>
+    typeof document !== "undefined" && document.documentElement.getAttribute("data-ssot-theme") === "dark",
+  );
+
+  useEffect(() => {
+    const el = document.documentElement;
+    const update = () => setDark(el.getAttribute("data-ssot-theme") === "dark");
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(el, { attributes: true, attributeFilter: ["data-ssot-theme"] });
+    return () => observer.disconnect();
+  }, []);
+
+  return dark ? DARK_SCENE_COLORS : LIGHT_SCENE_COLORS;
+}
 
 function AutoFrame({
   model,
@@ -104,7 +146,7 @@ function JointPoint({
 
   return (
     <mesh position={position} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
-      <sphereGeometry args={[(isHovered ? 0.017 : 0.011) * nodeSize, 18, 18]} />
+      <sphereGeometry args={[(isHovered ? 0.0136 : 0.0088) * nodeSize, 18, 18]} />
       <meshBasicMaterial color={isHovered ? "#f5c542" : color} />
     </mesh>
   );
@@ -127,8 +169,8 @@ type RobotSkeletonProps = {
   appearances: SceneViewProps["appearances"];
   hoveredJoint: SceneViewProps["hoveredJoint"];
   setHoveredJoint: SceneViewProps["setHoveredJoint"];
-  showJointGizmos: SceneViewProps["showJointGizmos"];
   nodeSize: SceneViewProps["nodeSize"];
+  edgeColor: string;
 };
 
 function RobotSkeleton({
@@ -137,8 +179,8 @@ function RobotSkeleton({
   appearances,
   hoveredJoint,
   setHoveredJoint,
-  showJointGizmos,
   nodeSize,
+  edgeColor,
 }: RobotSkeletonProps) {
   return (
     <>
@@ -147,7 +189,7 @@ function RobotSkeleton({
         const jointPose = pose.poses.get(joint.name);
         const parentPose = parentName ? pose.poses.get(parentName) : null;
         if (!jointPose || !parentPose) return null;
-        return <Line key={`${joint.name}:edge`} points={[parentPose.position, jointPose.position]} color="#8e99a8" lineWidth={1.2} />;
+        return <Line key={`${joint.name}:edge`} points={[parentPose.position, jointPose.position]} color={edgeColor} lineWidth={1.2} />;
       })}
 
       {model.orderedJoints.map((joint) => {
@@ -167,20 +209,19 @@ function RobotSkeleton({
         );
       })}
 
-      {showJointGizmos &&
-        model.orderedJoints.map((joint) => {
-          const jointPose = pose.poses.get(joint.name);
-          if (!jointPose || !appearances[joint.name]?.gizmo) return null;
-          return <AxisGizmo key={`${joint.name}:gizmo`} matrix={jointPose.matrix} />;
-        })}
-
+      {model.orderedJoints.map((joint) => {
+        const jointPose = pose.poses.get(joint.name);
+        if (!jointPose || !appearances[joint.name]?.gizmo) return null;
+        return <AxisGizmo key={`${joint.name}:gizmo`} matrix={jointPose.matrix} />;
+      })}
     </>
   );
 }
 
-export function SceneView({ model, pose, appearances, hoveredJoint, setHoveredJoint, showJointGizmos, nodeSize }: SceneViewProps) {
+export function SceneView({ model, pose, appearances, hoveredJoint, setHoveredJoint, nodeSize }: SceneViewProps) {
   const controlsRef = useRef<OrbitControlsRef>(null);
   const hoveredPose = hoveredJoint ? pose?.poses.get(hoveredJoint) : null;
+  const colors = useSceneColors();
 
   return (
     <>
@@ -192,10 +233,10 @@ export function SceneView({ model, pose, appearances, hoveredJoint, setHoveredJo
           camera.up.set(0, 0, 1);
         }}
       >
-        <color attach="background" args={["#f7f8fa"]} />
+        <color attach="background" args={[colors.background]} />
         <ambientLight intensity={0.65} />
         <directionalLight position={[2, -3, 4]} intensity={1.2} />
-        <gridHelper args={[2.4, 24, "#d6dbe3", "#eef1f5"]} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.001]} />
+        <gridHelper args={[2.4, 24, colors.gridMajor, colors.gridMinor]} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.001]} />
         <axesHelper args={[0.25]} />
         {model && pose && (
           <RobotSkeleton
@@ -204,14 +245,14 @@ export function SceneView({ model, pose, appearances, hoveredJoint, setHoveredJo
             appearances={appearances}
             hoveredJoint={hoveredJoint}
             setHoveredJoint={setHoveredJoint}
-            showJointGizmos={showJointGizmos}
             nodeSize={nodeSize}
+            edgeColor={colors.edge}
           />
         )}
         <OrbitControls ref={controlsRef} makeDefault enableDamping={false} />
         <AutoFrame model={model} pose={pose} controlsRef={controlsRef} />
         <GizmoHelper alignment="bottom-right" margin={[72, 72]}>
-          <GizmoViewport axisColors={["#e5484d", "#2f9e44", "#1c7ed6"]} labelColor="#111827" />
+          <GizmoViewport axisColors={["#e5484d", "#2f9e44", "#1c7ed6"]} labelColor={colors.label} />
         </GizmoHelper>
       </Canvas>
       {hoveredPose && <CoordinateLabel name={hoveredPose.name} position={hoveredPose.position} />}

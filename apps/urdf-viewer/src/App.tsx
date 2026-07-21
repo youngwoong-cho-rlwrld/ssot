@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, FolderOpen, Pause, Play, Plus, Rotate3D, Settings, Trash2, Upload } from "lucide-react";
 import { SceneView } from "./SceneView";
-import { SsotSelect } from "./SsotSelect";
+import { SsotSelect } from "@ssot/ui/SsotSelect";
 import { COLOR_PALETTE_48, UNGROUPED_JOINT_COLOR, colorForIndex, normalizeHexColor } from "./colors";
 import { availableColumns, detectMappingMode, isOpenarmXhand1Row, jointValuesForFrame, suggestedStateColumn } from "./mapping";
 import { loadParquetRows, loadTextSource, type ParquetRow } from "./parquet";
@@ -32,7 +32,6 @@ type SavedGroupConfig = {
   groups: JointGroup[];
   joints: Record<string, JointAppearance>;
   nodesByGroup: Record<string, string[]>;
-  showJointGizmos: boolean;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -106,7 +105,6 @@ export function App() {
   const [showPlaybackSettings, setShowPlaybackSettings] = useState(false);
   const [hoveredJoint, setHoveredJoint] = useState<string | null>(null);
   const [jointFilter, setJointFilter] = useState("");
-  const [showJointGizmos, setShowJointGizmos] = useState(true);
   const [groups, setGroups] = useState<JointGroup[]>([
     { id: "arms", name: "Arms", color: "#2671d9" },
     { id: "hands", name: "Hands", color: "#2f9d7e" },
@@ -259,7 +257,6 @@ export function App() {
       groups,
       joints,
       nodesByGroup,
-      showJointGizmos,
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
     const url = window.URL.createObjectURL(blob);
@@ -319,9 +316,6 @@ export function App() {
 
     setGroups(importedGroups);
     setAppearances(nextAppearances);
-    if (typeof parsed.showJointGizmos === "boolean") {
-      setShowJointGizmos(parsed.showJointGizmos);
-    }
     const metadata = isRecord(parsed.metadata) ? parsed.metadata : null;
     if (metadata?.neckOrder === "carrier-yaw-pitch" || metadata?.neckOrder === "urdf-pitch-yaw") {
       setNeckOrder(metadata.neckOrder);
@@ -378,7 +372,7 @@ export function App() {
   };
 
   return (
-    <div className="app-root">
+    <div className="ssot-app app-root">
       <header className="ssot-header">
         <a className="ssot-brand" href={PORTAL_URL}>SSOT</a>
         <span className="ssot-sep">/</span>
@@ -390,7 +384,6 @@ export function App() {
       <main className="app-shell">
       <aside className="source-panel">
         <div className="panel-header">
-          <h1>URDF Viewer</h1>
           <span className={error ? "status status-error" : "status"}>{status}</span>
         </div>
 
@@ -399,43 +392,43 @@ export function App() {
             <FolderOpen size={16} />
             <span>Assets</span>
           </div>
-          <label className="field">
+          <div className="field">
             <span>URDF path</span>
-            <input
-              value={source.urdfUrl}
-              onChange={(event) => setSource((current) => ({ ...current, urdfUrl: event.target.value, urdfFile: null }))}
-            />
-          </label>
-          <label className="file-button">
-            <Upload size={15} />
-            <span>{source.urdfFile?.name ?? "Choose URDF"}</span>
-            <input
-              type="file"
-              accept=".urdf,.xml,text/xml"
-              onChange={(event) => setSource((current) => ({ ...current, urdfFile: event.target.files?.[0] ?? null }))}
-            />
-          </label>
+            <div className="path-row">
+              <input
+                className="u-input"
+                value={source.urdfFile ? source.urdfFile.name : source.urdfUrl}
+                onChange={(event) => setSource((current) => ({ ...current, urdfUrl: event.target.value, urdfFile: null }))}
+              />
+              <label className="u-btn choose-btn" title="Choose URDF" aria-label="Choose URDF">
+                <Upload size={16} />
+                <input
+                  type="file"
+                  accept=".urdf,.xml,text/xml"
+                  onChange={(event) => setSource((current) => ({ ...current, urdfFile: event.target.files?.[0] ?? null }))}
+                />
+              </label>
+            </div>
+          </div>
 
-          <label className="field">
+          <div className="field">
             <span>Parquet path</span>
-            <input
-              value={source.parquetUrl}
-              onChange={(event) => setSource((current) => ({ ...current, parquetUrl: event.target.value, parquetFile: null }))}
-            />
-          </label>
-          <label className="file-button">
-            <Upload size={15} />
-            <span>{source.parquetFile?.name ?? "Choose parquet"}</span>
-            <input
-              type="file"
-              accept=".parquet"
-              onChange={(event) => setSource((current) => ({ ...current, parquetFile: event.target.files?.[0] ?? null }))}
-            />
-          </label>
-          <button className="primary-action" type="button" onClick={() => void loadAssets()}>
-            <FolderOpen size={16} />
-            <span>Load</span>
-          </button>
+            <div className="path-row">
+              <input
+                className="u-input"
+                value={source.parquetFile ? source.parquetFile.name : source.parquetUrl}
+                onChange={(event) => setSource((current) => ({ ...current, parquetUrl: event.target.value, parquetFile: null }))}
+              />
+              <label className="u-btn choose-btn" title="Choose parquet" aria-label="Choose parquet">
+                <Upload size={16} />
+                <input
+                  type="file"
+                  accept=".parquet"
+                  onChange={(event) => setSource((current) => ({ ...current, parquetFile: event.target.files?.[0] ?? null }))}
+                />
+              </label>
+            </div>
+          </div>
           {error && <div className="error-box">{error}</div>}
         </section>
 
@@ -461,7 +454,7 @@ export function App() {
           </div>
           <label className="field">
             <span>State column</span>
-            <input list="parquet-columns" value={stateColumn} onChange={(event) => setStateColumn(event.target.value)} />
+            <input className="u-input" list="parquet-columns" value={stateColumn} onChange={(event) => setStateColumn(event.target.value)} />
           </label>
           {activeMapping === "openarm-xhand1-40" ? (
             <div className="field">
@@ -495,14 +488,14 @@ export function App() {
             <span>Groups</span>
           </div>
           <div className="group-create">
-            <input value={newGroupName} placeholder="Group name" onChange={(event) => setNewGroupName(event.target.value)} />
-            <input type="color" value={newGroupColor} onChange={(event) => setNewGroupColor(event.target.value)} />
-            <button type="button" title="Create group" onClick={addGroup}>
+            <input className="u-input" value={newGroupName} placeholder="Group name" onChange={(event) => setNewGroupName(event.target.value)} />
+            <input className="u-input-color" type="color" value={newGroupColor} onChange={(event) => setNewGroupColor(event.target.value)} />
+            <button className="u-btn" type="button" title="Create group" onClick={addGroup}>
               <Plus size={16} />
             </button>
           </div>
           <div className="config-actions">
-            <button type="button" className="config-action" onClick={saveGroupConfig}>
+            <button type="button" className="u-btn config-action" onClick={saveGroupConfig}>
               <Download size={15} />
               <span>Save</span>
             </button>
@@ -525,7 +518,7 @@ export function App() {
               <div className="group-row" key={group.id}>
                 <span className="swatch" style={{ background: group.color }} />
                 <span>{group.name}</span>
-                <button type="button" title="Remove group" onClick={() => removeGroup(group.id)}>
+                <button className="u-btn" type="button" title="Remove group" onClick={() => removeGroup(group.id)}>
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -537,7 +530,7 @@ export function App() {
       <section className="viewport-panel">
         <div className="viewport-stage" ref={viewportRef}>
           <button
-            className="viewport-save-button"
+            className="u-btn viewport-save-button"
             type="button"
             title="Save viewport image"
             disabled={!model || !pose}
@@ -551,22 +544,21 @@ export function App() {
             appearances={appearances}
             hoveredJoint={hoveredJoint}
             setHoveredJoint={setHoveredJoint}
-            showJointGizmos={showJointGizmos}
             nodeSize={nodeSize}
           />
         </div>
         <div className="transport">
-          <button className="transport-circle" type="button" title="Previous frame" onClick={() => stepFrame(-1)}>
+          <button className="u-btn transport-circle" type="button" title="Previous frame" onClick={() => stepFrame(-1)}>
             <ChevronLeft size={18} />
           </button>
-          <button type="button" className="transport-circle play-button" title={playing ? "Pause" : "Play"} onClick={() => setPlaying((current) => !current)}>
+          <button type="button" className="u-btn transport-circle play-button" title={playing ? "Pause" : "Play"} onClick={() => setPlaying((current) => !current)}>
             {playing ? <Pause size={18} /> : <Play size={18} />}
           </button>
-          <button className="transport-circle" type="button" title="Next frame" onClick={() => stepFrame(1)}>
+          <button className="u-btn transport-circle" type="button" title="Next frame" onClick={() => stepFrame(1)}>
             <ChevronRight size={18} />
           </button>
           <input
-            className="frame-slider"
+            className="u-input-range frame-slider"
             type="range"
             min={0}
             max={Math.max(0, rows.length - 1)}
@@ -578,7 +570,7 @@ export function App() {
           </span>
           <div className="playback-settings">
             <button
-              className={showPlaybackSettings ? "settings-button active" : "settings-button"}
+              className={showPlaybackSettings ? "u-btn settings-button active" : "u-btn settings-button"}
               type="button"
               title="Playback settings"
               aria-expanded={showPlaybackSettings}
@@ -591,6 +583,7 @@ export function App() {
                 <label className="settings-fps">
                   <span>FPS</span>
                   <input
+                    className="u-input"
                     type="number"
                     min={1}
                     max={240}
@@ -603,6 +596,7 @@ export function App() {
                   <div className="settings-title">Playback speed</div>
                   <div className="stepper-control">
                     <button
+                      className="u-btn"
                       type="button"
                       title="Slower"
                       disabled={playbackSpeed === PLAYBACK_SPEEDS[0]}
@@ -612,6 +606,7 @@ export function App() {
                     </button>
                     <span>{playbackSpeed}x</span>
                     <button
+                      className="u-btn"
                       type="button"
                       title="Faster"
                       disabled={playbackSpeed === PLAYBACK_SPEEDS[PLAYBACK_SPEEDS.length - 1]}
@@ -625,6 +620,7 @@ export function App() {
                   <div className="settings-title">Node size</div>
                   <div className="stepper-control">
                     <button
+                      className="u-btn"
                       type="button"
                       title="Smaller nodes"
                       disabled={nodeSize === NODE_SIZES[0]}
@@ -634,6 +630,7 @@ export function App() {
                     </button>
                     <span>{nodeSize}x</span>
                     <button
+                      className="u-btn"
                       type="button"
                       title="Larger nodes"
                       disabled={nodeSize === NODE_SIZES[NODE_SIZES.length - 1]}
@@ -657,23 +654,15 @@ export function App() {
           </div>
           <button
             type="button"
-            className={showJointGizmos ? "gizmo-toggle active" : "gizmo-toggle"}
-            title={showJointGizmos ? "Hide joint gizmos" : "Show joint gizmos"}
-            onClick={() => setShowJointGizmos((current) => !current)}
+            className={allJointGizmosEnabled ? "u-btn gizmo-toggle active" : "u-btn gizmo-toggle"}
+            title={allJointGizmosEnabled ? "Hide all joint axes" : "Show all joint axes"}
+            onClick={() => setAllJointGizmos(!allJointGizmosEnabled)}
           >
             <Rotate3D size={16} />
           </button>
         </div>
         <div className="bulk-row">
-          <input value={jointFilter} placeholder="Filter joints" onChange={(event) => setJointFilter(event.target.value)} />
-          <button
-            type="button"
-            className={allJointGizmosEnabled ? "gizmo-toggle active" : "gizmo-toggle"}
-            title={allJointGizmosEnabled ? "Disable all joint gizmos" : "Enable all joint gizmos"}
-            onClick={() => setAllJointGizmos(!allJointGizmosEnabled)}
-          >
-            <Rotate3D size={15} />
-          </button>
+          <input className="u-input" value={jointFilter} placeholder="Filter joints" onChange={(event) => setJointFilter(event.target.value)} />
         </div>
 
         <div className="joint-list">
@@ -695,7 +684,7 @@ export function App() {
                   <div className="joint-color-cell">
                     <button
                       type="button"
-                      className="joint-dot"
+                      className="u-btn joint-dot"
                       style={{ background: appearance.color }}
                       title="Change joint color"
                       onClick={(event) => {
@@ -709,7 +698,7 @@ export function App() {
                           <button
                             key={color}
                             type="button"
-                            className={appearance.color.toLowerCase() === color.toLowerCase() ? "color-swatch active" : "color-swatch"}
+                            className={appearance.color.toLowerCase() === color.toLowerCase() ? "u-btn color-swatch active" : "u-btn color-swatch"}
                             style={{ background: color }}
                             title={color}
                             onClick={(event) => {
@@ -727,7 +716,7 @@ export function App() {
                       <div className="joint-name">{joint.name}</div>
                       <button
                         type="button"
-                        className={appearance.gizmo ? "gizmo-toggle active" : "gizmo-toggle"}
+                        className={appearance.gizmo ? "u-btn gizmo-toggle active" : "u-btn gizmo-toggle"}
                         title={appearance.gizmo ? "Hide joint gizmo" : "Show joint gizmo"}
                         onClick={() => updateAppearance(joint.name, { gizmo: !appearance.gizmo })}
                       >

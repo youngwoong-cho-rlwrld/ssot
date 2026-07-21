@@ -1,32 +1,24 @@
+/*
+ * URDF Viewer app styles.
+ *
+ * Box-sizing, html/body/#root sizing, and the base body background/color/
+ * typography come from @ssot/theme/base.css (which also resets form-control
+ * `font: inherit`). The custom listbox (SsotSelect) chrome comes from
+ * @ssot/theme/controls.css; this app renders no native <select>.
+ *
+ * Native <button>/<input> elements no longer depend on global element rules.
+ * The scoped base classes below (.u-btn, .u-input, .u-input-color,
+ * .u-input-range) carry exactly what those globals used to provide and are
+ * applied explicitly in the JSX. They are declared before the bespoke control
+ * classes (.transport-circle, .gizmo-toggle, .joint-dot, .choose-btn, ...)
+ * so those class-level overrides keep winning the cascade.
+ */
 :root {
-  font-family: var(--ssot-font-sans);
-  color: var(--ssot-text);
-  background: var(--ssot-bg);
   font-synthesis: none;
   text-rendering: geometricPrecision;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-}
-
-button,
-input,
-select {
-  font-family: var(--ssot-font-sans);
-  font-size: var(--ssot-text-sm);
-  letter-spacing: 0;
-}
-
-button {
+.u-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -36,7 +28,9 @@ button {
   border-radius: var(--ssot-radius-sm);
   color: var(--ssot-text);
   background: var(--ssot-surface-muted);
+  font-size: var(--ssot-text-sm);
   font-weight: var(--ssot-weight-medium);
+  letter-spacing: 0;
   cursor: pointer;
   transition:
     color 120ms ease,
@@ -45,17 +39,16 @@ button {
     box-shadow 120ms ease;
 }
 
-button:hover:not(:disabled) {
+.u-btn:hover:not(:disabled) {
   background: var(--ssot-accent-soft);
 }
 
-button:focus-visible {
+.u-btn:focus-visible {
   outline: 0;
   box-shadow: 0 0 0 2px var(--ssot-ring);
 }
 
-input,
-select {
+.u-input {
   width: 100%;
   height: var(--ssot-control-h);
   min-height: var(--ssot-control-h);
@@ -64,6 +57,8 @@ select {
   padding: 0 9px;
   color: var(--ssot-text);
   background: var(--ssot-surface);
+  font-size: var(--ssot-text-sm);
+  letter-spacing: 0;
   transition:
     color 120ms ease,
     background-color 120ms ease,
@@ -71,47 +66,58 @@ select {
     box-shadow 120ms ease;
 }
 
-input:focus,
-select:focus {
+.u-input:focus {
   outline: 0;
   border-color: var(--ssot-accent);
   box-shadow: 0 0 0 2px var(--ssot-ring);
 }
 
-input::placeholder {
+.u-input::placeholder {
   color: var(--ssot-text-faint);
 }
 
-select {
-  appearance: none;
-  padding-right: 28px;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b919e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-}
-
-input[type="color"] {
+.u-input-color {
   width: 36px;
   min-width: 36px;
+  height: var(--ssot-control-h);
+  min-height: var(--ssot-control-h);
   padding: 2px;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  color: var(--ssot-text);
+  background: var(--ssot-surface);
+  font-size: var(--ssot-text-sm);
+  letter-spacing: 0;
   cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
-input[type="color"]::-webkit-color-swatch-wrapper {
+.u-input-color:focus {
+  outline: 0;
+  border-color: var(--ssot-accent);
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.u-input-color::-webkit-color-swatch-wrapper {
   padding: 0;
 }
 
-input[type="color"]::-webkit-color-swatch {
+.u-input-color::-webkit-color-swatch {
   border: 0;
   border-radius: 4px;
 }
 
-input[type="color"]::-moz-color-swatch {
+.u-input-color::-moz-color-swatch {
   border: 0;
   border-radius: 4px;
 }
 
-input[type="range"] {
+.u-input-range {
+  width: 100%;
   appearance: none;
   -webkit-appearance: none;
   height: var(--ssot-control-h);
@@ -119,28 +125,35 @@ input[type="range"] {
   padding: 0;
   border: 0;
   background: transparent;
+  font-size: var(--ssot-text-sm);
+  letter-spacing: 0;
   cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
-input[type="range"]:focus {
+.u-input-range:focus {
   outline: 0;
   border: 0;
   box-shadow: none;
 }
 
-input[type="range"]::-webkit-slider-runnable-track {
+.u-input-range::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
   background: var(--ssot-border-strong);
 }
 
-input[type="range"]::-moz-range-track {
+.u-input-range::-moz-range-track {
   height: 4px;
   border-radius: 999px;
   background: var(--ssot-border-strong);
 }
 
-input[type="range"]::-webkit-slider-thumb {
+.u-input-range::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 14px;
@@ -153,7 +166,7 @@ input[type="range"]::-webkit-slider-thumb {
   transition: box-shadow 120ms ease;
 }
 
-input[type="range"]::-moz-range-thumb {
+.u-input-range::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border: 0;
@@ -163,11 +176,11 @@ input[type="range"]::-moz-range-thumb {
   transition: box-shadow 120ms ease;
 }
 
-input[type="range"]:focus-visible::-webkit-slider-thumb {
+.u-input-range:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 4px var(--ssot-ring);
 }
 
-input[type="range"]:focus-visible::-moz-range-thumb {
+.u-input-range:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 4px var(--ssot-ring);
 }
 
@@ -269,55 +282,36 @@ h2 {
   font-size: var(--ssot-text-sm);
 }
 
-.file-button,
-.primary-action {
+/* Path input paired with its icon-only file-picker button as one compact row. */
+.path-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: var(--ssot-control-h);
-  margin-bottom: 9px;
-  padding: 0 10px;
-  border: 1px solid var(--ssot-border-strong);
-  border-radius: var(--ssot-radius-sm);
-  background: var(--ssot-surface);
-  color: var(--ssot-text);
-  font-weight: var(--ssot-weight-medium);
-  cursor: pointer;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+  gap: 7px;
 }
 
-.file-button:hover {
+.path-row .u-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.choose-btn {
+  flex: 0 0 auto;
+  width: var(--ssot-control-h);
+  min-width: var(--ssot-control-h);
+  padding: 0;
+  border: 1px solid var(--ssot-border-strong);
+  color: var(--ssot-text-soft);
+  background: var(--ssot-surface);
+}
+
+.choose-btn:hover:not(:disabled) {
   border-color: var(--ssot-accent);
+  color: var(--ssot-accent);
   background: var(--ssot-accent-soft);
 }
 
-.file-button input {
+.choose-btn input {
   display: none;
-}
-
-.file-button span,
-.primary-action span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.primary-action {
-  justify-content: center;
-  border-color: var(--ssot-accent);
-  color: #ffffff;
-  background: var(--ssot-accent);
-}
-
-.primary-action:hover {
-  border-color: var(--ssot-accent-strong);
-  background: var(--ssot-accent-strong);
 }
 
 .error-box {
@@ -655,7 +649,7 @@ html[data-ssot-theme="dark"] .settings-popover {
 
 .bulk-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   border-bottom: 1px solid var(--ssot-border);
 }
