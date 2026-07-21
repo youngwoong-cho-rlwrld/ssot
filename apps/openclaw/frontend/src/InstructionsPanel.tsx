@@ -129,7 +129,7 @@ export function InstructionsPanel({ onClose }: { onClose: () => void }) {
           <h2 className="modal__title">Global instructions</h2>
           <button
             type="button"
-            className="icon-btn"
+            className="ssot-icon-btn"
             onClick={requestClose}
             aria-label="Close"
           >

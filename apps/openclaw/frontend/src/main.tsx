@@ -2,18 +2,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/inter";
 import "@ssot/theme/tokens.css";
+import "@ssot/theme/base.css";
 import "@ssot/theme/header.css";
-import "@ssot/theme/controls.css";
+import "@ssot/theme/theme-init.js";
+import "@ssot/theme/runtime.js";
+import "@ssot/theme/chat.css";
 import "./styles.css";
 import App from "./App";
-
-// Shared SSOT chrome (theme toggle + user chip), served by the gateway at
-// runtime absolute URLs; absent (404s harmlessly) when the app runs standalone.
-const ssotThemeToggleSrc = "/portal-assets/theme/ssot-theme-toggle.js";
-import(/* @vite-ignore */ ssotThemeToggleSrc).catch(() => {});
-
-const ssotUserSrc = "/portal-assets/theme/ssot-user.js";
-import(/* @vite-ignore */ ssotUserSrc).catch(() => {});
 
 const container = document.getElementById("root");
 if (!container) {

@@ -69,7 +69,7 @@ export function LogFeed() {
             />
             <button
               type="button"
-              className="icon-btn logfeed__pause"
+              className="ssot-icon-btn logfeed__pause"
               onClick={() => setPaused((v) => !v)}
               title={paused ? "Resume" : "Pause"}
               aria-label={paused ? "Resume log feed" : "Pause log feed"}

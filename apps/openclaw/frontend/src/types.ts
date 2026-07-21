@@ -1,18 +1,11 @@
 // API contract types. Transcript types mirror the backend pydantic models; the
 // status / sessions / logs / chat shapes mirror what the `openclaw` CLI emits.
 
-export interface ToolCall {
-  name: string;
-  input_preview: string;
-  output_preview: string | null;
-}
-
-export interface Turn {
-  role: "user" | "assistant" | "system";
-  text: string;
-  tool_calls: ToolCall[];
-  ts: string | null;
-}
+// ToolCall / Turn are the canonical transcript shapes shared across apps; they
+// live in @ssot/ui and are re-exported here so local `./types` importers are
+// unchanged.
+export type { ToolCall, Turn } from "@ssot/ui/transcript-types";
+import type { Turn } from "@ssot/ui/transcript-types";
 
 export interface TranscriptDetail {
   agent_id: string;

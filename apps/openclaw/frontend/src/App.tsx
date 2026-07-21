@@ -71,7 +71,7 @@ export default function App() {
 
   if (cliMissing) {
     return (
-      <div className="app">
+      <div className="ssot-app app">
         <header className="ssot-header">
           <a className="ssot-brand" href={portalUrl}>
             SSOT
@@ -88,7 +88,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className="ssot-app app">
       <header className="ssot-header">
         <a className="ssot-brand" href={portalUrl}>
           SSOT

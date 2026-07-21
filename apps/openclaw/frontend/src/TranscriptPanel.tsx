@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getTranscript, getTranscriptByKey } from "./api";
 import { Markdown } from "./Markdown";
-import { ToolCallView } from "./ToolCallView";
+import { ToolCallView } from "@ssot/ui/ToolCallView";
 import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
 import { usePersistedBool } from "./hooks";
 import type { TranscriptDetail, Turn } from "./types";

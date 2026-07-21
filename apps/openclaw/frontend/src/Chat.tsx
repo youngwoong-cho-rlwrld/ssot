@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { SendHorizontal } from "lucide-react";
 import { assistantReply, getTranscriptByKey, postChat } from "./api";
 import { Markdown } from "./Markdown";
-import { ToolCallView } from "./ToolCallView";
+import { ToolCallView } from "@ssot/ui/ToolCallView";
 import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
 import { usePersistedBool } from "./hooks";
 import type { ToolCall, Turn } from "./types";
