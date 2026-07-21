@@ -21,6 +21,13 @@ def job(cluster: str, job_id: str, name: str) -> Job:
     )
 
 
+def terminal_job(cluster: str, job_id: str, name: str) -> Job:
+    row = job(cluster, job_id, name)
+    row.state = "COMPLETED"
+    row.end = "2026-07-20T12:00:00+00:00"
+    return row
+
+
 class CacheScopeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
@@ -110,6 +117,49 @@ class CacheScopeTests(unittest.IsolatedAsyncioTestCase):
         await cache_db.sync_cluster_configs({}, scope=scope)
         self.assertEqual(await cache_db.read_jobs([], None, scope=scope), [])
         self.assertEqual(await cache_db.read_results([], scope=scope), {})
+
+    async def test_successful_snapshot_closes_only_missing_active_jobs(self) -> None:
+        scope = "one@example.com"
+        await cache_db.upsert_jobs(
+            "kakao",
+            [
+                job("kakao", "missing", "was-running"),
+                job("kakao", "present", "still-running"),
+                terminal_job("kakao", "finished", "already-finished"),
+            ],
+            scope=scope,
+        )
+
+        await cache_db.reconcile_jobs(
+            "kakao", [job("kakao", "present", "still-running")], scope=scope
+        )
+
+        rows = {
+            row["job_id"]: row
+            for row in await cache_db.read_jobs(["kakao"], None, scope=scope)
+        }
+        self.assertEqual(rows["present"]["state"], "RUNNING")
+        self.assertEqual(rows["missing"]["state"], "CANCELLED")
+        self.assertEqual(
+            rows["missing"]["reason"], "No longer reported by cluster"
+        )
+        self.assertIsNotNone(rows["missing"]["end"])
+        self.assertEqual(rows["finished"]["state"], "COMPLETED")
+
+    async def test_empty_successful_snapshot_is_scope_isolated(self) -> None:
+        await cache_db.upsert_jobs(
+            "mlxp", [job("mlxp", "same", "one")], scope="one@example.com"
+        )
+        await cache_db.upsert_jobs(
+            "mlxp", [job("mlxp", "same", "two")], scope="two@example.com"
+        )
+
+        await cache_db.reconcile_jobs("mlxp", [], scope="one@example.com")
+
+        one = await cache_db.read_jobs(["mlxp"], None, scope="one@example.com")
+        two = await cache_db.read_jobs(["mlxp"], None, scope="two@example.com")
+        self.assertEqual(one[0]["state"], "CANCELLED")
+        self.assertEqual(two[0]["state"], "RUNNING")
 
 
 if __name__ == "__main__":

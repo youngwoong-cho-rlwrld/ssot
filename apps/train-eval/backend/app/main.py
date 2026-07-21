@@ -884,10 +884,17 @@ async def get_jobs(
             # good live fetch into a 500 — log and still return the live jobs.
             #
             try:
-                for c in {j.cluster for j in js}:
-                    await cache_db.upsert_jobs(
-                        c, [j for j in js if j.cluster == c], scope=scope
-                    )
+                rows_by_cluster = {
+                    c: [j for j in js if j.cluster == c] for c in targets
+                }
+                for c, cluster_rows in rows_by_cluster.items():
+                    if start or end:
+                        # Arbitrary history ranges are partial snapshots.
+                        await cache_db.upsert_jobs(c, cluster_rows, scope=scope)
+                    else:
+                        await cache_db.reconcile_jobs(
+                            c, cluster_rows, scope=scope
+                        )
             except Exception as exc:  # noqa: BLE001 - cache is best-effort here
                 print(f"[cache] live-path upsert failed (serving live anyway): {exc}")
         return {

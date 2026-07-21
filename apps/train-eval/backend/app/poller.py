@@ -73,7 +73,10 @@ async def poll_jobs_once(cluster: str, email: str | None = None) -> None:
                 clusters.cache_fingerprints(), scope=scope
             )
             return
-        await cache_db.upsert_jobs(cluster, rows, scope=scope)
+        # The fetch above is a complete successful cluster snapshot. Reconcile
+        # it rather than merely upserting so scheduler-deleted jobs cannot stay
+        # RUNNING/PENDING in SQLite forever.
+        await cache_db.reconcile_jobs(cluster, rows, scope=scope)
         await cache_db.record_poll(
             cluster, "jobs", ok=True, error=None,
             duration_ms=int((time.monotonic() - t0) * 1000),

@@ -23,6 +23,7 @@ import os
 import sqlite3
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -268,55 +269,133 @@ async def sync_cluster_configs(
 
 # ── jobs ──
 
+def _upsert_job_rows(
+    conn: sqlite3.Connection,
+    cluster: str,
+    rows: list[Job],
+    *,
+    scope: str,
+    now: float,
+) -> tuple[dict[str, sqlite3.Row], set[str]]:
+    """Upsert rows without committing; return prior rows and snapshot IDs."""
+    existing: dict[str, sqlite3.Row] = {
+        r["job_id"]: r
+        for r in conn.execute(
+            'SELECT job_id, state, is_terminal, restarts, "end" '
+            "FROM jobs WHERE scope = ? AND cluster = ?",
+            (scope, cluster),
+        )
+    }
+    placeholders = ", ".join(_quote(c) for c in _JOB_COLUMNS)
+    qmarks = ", ".join("?" for _ in _JOB_COLUMNS)
+    update_cols = [c for c in _JOB_COLUMNS if c not in ("cluster", "job_id")]
+    set_clause = ", ".join(f"{_quote(c)}=excluded.{_quote(c)}" for c in update_cols)
+    sql = (
+        f"INSERT INTO jobs (scope, {placeholders}, first_seen_at, updated_at, is_terminal) "
+        f"VALUES (?, {qmarks}, ?, ?, ?) "
+        f"ON CONFLICT(scope, cluster, job_id) DO UPDATE SET {set_clause}, "
+        f"updated_at=excluded.updated_at, is_terminal=excluded.is_terminal"
+    )
+    present_ids: set[str] = set()
+    for job in rows:
+        job_id = str(job.job_id)
+        present_ids.add(job_id)
+        prev = existing.get(job_id)
+        terminal = _is_terminal(job.state)
+        data = job.model_dump()
+        if (
+            prev is not None
+            and prev["is_terminal"]
+            and prev["state"] == job.state
+            and prev["restarts"] == data.get("restarts")
+            and prev["end"] == data.get("end")
+        ):
+            # Write-once terminal: state, restarts and end all unchanged, so
+            # preserve the stable finish timestamp. Late corrections still
+            # fall through and update the row.
+            continue
+        values = [scope, *(data.get(c) for c in _JOB_COLUMNS)]
+        values += [now, now, 1 if terminal else 0]
+        conn.execute(sql, values)
+    return existing, present_ids
+
+
 async def upsert_jobs(cluster: str, rows: list[Job], *, scope: str = "") -> None:
     """Insert/update this cluster's jobs.
 
     Terminal rows are write-once: if a job is already stored terminal and its
     state is unchanged, it's left untouched (updated_at not bumped) so the
-    durable history keeps a stable finish timestamp. Jobs that dropped out of
-    squeue/sacct are never deleted here — absence is not termination.
+    durable history keeps a stable finish timestamp. This method is for
+    partial/write-through updates, so absence is not interpreted as a state
+    transition. Full successful scheduler snapshots must use
+    ``reconcile_jobs`` instead.
     """
     now = time.time()
 
     def _op(conn: sqlite3.Connection) -> None:
-        existing: dict[str, sqlite3.Row] = {
-            r["job_id"]: r
-            for r in conn.execute(
-                'SELECT job_id, state, is_terminal, restarts, "end" '
-                "FROM jobs WHERE scope = ? AND cluster = ?",
-                (scope, cluster),
-            )
-        }
-        placeholders = ", ".join(_quote(c) for c in _JOB_COLUMNS)
-        qmarks = ", ".join("?" for _ in _JOB_COLUMNS)
-        update_cols = [c for c in _JOB_COLUMNS if c not in ("cluster", "job_id")]
-        set_clause = ", ".join(f"{_quote(c)}=excluded.{_quote(c)}" for c in update_cols)
-        sql = (
-            f"INSERT INTO jobs (scope, {placeholders}, first_seen_at, updated_at, is_terminal) "
-            f"VALUES (?, {qmarks}, ?, ?, ?) "
-            f"ON CONFLICT(scope, cluster, job_id) DO UPDATE SET {set_clause}, "
-            f"updated_at=excluded.updated_at, is_terminal=excluded.is_terminal"
-        )
-        for job in rows:
-            prev = existing.get(str(job.job_id))
-            terminal = _is_terminal(job.state)
-            data = job.model_dump()
-            if (
-                prev is not None
-                and prev["is_terminal"]
-                and prev["state"] == job.state
-                and prev["restarts"] == data.get("restarts")
-                and prev["end"] == data.get("end")
-            ):
-                # Write-once terminal: state, restarts and end all unchanged, so
-                # keep the stable row (preserving its finish timestamp). A late
-                # restarts/end correction (e.g. a preempted-then-re-failed job
-                # keeping the same state) still falls through and updates.
-                continue
-            values = [scope, *(data.get(c) for c in _JOB_COLUMNS)]
-            values += [now, now, 1 if terminal else 0]
-            conn.execute(sql, values)
+        _upsert_job_rows(conn, cluster, rows, scope=scope, now=now)
         conn.commit()
+
+    await _aexec(_op)
+
+
+async def reconcile_jobs(
+    cluster: str, rows: list[Job], *, scope: str = ""
+) -> None:
+    """Persist one complete, successful scheduler snapshot.
+
+    ``list_jobs`` always includes every active job, even when its terminal
+    history is date-bounded. Therefore a previously non-terminal cached job
+    missing from a successful snapshot is no longer active. Keep the durable
+    row, but close it as cancelled so it cannot remain in the Active table
+    forever. A failed or incomplete fetch must never call this method.
+
+    Upsert and absence reconciliation share the cache lock. This prevents a
+    reader from observing the new snapshot before its disappeared jobs have
+    been closed.
+    """
+    now = time.time()
+    ended_at = datetime.now(timezone.utc).isoformat()
+
+    def _op(conn: sqlite3.Connection) -> None:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            existing, present_ids = _upsert_job_rows(
+                conn, cluster, rows, scope=scope, now=now
+            )
+
+            missing_ids = [
+                job_id
+                for job_id, previous in existing.items()
+                if not previous["is_terminal"] and job_id not in present_ids
+            ]
+            if missing_ids:
+                conn.executemany(
+                    """
+                    UPDATE jobs
+                    SET state = 'CANCELLED',
+                        reason = CASE
+                            WHEN reason IS NULL OR reason = ''
+                            THEN 'No longer reported by cluster'
+                            ELSE reason
+                        END,
+                        "end" = COALESCE("end", ?),
+                        time_left = NULL,
+                        queue_position = NULL,
+                        updated_at = ?,
+                        is_terminal = 1
+                    WHERE scope = ? AND cluster = ? AND job_id = ?
+                      AND is_terminal = 0
+                    """,
+                    [
+                        (ended_at, now, scope, cluster, job_id)
+                        for job_id in missing_ids
+                    ],
+                )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
 
     await _aexec(_op)
 
