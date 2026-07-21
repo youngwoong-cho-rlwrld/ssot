@@ -11,11 +11,18 @@ In the app entry (JS/TS):
 ```ts
 import '@fontsource-variable/inter'; // self-hosted Inter, no network dependency
 import '@ssot/theme/tokens.css';
+import '@ssot/theme/base.css';
 import '@ssot/theme/header.css';
 import '@ssot/theme/controls.css';
+import '@ssot/theme/runtime.js'; // browser entrypoints only
 ```
 
-Then map the app's existing theme layer onto the `--ssot-*` variables:
+`base.css` is the OpenClaw-derived canonical shell: full viewport, compact
+page padding, typography/reset, scrollbars, panels, statuses, and icon buttons.
+Use `.ssot-app`, `.ssot-page`, `.panel*`, and `.ssot-icon-btn` instead of
+redefining those primitives inside an app.
+
+Then map domain-specific styles onto the `--ssot-*` variables:
 
 - Hand-written CSS: replace palette values with `var(--ssot-*)` and control
   styling with the `.ssot-btn` / `.ssot-input` / `.ssot-select` declarations.
@@ -57,6 +64,14 @@ radius, border, hover = accent border + accent-soft bg, focus ring,
 primary variant). Framework apps replicate the same values inside their
 theme instead of adopting the classes — see the comment block in
 `controls.css` for the exact spec.
+
+## Shared components
+
+`@ssot/theme` ships only CSS and web-component runtimes. React components shared
+across apps (e.g. `SsotSelect`, `ToolCallView`) live in the sibling `@ssot/ui`
+package — a source-only workspace lib with `react` as a peer dependency, so each
+app's bundler compiles the TSX against its own React version. Import from
+`@ssot/ui/<Component>`; the components are styled by the `.ssot-*` classes here.
 
 ## Rules
 

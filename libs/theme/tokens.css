@@ -39,7 +39,7 @@
   --ssot-border: #e4e7ec;
   --ssot-border-strong: #d3d8e0;
 
-  /* Accent (indigo-blue: 3 of the 4 source apps already used a blue accent) */
+  /* Accent (indigo-blue: the shared accent used across the workspace's apps) */
   --ssot-accent: #4f6ef7;
   --ssot-accent-strong: #3b55d9;
   --ssot-accent-soft: #eef2ff;
@@ -59,6 +59,9 @@
   --ssot-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
   --ssot-header-h: 48px;
   --ssot-control-h: 32px;
+  --ssot-page-pad: 14px;
+  --ssot-panel-pad-x: 12px;
+  --ssot-panel-pad-y: 10px;
 
   color-scheme: light;
 }

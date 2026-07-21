@@ -162,6 +162,9 @@
 
 .ssot-select-trigger.pill {
   height: 24px;
+  /* Explicit min-height so an app-level global `button { min-height }` rule
+     cannot inflate the compact pill past its 24px design height. */
+  min-height: 24px;
   width: auto;
   padding: 0 8px 0 10px;
   border-radius: 999px;

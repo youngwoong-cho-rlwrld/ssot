@@ -1,0 +1,231 @@
+/*
+ * Canonical SSOT application foundation, extracted from OpenClaw.
+ *
+ * Keep structural chrome here so every app gets the same full-viewport shell,
+ * compact spacing, typography, scrollbars, panels, and interaction feedback.
+ * App styles should contain only domain-specific layouts and visualizations.
+ */
+:root {
+  --font-sans: var(--ssot-font-sans);
+  --font-mono: var(--ssot-font-mono);
+  --bg: var(--ssot-bg);
+  --panel-bg: var(--ssot-surface);
+  --muted: var(--ssot-surface-muted);
+  --ink: var(--ssot-text);
+  --ink-soft: var(--ssot-text-soft);
+  --ink-faint: var(--ssot-text-faint);
+  --line: var(--ssot-border);
+  --line-strong: var(--ssot-border-strong);
+  --accent: var(--ssot-accent);
+  --accent-soft: var(--ssot-accent-soft);
+  --radius: var(--ssot-radius);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: var(--ssot-bg);
+  color: var(--ssot-text);
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-md);
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--ssot-border-strong);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ssot-text-faint);
+  background-clip: padding-box;
+}
+
+::selection {
+  background: var(--ssot-accent-soft);
+  color: var(--ssot-text);
+}
+
+.ssot-app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ssot-bg);
+}
+
+/* Dense, full-width page for document-style apps such as Train / Eval. */
+.ssot-page {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 14px;
+}
+
+/* OpenClaw's panel grammar is the shared panel grammar. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ssot-bg);
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Pin the bar height so a head resolves the same whether or not it carries a
+     control: the tallest control head is 41px (24px control + 16px padding +
+     1px border), so clamp a bare-title head up to match. Keeps sibling panel
+     headers' bottom borders aligned across columns in every state. */
+  min-height: 41px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ssot-border);
+  background: var(--ssot-surface);
+}
+
+.panel__title {
+  margin: 0;
+  color: var(--ssot-text-soft);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-semibold);
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.panel__count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--ssot-surface-muted);
+  color: var(--ssot-text-faint);
+  font-size: var(--ssot-text-xs);
+}
+
+.panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.panel__status,
+.ssot-status {
+  padding: 16px 4px;
+  color: var(--ssot-text-faint);
+  font-size: var(--ssot-text-sm);
+  text-align: center;
+}
+
+.panel__status--err,
+.ssot-status--error {
+  color: var(--ssot-danger);
+}
+
+.ssot-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface);
+  color: var(--ssot-text-soft);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ssot-icon-btn:hover:not(:disabled) {
+  border-color: var(--ssot-accent);
+  background: var(--ssot-accent-soft);
+  color: var(--ssot-accent);
+}
+
+.ssot-icon-btn:focus-visible {
+  outline: none;
+  border-color: var(--ssot-accent);
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.ssot-icon-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.ssot-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .ssot-page {
+    padding: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

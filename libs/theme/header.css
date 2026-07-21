@@ -22,6 +22,10 @@
   font-size: 13px;
 }
 
+.ssot-header > * {
+  min-width: 0;
+}
+
 .ssot-brand {
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -41,8 +45,18 @@
 .ssot-app-name {
   color: var(--ssot-text-soft);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ssot-header-spacer {
   flex: 1;
+}
+
+@media (max-width: 640px) {
+  .ssot-header {
+    gap: 8px;
+    padding: 0 10px;
+  }
 }
