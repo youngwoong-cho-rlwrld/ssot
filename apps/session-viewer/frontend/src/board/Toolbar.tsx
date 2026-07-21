@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, LayoutGrid, Trash2 } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
 import { FilterPanel } from "./FilterPanel";
 import { CleanupPanel } from "./CleanupPanel";
 import { activeFilterCount, type FilterState } from "./filters";
@@ -44,11 +44,6 @@ export function Toolbar({
 
   return (
     <header className="toolbar">
-      <div className="toolbar__brand">
-        <LayoutGrid size={18} />
-        <span>Session Board</span>
-      </div>
-
       <div className="searchbar-wrap">
         <button
           type="button"

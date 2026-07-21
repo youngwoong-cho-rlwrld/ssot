@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Copy, Check, Star, Trash2 } from "lucide-react";
+import { ToolCallView } from "@ssot/ui/ToolCallView";
 import { deleteSession, getDetail } from "../api";
 import type { BoardNode, SessionDetail, Turn } from "../types";
 import { formatAbsolute, relativeTime } from "../board/util";
@@ -123,7 +124,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           </div>
           <button
             type="button"
-            className="icon-btn"
+            className="ssot-icon-btn"
             onClick={onClose}
             title="Close"
             aria-label="Close panel"
@@ -166,7 +167,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
             </code>
             <button
               type="button"
-              className="icon-btn"
+              className="ssot-icon-btn"
               onClick={onCopy}
               title="Copy resume command"
               aria-label="Copy resume command"
@@ -256,34 +257,13 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
   );
 }
 
-function firstLine(s: string): string {
-  const nl = s.indexOf("\n");
-  const line = nl === -1 ? s : s.slice(0, nl);
-  return line.length > 120 ? `${line.slice(0, 120)}...` : line;
-}
-
 function TurnView({ turn }: { turn: Turn }) {
   return (
     <div className={`turn turn--${turn.role}`}>
       <div className="turn__role">{turn.role}</div>
       {turn.text && <div className="turn__text">{turn.text}</div>}
       {turn.tool_calls.map((tc, i) => (
-        <details key={i} className="tool">
-          <summary className="tool__summary">
-            <span className="tool__name">{tc.name}</span>
-            <span className="tool__preview">{firstLine(tc.input_preview)}</span>
-          </summary>
-          <div className="tool__body">
-            <div className="tool__label">input</div>
-            <pre className="tool__pre">{tc.input_preview}</pre>
-            {tc.output_preview != null && (
-              <>
-                <div className="tool__label">output</div>
-                <pre className="tool__pre">{tc.output_preview}</pre>
-              </>
-            )}
-          </div>
-        </details>
+        <ToolCallView key={i} call={tc} />
       ))}
     </div>
   );

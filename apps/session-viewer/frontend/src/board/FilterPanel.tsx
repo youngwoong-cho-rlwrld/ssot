@@ -10,7 +10,7 @@ import {
   type FilterState,
 } from "./filters";
 import type { Session } from "../types";
-import { SsotSelect } from "../SsotSelect";
+import { SsotSelect } from "@ssot/ui/SsotSelect";
 
 interface FilterPanelProps {
   initial: FilterState;

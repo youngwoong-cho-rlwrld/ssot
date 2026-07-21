@@ -65,7 +65,7 @@ export default function App() {
   const portalUrl = import.meta.env.VITE_SSOT_PORTAL_URL ?? "/";
 
   return (
-    <div className="app">
+    <div className="ssot-app app">
       <header className="ssot-header">
         <a className="ssot-brand" href={portalUrl}>
           SSOT

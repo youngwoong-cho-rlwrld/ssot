@@ -1,18 +1,6 @@
 :root {
-  /* Look & feel maps onto the shared @ssot/theme tokens. Domain data colors
-     (agent badges below) stay literal per the theme rules. */
-  --font-sans: var(--ssot-font-sans);
-  --font-mono: var(--ssot-font-mono);
-
+  /* Domain data colors stay local; shared chrome aliases live in base.css. */
   --board-bg: var(--ssot-bg);
-  --panel-bg: var(--ssot-surface);
-  --ink: var(--ssot-text);
-  --ink-soft: var(--ssot-text-soft);
-  --ink-faint: var(--ssot-text-faint);
-  --line: var(--ssot-border);
-  --line-strong: var(--ssot-border-strong);
-  --accent: var(--ssot-accent);
-  --accent-soft: var(--ssot-accent-soft);
   --claude: #d97706;
   --claude-bg: #fef3e2;
   --codex: #2563eb;
@@ -29,8 +17,6 @@
     0 6px 16px rgba(20, 24, 33, 0.12);
   --shadow-panel: -8px 0 30px rgba(20, 24, 33, 0.12);
   --shadow-hover: 0 2px 8px rgba(20, 24, 33, 0.12);
-  --shadow-pop: 0 4px 12px rgba(20, 24, 33, 0.1),
-    0 16px 40px rgba(20, 24, 33, 0.18);
   --shadow-thumb: 0 1px 4px rgba(20, 24, 33, 0.25);
   --radius: var(--ssot-radius);
 }
@@ -40,34 +26,7 @@ html[data-ssot-theme="dark"] {
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 16px rgba(0, 0, 0, 0.55);
   --shadow-panel: -8px 0 30px rgba(0, 0, 0, 0.55);
   --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.5);
-  --shadow-pop: 0 4px 12px rgba(0, 0, 0, 0.5), 0 16px 40px rgba(0, 0, 0, 0.6);
   --shadow-thumb: 0 1px 4px rgba(0, 0, 0, 0.6);
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
-
-body {
-  font-family: var(--font-sans);
-  font-size: var(--ssot-text-md);
-  color: var(--ink);
-  background: var(--board-bg);
-  -webkit-font-smoothing: antialiased;
-}
-
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
 }
 
 /* ----------------------------- Toolbar ----------------------------- */
@@ -82,19 +41,6 @@ body {
   box-shadow: var(--ssot-shadow);
   z-index: 5;
   flex-wrap: wrap;
-}
-
-.toolbar__brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: var(--ssot-weight-semibold);
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-
-.toolbar__brand svg {
-  color: var(--accent);
 }
 
 .toolbar__cleanup {
@@ -236,38 +182,6 @@ body {
   box-shadow: var(--ssot-shadow);
 }
 
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--ssot-radius-sm);
-  background: var(--panel-bg);
-  color: var(--ink-soft);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s,
-    box-shadow 0.12s;
-}
-
-.icon-btn:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.icon-btn:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--ssot-ring);
-}
-
-.icon-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 /* -------------------------- Filter panel -------------------------- */
 
 .fp__scrim {
@@ -288,9 +202,14 @@ body {
   flex-direction: column;
   background: var(--panel-bg);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--shadow-pop);
+  border-radius: var(--ssot-radius);
+  /* Canonical listbox/popover surface (matches .ssot-listbox in @ssot/theme). */
+  box-shadow: var(--ssot-shadow), 0 8px 24px rgba(16, 24, 40, 0.12);
   animation: fp-in 0.14s ease;
+}
+
+html[data-ssot-theme="dark"] .fp {
+  box-shadow: var(--ssot-shadow), 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 @keyframes fp-in {
@@ -1309,12 +1228,10 @@ body {
 
 .turn--assistant {
   background: var(--ssot-surface-muted);
-  border: 1px solid var(--line);
 }
 
 .turn--system {
   background: var(--ssot-warning-soft);
-  border: 1px solid var(--ssot-warning);
 }
 
 .turn--system .turn__role {
