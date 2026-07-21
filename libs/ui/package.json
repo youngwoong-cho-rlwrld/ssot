@@ -1,0 +1,17 @@
+{
+  "name": "@ssot/ui",
+  "version": "0.1.0",
+  "description": "Canonical SSOT React components shared across apps (source-only workspace lib, no build step)",
+  "private": true,
+  "type": "module",
+  "peerDependencies": {
+    "react": "^18.3.1 || ^19.0.0",
+    "react-dom": "^18.3.1 || ^19.0.0"
+  },
+  "exports": {
+    "./SsotSelect": "./src/SsotSelect.tsx",
+    "./ToolCallView": "./src/ToolCallView.tsx",
+    "./transcript-types": "./src/transcript-types.ts",
+    "./package.json": "./package.json"
+  }
+}

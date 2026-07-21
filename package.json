@@ -17,6 +17,7 @@
   },
   "workspaces": [
     "libs/theme",
+    "libs/ui",
     "apps/gateway",
     "apps/results-sheet",
     "apps/urdf-viewer",
