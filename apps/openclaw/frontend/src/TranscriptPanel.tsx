@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
 import { getTranscript, getTranscriptByKey } from "./api";
 import { Markdown } from "./Markdown";
 import { ToolCallView } from "./ToolCallView";
+import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
 import { usePersistedBool } from "./hooks";
 import type { TranscriptDetail, Turn } from "./types";
 import { relativeTimeIso, sessionLabel } from "./util";
@@ -98,15 +98,11 @@ export function TranscriptPanel({
     <section className="panel transcript">
       <div className="panel__head">
         <h2 className="panel__title">Transcript</h2>
-        <button
-          type="button"
-          className={`tool-toggle${showTools ? " tool-toggle--on" : ""}`}
-          onClick={toggleTools}
-          title={showTools ? "Hide tool / system bubbles" : "Show tool / system bubbles"}
-        >
-          {showTools ? <Eye size={13} /> : <EyeOff size={13} />}
-          tools
-        </button>
+        <ToolVisibilityToggle
+          visible={showTools}
+          onToggle={toggleTools}
+          context="transcript"
+        />
       </div>
 
       {detail && (

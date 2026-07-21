@@ -1,4 +1,4 @@
-import { Circle } from "lucide-react";
+import { Circle, FileText } from "lucide-react";
 import { ModelSwitcher } from "./ModelSwitcher";
 import { HeartbeatControl } from "./HeartbeatControl";
 import type { StatusResponse } from "./types";
@@ -6,9 +6,10 @@ import type { StatusResponse } from "./types";
 type StatusBarProps = {
   status: StatusResponse | null;
   error: string | null;
+  onOpenInstructions: () => void;
 };
 
-export function StatusBar({ status, error }: StatusBarProps) {
+export function StatusBar({ status, error, onOpenInstructions }: StatusBarProps) {
   const healthy = !error && status != null;
 
   return (
@@ -26,12 +27,23 @@ export function StatusBar({ status, error }: StatusBarProps) {
         </span>
       </div>
 
-      {!error && status && (
-        <div className="statusbar__stats">
-          <ModelSwitcher />
-          <HeartbeatControl />
-        </div>
-      )}
+      <div className="statusbar__stats">
+        {!error && status && (
+          <>
+            <ModelSwitcher />
+            <HeartbeatControl />
+          </>
+        )}
+        <button
+          type="button"
+          className="statusbar__instructions"
+          onClick={onOpenInstructions}
+          title="Edit global instructions"
+        >
+          <FileText size={15} />
+          Instructions
+        </button>
+      </div>
 
       {error && (
         <div className="statusbar__msg">

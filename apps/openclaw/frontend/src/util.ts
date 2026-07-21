@@ -41,6 +41,20 @@ export function formatTokens(n: number | null | undefined): string {
 export const ACTIVE_WINDOW_MS = 5 * 60 * 1000;
 
 /**
+ * Eight random hex characters for a browser-created SSOT chat key.
+ * ``crypto.randomUUID`` is unavailable when the portal is served over plain
+ * HTTP on a non-local address. ``getRandomValues`` remains available there,
+ * so fresh chats work on the dev server without weakening uniqueness.
+ */
+export function randomSessionSuffix(): string {
+  if (typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().slice(0, 8);
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * Humanize a raw session key into a friendly label, keeping the meaningful
  * part (slack channel, cron id tail) and dropping the "agent:<id>:" prefix.
  * The full key should still be shown in a tooltip by the caller.

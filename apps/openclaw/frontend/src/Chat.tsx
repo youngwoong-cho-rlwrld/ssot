@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, SendHorizontal } from "lucide-react";
+import { SendHorizontal } from "lucide-react";
 import { assistantReply, getTranscriptByKey, postChat } from "./api";
 import { Markdown } from "./Markdown";
 import { ToolCallView } from "./ToolCallView";
+import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
 import { usePersistedBool } from "./hooks";
 import type { ToolCall, Turn } from "./types";
+import { randomSessionSuffix } from "./util";
 
 type ChatItem =
   | { kind: "msg"; role: "user" | "assistant" | "error"; text: string }
@@ -104,7 +106,7 @@ export function Chat({
     // Resolve the key this turn targets, creating one lazily for a fresh chat.
     let turnKey = effectiveKey;
     if (!turnKey) {
-      turnKey = `agent:main:ssot-chat-${crypto.randomUUID().slice(0, 8)}`;
+      turnKey = `agent:main:ssot-chat-${randomSessionSuffix()}`;
       setLocalKey(turnKey);
       // Point the ref at the new key now so the reply-guard matches on return.
       boundKeyRef.current = turnKey;
@@ -153,15 +155,11 @@ export function Chat({
     <section className="panel chat">
       <div className="panel__head">
         <h2 className="panel__title">Chat</h2>
-        <button
-          type="button"
-          className={`tool-toggle${showTools ? " tool-toggle--on" : ""}`}
-          onClick={toggleTools}
-          title={showTools ? "Hide tool calls" : "Show tool calls"}
-        >
-          {showTools ? <Eye size={13} /> : <EyeOff size={13} />}
-          tools
-        </button>
+        <ToolVisibilityToggle
+          visible={showTools}
+          onToggle={toggleTools}
+          context="chat"
+        />
         <span className="chat__key" title={boundSessionKey ?? "new chat"}>
           {boundSessionKey ? boundLabel : "New chat"}
         </span>

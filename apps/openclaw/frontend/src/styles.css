@@ -813,6 +813,42 @@ body {
 /* First right-aligned control owns the auto margin; the rest sit beside it. */
 .tool-toggle {
   margin-left: auto;
+  position: relative;
+  width: 24px;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+}
+
+.tool-toggle::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: 280px;
+  padding: 6px 8px;
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ink);
+  color: var(--bg);
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-2px);
+  transition: opacity 0.12s, transform 0.12s, visibility 0.12s;
+}
+
+.tool-toggle:hover::after,
+.tool-toggle:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 .tool-toggle + .chat__new {
@@ -1495,25 +1531,24 @@ body {
   cursor: default;
 }
 
-/* ---------------------- Header button (instructions) -------------------- */
+/* -------------------- Status-bar button (instructions) ------------------ */
 
-.header-btn {
+.statusbar__instructions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  font-family: var(--font-sans);
+  padding: 4px 8px;
+  font: inherit;
   font-size: var(--ssot-text-sm);
-  font-weight: var(--ssot-weight-medium);
   color: var(--ink-soft);
-  background: var(--panel-bg);
-  border: 1px solid var(--line-strong);
+  background: transparent;
+  border: 1px solid var(--line);
   border-radius: var(--ssot-radius-sm);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-.header-btn:hover {
+.statusbar__instructions:hover {
   background: var(--accent-soft);
   color: var(--accent);
   border-color: var(--accent);

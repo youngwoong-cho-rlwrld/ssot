@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { FileText } from "lucide-react";
 import { StatusBar } from "./StatusBar";
 import { SessionList } from "./SessionList";
 import { TranscriptPanel } from "./TranscriptPanel";
@@ -97,20 +96,15 @@ export default function App() {
         <span className="ssot-sep">/</span>
         <span className="ssot-app-name">OpenClaw</span>
         <span className="ssot-header-spacer"></span>
-        <button
-          type="button"
-          className="header-btn"
-          onClick={() => setInstructionsOpen(true)}
-          title="Edit global instructions"
-        >
-          <FileText size={15} />
-          Instructions
-        </button>
         <ssot-theme-toggle></ssot-theme-toggle>
         <ssot-user></ssot-user>
       </header>
 
-      <StatusBar status={status} error={statusError} />
+      <StatusBar
+        status={status}
+        error={statusError}
+        onOpenInstructions={() => setInstructionsOpen(true)}
+      />
 
       <main className="app__content">
         <div className="col col--activity">
