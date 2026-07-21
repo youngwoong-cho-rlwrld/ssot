@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "@ssot/model-diagram-api",
+  "projectType": "application",
+  "targets": {
+    "install": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv sync",
+        "cwd": "apps/model-diagram/backend"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --host ${MODEL_DIAGRAM_API_HOST:-127.0.0.1} --port ${MODEL_DIAGRAM_API_PORT:-8791} --reload",
+        "cwd": "apps/model-diagram/backend"
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --host ${MODEL_DIAGRAM_API_HOST:-127.0.0.1} --port ${MODEL_DIAGRAM_API_PORT:-8791}",
+        "cwd": "apps/model-diagram/backend"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run pytest",
+        "cwd": "apps/model-diagram/backend"
+      }
+    }
+  }
+}
