@@ -1,5 +1,5 @@
 import * as Mantine from "@mantine/core";
-import { IconFileDownload, IconPrinter, IconSearch } from "@tabler/icons-react";
+import { IconSearch } from "@tabler/icons-react";
 import { useState } from "react";
 import type { Field } from "@enmight/types/apiTypes";
 import { addSearchFilter } from "@enmight/utils/tables/filters";
@@ -68,15 +68,9 @@ export default function DataTableSearchBar() {
           </Mantine.Combobox.Options>
         </Mantine.Combobox.Dropdown>
       </Mantine.Combobox>
-      <Mantine.Group w={152} pos="absolute" right={0} justify="flex-end">
+      <Mantine.Group pos="absolute" right={0} justify="flex-end">
         <Mantine.Group gap={8} px={8}>
           <SearchOrderPopover />
-          <Mantine.ActionIcon aria-label="Download" variant="subtle" c="var(--button-secondary)">
-            <IconFileDownload size={20} stroke={1.3} />
-          </Mantine.ActionIcon>
-          <Mantine.ActionIcon aria-label="Print" variant="subtle" c="var(--button-secondary)">
-            <IconPrinter size={20} stroke={1.3} />
-          </Mantine.ActionIcon>
         </Mantine.Group>
       </Mantine.Group>
     </Mantine.Group>

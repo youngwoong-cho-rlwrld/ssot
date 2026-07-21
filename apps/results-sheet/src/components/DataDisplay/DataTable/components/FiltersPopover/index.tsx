@@ -49,7 +49,6 @@ export default function FiltersPopover() {
             <IconX stroke={1.3} size={20} color="var(--text-secondary)" />
           </Mantine.ActionIcon>
           <Filters
-            canSaveFilter
             isInPopover
             columnOptions={columns}
             value={draft}

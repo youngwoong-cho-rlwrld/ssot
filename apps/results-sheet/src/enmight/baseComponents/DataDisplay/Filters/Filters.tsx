@@ -1,5 +1,4 @@
 import {
-  Accordion,
   ActionIcon,
   Divider,
   Flex,
@@ -40,7 +39,6 @@ type FiltersProps = {
   onChange?: (filters: FiltersType) => void;
   showTitle?: boolean;
   allowMultiple?: boolean;
-  canSaveFilter?: boolean;
   isInPopover?: boolean;
 };
 
@@ -53,7 +51,6 @@ export function Filters({
   onChange,
   showTitle = true,
   allowMultiple = true,
-  canSaveFilter = false,
   isInPopover = false,
 }: FiltersProps) {
   const emit = (filterSet: FilterNode[], conjunction = value.filters.conjunction) => {
@@ -227,7 +224,7 @@ export function Filters({
   );
 
   return (
-    <Stack w={width ?? (canSaveFilter ? 768 : 640)} gap={0}>
+    <Stack w={width ?? 640} gap={0}>
       <Group justify={showTitle ? "space-between" : "flex-end"}>
         {showTitle && <Typography variant="body" size="sm">Filter</Typography>}
         {allowMultiple && (
@@ -244,14 +241,7 @@ export function Filters({
       {showTitle && <Divider mt={6} mb={12} />}
 
       <Flex w="100%" h="100%" align="flex-start" gap={16}>
-        {canSaveFilter && <SavedFilterSidebar />}
         <Stack gap="xs" flex={1}>
-          {canSaveFilter && (
-            <Group justify="space-between">
-              <Typography variant="body" size="sm">Filter Settings</Typography>
-              <Button variant="primary-outlined" size="compact-sm">Save this Filter</Button>
-            </Group>
-          )}
           {renderFilters(value.filters.filterSet, value.filters.conjunction)}
           {allowMultiple && (
             <Group gap={4}>
@@ -326,48 +316,6 @@ function ConjunctionMenu({
         ))}
       </Menu.Dropdown>
     </Menu>
-  );
-}
-
-function SavedFilterSidebar() {
-  const accordionStyles = {
-    item: { padding: 0 },
-    label: { padding: 0 },
-    control: { padding: 0 },
-    content: { padding: 0 },
-    chevron: { margin: "0 8px 0 0", width: 7, height: 7, color: "var(--text-primary)" },
-    panel: { padding: "8px 0" },
-  };
-
-  return (
-    <Stack w={150} p={0} gap={8}>
-      <Typography variant="label" size="lg">Saved Filter</Typography>
-      <Accordion
-        variant="unstyled"
-        styles={accordionStyles}
-        w="100%"
-        chevronPosition="left"
-        chevron={<IconChevronDown size={20} stroke={1.2} />}
-      >
-        <Accordion.Item value="public">
-          <Accordion.Control><Typography variant="label" size="md">Public</Typography></Accordion.Control>
-          <Accordion.Panel />
-        </Accordion.Item>
-      </Accordion>
-      <Divider />
-      <Accordion
-        variant="unstyled"
-        styles={{ ...accordionStyles, chevron: { ...accordionStyles.chevron, width: 12, height: 12 } }}
-        w="100%"
-        chevronPosition="left"
-        chevron={<IconChevronDown size={20} stroke={1.2} />}
-      >
-        <Accordion.Item value="private">
-          <Accordion.Control><Typography variant="label" size="md">Private</Typography></Accordion.Control>
-          <Accordion.Panel />
-        </Accordion.Item>
-      </Accordion>
-    </Stack>
   );
 }
 

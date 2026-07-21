@@ -38,7 +38,7 @@ const CHART_PANEL_DEFAULT_WIDTH = 720;
 const CHART_PANEL_MIN_WIDTH = 480;
 const CHART_PANEL_MAX_WIDTH = 1080;
 const TABLE_MIN_WIDTH_DURING_RESIZE = 520;
-const WORKSPACE_GAP_TOTAL = 32;
+const WORKSPACE_GAP_TOTAL = 16;
 
 export default function Page() {
   const {
@@ -241,7 +241,7 @@ export default function Page() {
   }, [headers, mounted, reconcileColumns]);
 
   return (
-    <main className="page">
+    <main className="ssot-page page">
       {loadError && (
         <div className="status statusError">
           {loadError}

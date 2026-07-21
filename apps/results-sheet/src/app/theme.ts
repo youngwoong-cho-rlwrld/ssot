@@ -113,7 +113,7 @@ export const theme: MantineThemeOverride = createTheme({
             : prop.variant === "unstyled"
               ? undefined
               : "var(--border-subtle-2)",
-          borderRadius: prop.variant === "unstyled" ? 0 : "var(--input-radius)",
+          borderRadius: prop.variant === "unstyled" ? 0 : "var(--ssot-radius-sm)",
           fontSize: { xs: 14, sm: 16, md: 18, lg: 20, xl: 22 },
           fontWeight: 500,
           color: prop.error ? "var(--text-error)" : "var(--text-primary)",

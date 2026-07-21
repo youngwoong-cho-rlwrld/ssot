@@ -30,7 +30,7 @@ import {
 import type { ChartRow, ChartTaskDescriptor } from "@/lib/sheetView";
 import { DEFAULT_TABLE_COLOR } from "@/lib/tableColors";
 import { PanelResizeHandle } from "@/components/PanelResizeHandle";
-import { SsotSelect, type SsotSelectOption } from "@/components/SsotSelect";
+import { SsotSelect, type SsotSelectOption } from "@ssot/ui/SsotSelect";
 
 type ResultsChartPanelProps = {
   width: number;

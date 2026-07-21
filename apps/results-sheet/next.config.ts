@@ -9,6 +9,7 @@ const allowedDevOrigins = (process.env.RESULTS_ALLOWED_DEV_ORIGINS ?? "")
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["@ssot/ui"],
   basePath,
   env: { NEXT_PUBLIC_BASE_PATH: basePath },
   ...(allowedDevOrigins.length ? { allowedDevOrigins } : {}),

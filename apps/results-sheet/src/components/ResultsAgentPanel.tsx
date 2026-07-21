@@ -21,7 +21,7 @@ import type {
   AgentModel,
 } from "@/lib/agentTypes";
 import { PanelResizeHandle } from "@/components/PanelResizeHandle";
-import { SsotSelect, type SsotSelectOption } from "@/components/SsotSelect";
+import { SsotSelect, type SsotSelectOption } from "@ssot/ui/SsotSelect";
 
 type ResultsAgentPanelProps = {
   open: boolean;
@@ -142,7 +142,7 @@ export function ResultsAgentPanel({
       </div>
       <div
         ref={messagesRef}
-        className="agentMessages"
+        className="agentMessages chat__body"
         role="log"
         aria-live="polite"
         onScroll={(event) => {
@@ -150,19 +150,24 @@ export function ResultsAgentPanel({
           pinnedToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
         }}
       >
-        {messages.length === 0 ? (
-          null
-        ) : (
-          messages.map((message) => (
-            <div key={message.id} className={`agentMessage agentMessage-${message.role}`}>
-              <div className="agentMessageRole">{message.role}</div>
+        {messages.map((message) => (
+          <div key={message.id} className={`bubble bubble--${message.role}`}>
+            {message.role === "system" && <div className="bubble__role">{message.role}</div>}
+            <div className="bubble__text">
               <MarkdownMessage text={message.text} />
             </div>
-          ))
-        )}
+          </div>
+        ))}
         {pending && (
-          <div className="agentLoading" role="status" aria-label="Waiting for response">
-            <span className="agentLoadingSpinner" aria-hidden="true" />
+          <div className="bubble bubble--assistant bubble--pending" role="status" aria-label="Waiting for response">
+            <div className="bubble__text">
+              <span className="typing" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              working (this can take a minute)...
+            </div>
           </div>
         )}
       </div>
@@ -183,8 +188,9 @@ export function ResultsAgentPanel({
           ))}
         </div>
       )}
-      <form className="agentInputBar" onSubmit={handleSubmit}>
+      <form className="chat__compose" onSubmit={handleSubmit}>
         <textarea
+          className="chat__input"
           value={value}
           onChange={(event) => setValue(event.currentTarget.value)}
           onCompositionStart={() => {
@@ -205,12 +211,12 @@ export function ResultsAgentPanel({
           rows={3}
         />
         <button
-          className="agentSendButton"
+          className="chat__send"
           type="submit"
           aria-label="Send message"
           disabled={pending || value.trim().length === 0}
         >
-          <IconSend size={16} stroke={1.5} aria-hidden="true" />
+          <IconSend size={18} stroke={1.5} aria-hidden="true" />
         </button>
       </form>
     </aside>
@@ -233,11 +239,11 @@ function MarkdownMessage({ text }: { text: string }) {
   const blocks = parseMarkdownBlocks(text);
 
   return (
-    <div className="agentMarkdown">
+    <div className="md">
       {blocks.map((block, index) => {
         if (block.type === "code") {
           return (
-            <pre key={index} className="agentMarkdownCode">
+            <pre key={index}>
               <code>{block.text}</code>
             </pre>
           );
