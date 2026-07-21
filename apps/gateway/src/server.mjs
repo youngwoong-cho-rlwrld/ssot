@@ -288,7 +288,7 @@ app.use((_req, res) => {
       `<!doctype html><html lang="en"><head><meta charset="utf-8" />` +
         `<meta name="viewport" content="width=device-width, initial-scale=1" />` +
         `<title>Not found - SSOT</title>` +
-        `<script>(function(){try{var t=localStorage.getItem('ssot-theme')==='dark'?'dark':'light';var r=document.documentElement;r.dataset.ssotTheme=t;r.classList.toggle('dark',t==='dark');r.setAttribute('data-mantine-color-scheme',t);}catch(e){}})();</script>` +
+        `<script src="/portal-assets/theme/theme-init.js"></script>` +
         `<link rel="icon" href="/favicon.svg" type="image/svg+xml" />` +
         `<link rel="icon" href="/favicon.ico" type="image/png" />` +
         `<link rel="stylesheet" href="/portal-assets/theme/tokens.css" />` +

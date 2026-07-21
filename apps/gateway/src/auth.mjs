@@ -103,15 +103,18 @@ function loginPage({ cfg, next, error, email }) {
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Sign in - SSOT</title>
-<script>(function(){try{var t=localStorage.getItem('ssot-theme')==='dark'?'dark':'light';var r=document.documentElement;r.dataset.ssotTheme=t;r.classList.toggle('dark',t==='dark');r.setAttribute('data-mantine-color-scheme',t);}catch(e){}})();</script>
+<script src="/portal-assets/theme/theme-init.js"></script>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="icon" href="/favicon.ico" type="image/png" />
 <link rel="stylesheet" href="/portal-assets/theme/tokens.css" />
+<link rel="stylesheet" href="/portal-assets/theme/base.css" />
 <link rel="stylesheet" href="/portal-assets/theme/controls.css" />
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: var(--ssot-font-sans); background: var(--ssot-bg); color: var(--ssot-text);
-    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  /* Centered card page: override base.css's full-viewport shell. */
+  html, body { height: auto; }
+  p { margin: 0; }
+  body { overflow: visible; min-height: 100vh; display: flex;
+    align-items: center; justify-content: center; padding: 24px; }
   .card { width: 100%; max-width: 360px; background: var(--ssot-surface);
     border: 1px solid var(--ssot-border); border-radius: var(--ssot-radius);
     box-shadow: var(--ssot-shadow); padding: 32px 28px; }
