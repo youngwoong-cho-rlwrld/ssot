@@ -80,6 +80,8 @@ positions (§5), and the canvas height (`canvas_height`) — set it tall enough 
 - Position rule per box: `left_px`, `top_px`, `width_px` (190 for column boxes, 380/420 for full-width
   rows), `min_height_px`. Lay out top→bottom in pipeline order; put side branches (text encoder,
   optimizer, losses) in left/right columns.
+- `shape_html` fact lines may be made individually clickable (`.fact` spans) so each line links to its
+  own snippet — see §10.2.
 
 **Wires** — orthogonal (`M/V/H` only), stair-step, with arrowheads (the backend adds the marker). Set
 `path_d` using only `M`/`V`/`H` commands. Start at the source box's bottom/side edge and end at the
@@ -130,7 +132,7 @@ in order (skip the two paper stages when no paper is attached):
 - `reading_paper` — (paper only) read the injected paper.
 - `cross_checking_paper` — (paper only) confirm the paper describes THIS model; if not,
   `report_paper_mismatch` and continue code-only.
-- `laying_out` — assign box positions and wire paths.
+- `laying_out` — assign box positions, wire paths, and any per-line facts (§10.2).
 - `finalizing` — call `finalize_diagram`.
 
 Terminals: `done` (via `finalize_diagram`), `not_a_model_root` (via `report_problem`),
@@ -142,3 +144,53 @@ the run still reaches `done`.
 Report which labels carry lower-confidence values (e.g. paper table cells you could not verify in code)
 via the `confidence` field on `paper_citations` — never silently. When proceeding without a paper (or
 after a mismatch), paper-cited numbers are omitted and affected labels are lower-confidence.
+
+## 10. Final-page contract (addendum — supersedes conflicting guidance above)
+
+This captures the final, browser-verified reference page. The backend still owns the verbatim
+head/CSS/JS skeleton and assembly — you supply only the structured `finalize_diagram` fields. Each
+item below is tagged: *(active)* = part of the v1 contract you must follow; *(backend)* = the backend
+guarantees it, nothing for you to do; *(fast-follow — not in v1)* = documented target that is NOT yet
+part of the finalize contract, so do NOT emit fields for it.
+
+### 10.1 Height triad *(backend)*
+
+`viewBox="0 0 680 H"`, `.wires { height: H }`, and `.diagram { min-height: H }` must be the SAME
+number or the SVG rescales and every arrowhead lands short of its box. The backend derives all three
+slots from your single `canvas.height`, so they can never disagree — just set `canvas.height` tall
+enough for the lowest box plus its wires (≈ lowest box bottom + 25).
+
+### 10.2 Per-line facts *(active)*
+
+A box's `shape_html` may split its fact lines into individually clickable links instead of plain text:
+
+```html
+<span class="fact" data-component="KEY" data-step="N">20 Hz · chunk 8 · T = 8</span><br>
+<span class="fact" data-component="KEY2" data-step="0">image [B,8,2,3,224,224]</span>
+```
+
+- Clicking a fact selects component `KEY` AND snippet index `N` (0-based), so one box can point each
+  line at a different snippet — and a fact MAY target a different component than its enclosing box.
+- Every value in a fact must be present in the code the click opens. Paper-only numbers are forbidden
+  in diagram boxes — they live in the §6 hyperparameter section with citations.
+- Facts count as data: the §7.1 backend check rejects any fact whose `data-component` is not a live
+  component/hp entry, or whose `data-step` is outside that component's snippet count. Omit `data-step`
+  only when the target has a single snippet (it defaults to 0).
+
+### 10.3 Embedded paper panel *(fast-follow — not in v1)*
+
+The reference page also embeds the sanitized source paper in a lower right-pane panel and highlights
+the exact sentence / table cell backing each hyperparameter (per-component `paperRefs` of
+`{anchor, quote, label}`, with cross-node sentence marking). This is a documented fast-follow and is
+NOT part of the v1 `finalize_diagram` contract: in v1 the paper drives the §6 hyperparameter section
+only (`hp_row` components plus `paper_citations` provenance). Do not emit paper-panel fields.
+
+### 10.4 Wire generation & geometry gates *(fast-follow — not in v1)*
+
+The reference generator never hand-places wires: it renders headless, measures every rendered box,
+then regenerates all `path_d` from the measured edges (same-column verticals, fan-out to the mid-gap,
+side-entry lanes, left corridors for skip-level hops), re-spacing columns to uniform gaps until the
+§7.2 overlap / wire-through-box report is clean, plus an endpoint audit and a real-browser screenshot
+(§7.3). In v1 you supply orthogonal `path_d` yourself from your intended layout (§5) with generous
+vertical gaps; the measure-and-regenerate loop and the §7.2/7.3 geometry gates remain the documented
+fast-follow.

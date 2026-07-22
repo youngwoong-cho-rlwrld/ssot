@@ -107,6 +107,43 @@ def test_render_with_paper_section():
     assert "AdamW" in html
 
 
+def test_fact_handler_and_css_present():
+    html = render_page(_model())
+    assert ".fact { cursor: pointer; }" in html
+    assert 'document.querySelectorAll(".fact")' in html
+
+
+def test_valid_fact_passes_integrity():
+    model = _model()
+    # head has two snippets? no — head has one; dataset has one. Target dataset step 0.
+    model["components"][0]["shape_html"] = (
+        '<span class="fact" data-component="head" data-step="0">points at head</span>'
+    )
+    assert check_integrity(model) == []
+    assert "points at head" in render_page(model)
+
+
+def test_fact_unknown_component_flagged():
+    model = _model()
+    model["components"][0]["shape_html"] = (
+        '<span class="fact" data-component="nope" data-step="0">x</span>'
+    )
+    errors = check_integrity(model)
+    assert any("fact targets unknown component 'nope'" in e for e in errors)
+    with pytest.raises(IntegrityError):
+        render_page(model)
+
+
+def test_fact_step_out_of_range_flagged():
+    model = _model()
+    # head has exactly one snippet (step 0); step 3 is out of range.
+    model["components"][0]["shape_html"] = (
+        '<span class="fact" data-component="head" data-step="3">x</span>'
+    )
+    errors = check_integrity(model)
+    assert any("data-step 3 out of range" in e for e in errors)
+
+
 def test_paper_mismatch_hides_hp_section():
     html = render_page(_model(with_paper=True, paper_status="mismatch"))
     assert 'class="hp"' not in html

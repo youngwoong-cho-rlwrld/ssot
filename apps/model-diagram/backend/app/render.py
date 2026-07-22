@@ -11,11 +11,40 @@ from __future__ import annotations
 import base64
 import html
 import json
+import re
 from typing import Any
 
 
 class IntegrityError(Exception):
     """A rendered page failed a spec §7.1 static integrity check."""
+
+
+# Per-line fact links live inside the free-form ``shape_html`` (spec §10.2):
+# <span class="fact" data-component="KEY" data-step="N">…</span>. Facts carry no
+# schema field of their own — they are validated by parsing the shape HTML.
+_FACT_TAG_RE = re.compile(r'<span\b[^>]*\bclass="[^"]*\bfact\b[^"]*"[^>]*>', re.IGNORECASE)
+_FACT_COMPONENT_RE = re.compile(r'\bdata-component="([^"]*)"')
+_FACT_STEP_RE = re.compile(r'\bdata-step="([^"]*)"')
+
+
+def _fact_refs(shape_html: str) -> list[tuple[str, int]]:
+    """Extract (data-component, data-step) for every ``.fact`` span in shape_html.
+
+    A missing data-step defaults to 0 (as the page JS does); a non-integer
+    data-step yields -1 so the caller flags it out of range.
+    """
+    refs: list[tuple[str, int]] = []
+    for tag in _FACT_TAG_RE.findall(shape_html or ""):
+        key_match = _FACT_COMPONENT_RE.search(tag)
+        if not key_match:
+            continue
+        step_match = _FACT_STEP_RE.search(tag)
+        try:
+            step = int(step_match.group(1)) if step_match else 0
+        except ValueError:
+            step = -1
+        refs.append((key_match.group(1), step))
+    return refs
 
 
 # ── model shaping ─────────────────────────────────────────────────────────
@@ -89,6 +118,22 @@ def check_integrity(model: dict) -> list[str]:
             if not (1 <= start <= end <= n):
                 errors.append(
                     f"component {key!r} snippet {start}-{end} out of range for {src!r} (1..{n})"
+                )
+
+    # Per-line facts (spec §10.2): every .fact span must target a live components
+    # entry with an in-range step index, so a click never lands on nothing.
+    for comp in model["components"]:
+        if comp["kind"] != "component":
+            continue
+        for target_key, step in _fact_refs(comp.get("shape_html") or ""):
+            if target_key not in comp_json:
+                errors.append(
+                    f"component {comp['component_key']!r} fact targets unknown component {target_key!r}"
+                )
+            elif not (0 <= step < len(comp_json[target_key])):
+                errors.append(
+                    f"component {comp['component_key']!r} fact data-step {step} out of range for "
+                    f"{target_key!r} (0..{len(comp_json[target_key]) - 1})"
                 )
 
     # Every data-component attribute must have a components entry and vice versa.
@@ -402,6 +447,9 @@ _PAGE_TEMPLATE = """<!doctype html>
       font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }}
 
+    .fact {{ cursor: pointer; }}
+    .fact:hover {{ text-decoration: underline; }}
+
 {position_css}
 {hp_css}
 
@@ -623,6 +671,15 @@ _PAGE_TEMPLATE = """<!doctype html>
 
     componentButtons.forEach((button) => {{
       button.addEventListener("click", () => selectComponent(button.dataset.component));
+    }});
+
+    document.querySelectorAll(".fact").forEach((el) => {{
+      el.addEventListener("click", (ev) => {{
+        ev.stopPropagation();
+        activeComponent = el.dataset.component;
+        activeStep = Number(el.dataset.step || 0);
+        render();
+      }});
     }});
 
     previous.addEventListener("click", () => {{
