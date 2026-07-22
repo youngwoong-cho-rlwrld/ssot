@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Loader2,
   RefreshCcw,
+  Terminal,
   Upload,
   X,
 } from "lucide-react";
@@ -70,6 +71,9 @@ export function Viewer({
   // Both start collapsed so the diagram has full width until the user opens one.
   const [chatOpen, setChatOpen] = useState(false);
   const [memoOpen, setMemoOpen] = useState(false);
+  // Agent-output pane state, owned here so its toggle can live in the viewer
+  // header; wired down to the embedded RunProgress (running runs only).
+  const [outputOpen, setOutputOpen] = useState(false);
   // Bumped when an in-viewer running run completes, to re-fetch the diagram so
   // the run flips to "done" and the rendered page replaces the progress view.
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -107,6 +111,11 @@ export function Viewer({
     return () => controller.abort();
   }, [runId, current?.paper_status]);
 
+  // Collapse the output pane when switching runs.
+  useEffect(() => {
+    setOutputOpen(false);
+  }, [runId]);
+
   const runOptions = runs.map((r, i) => ({
     value: String(r.run_id),
     label: runLabel(r, i, runs.length),
@@ -128,16 +137,6 @@ export function Viewer({
           {current?.title || detail?.path || "Diagram"}
         </h2>
         <span className="viewer__spacer" />
-        {runOptions.length > 1 && (
-          <div className="viewer__runs">
-            <SsotSelect
-              value={String(runId)}
-              onChange={(v) => onSelectRun(Number(v))}
-              options={runOptions}
-              aria-label="Run history"
-            />
-          </div>
-        )}
         {current?.status === "running" && (
           <button
             type="button"
@@ -149,6 +148,16 @@ export function Viewer({
             <Ban size={15} />
           </button>
         )}
+        {runOptions.length > 1 && (
+          <div className="viewer__runs">
+            <SsotSelect
+              value={String(runId)}
+              onChange={(v) => onSelectRun(Number(v))}
+              options={runOptions}
+              aria-label="Run history"
+            />
+          </div>
+        )}
         <button
           type="button"
           className="ssot-btn"
@@ -156,6 +165,18 @@ export function Viewer({
         >
           <RefreshCcw size={14} /> Re-provision
         </button>
+        {current?.status === "running" && (
+          <button
+            type="button"
+            className={`ssot-icon-btn${outputOpen ? " ssot-icon-btn--on" : ""}`}
+            onClick={() => setOutputOpen((v) => !v)}
+            title={outputOpen ? "Hide agent output" : "Show agent output"}
+            aria-label={outputOpen ? "Hide agent output" : "Show agent output"}
+            aria-pressed={outputOpen}
+          >
+            <Terminal size={15} />
+          </button>
+        )}
       </div>
 
       {current?.paper_status === "mismatch" && (
@@ -192,6 +213,8 @@ export function Viewer({
             key={runId}
             embedded
             runId={runId}
+            outputOpen={outputOpen}
+            onOutputToggle={() => setOutputOpen((v) => !v)}
             onDone={() => setReloadNonce((n) => n + 1)}
             onBack={onBack}
           />
@@ -528,8 +551,25 @@ function MemoField({ diagramId, initial }: { diagramId: number; initial: string 
   const [value, setValue] = useState(initial);
   const [status, setStatus] = useState<MemoStatus>("idle");
   const savedRef = useRef(initial);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-grow with content. Modern browsers do this natively via CSS
+  // `field-sizing: content` (see .viewer__memo-input); for others (Safari, older
+  // Chrome) sync the height to scrollHeight. Min/max height + scroll are enforced
+  // by CSS, so this stays clamped to ~3 rows … 40vh.
+  const autosize = useCallback(() => {
+    const el = taRef.current;
+    if (!el) return;
+    if (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content")) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    autosize();
+  }, [value, autosize]);
 
   const save = useCallback(
     async (next: string) => {
@@ -571,6 +611,7 @@ function MemoField({ diagramId, initial }: { diagramId: number; initial: string 
   return (
     <div className="viewer__memo">
       <textarea
+        ref={taRef}
         id={`memo-${diagramId}`}
         className="ssot-input viewer__memo-input"
         rows={3}

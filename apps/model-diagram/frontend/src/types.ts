@@ -171,16 +171,24 @@ export interface CreateRunResult {
 // retained for backward compatibility.
 export type Runtime = "sdk" | "claude-cli" | "none";
 
+// Per-family runtime availability (GET /api/health `runtimes`).
+export type ClaudeRuntime = "sdk" | "cli" | null;
+export type CodexRuntime = "cli" | null;
+
 export interface HealthResult {
   status: string;
   anthropic_configured: boolean;
   runtime: Runtime;
+  runtimes?: { claude: ClaudeRuntime; codex: CodexRuntime };
 }
 
 // GET /api/models — the generation-model allowlist and the backend default.
+export type ModelFamily = "claude" | "codex";
+
 export interface ModelOption {
   id: string;
   label: string;
+  family?: ModelFamily;
 }
 
 export interface ModelsResult {

@@ -403,17 +403,6 @@
   color: var(--ssot-text-soft);
 }
 
-.stage__detail {
-  margin-left: auto;
-  font-size: var(--ssot-text-xs);
-  color: var(--ssot-text-faint);
-  font-family: var(--ssot-font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 45%;
-}
-
 .stage--done .stage__marker {
   color: var(--ssot-success);
 }
@@ -576,6 +565,12 @@
 
 .viewer__head {
   gap: 10px;
+  /* Never flex-shrink: the header is a flex item in the .panel.viewer column, and
+     without this the theme default (flex-shrink:1) lets it compress from its natural
+     ~49px toward the .panel__head min-height (41px) when the left panel's chat
+     section expands and consumes the column. Pin it so its size is invariant to the
+     split. */
+  flex: 0 0 auto;
 }
 
 .viewer__title {
@@ -745,9 +740,18 @@
 }
 
 .viewer__memo-input {
-  resize: vertical;
-  min-height: 60px;
+  resize: none;
+  /* Override the fixed height: var(--ssot-control-h) inherited from .ssot-input —
+     it is an explicit length that otherwise defeats both field-sizing:content
+     (which only governs an auto height) and the scrollHeight JS fallback, pinning
+     the textarea to one control-row. */
+  height: auto;
+  field-sizing: content; /* auto-grow with content where supported; JS fallback otherwise */
+  min-height: 60px; /* ~3 rows */
+  max-height: 40vh;
+  overflow-y: auto;
   line-height: 1.5;
+  padding: 8px 12px; /* .ssot-input is 0 vertical padding (single-row control) */
 }
 
 /* One-line truncated memo preview on a diagram card. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, Loader2, Upload, X } from "lucide-react";
+import { ArrowLeft, Loader2, Upload, X } from "lucide-react";
 import { SsotSelect } from "@ssot/ui/SsotSelect";
 import {
   ApiError,
@@ -12,7 +12,12 @@ import {
   validate,
 } from "./api";
 import { ModelSelect } from "./ModelSelect";
-import { FALLBACK_CLUSTERS, type ModelOption, type PaperInput } from "./types";
+import {
+  FALLBACK_CLUSTERS,
+  type HealthResult,
+  type ModelOption,
+  type PaperInput,
+} from "./types";
 
 type PaperMode = "none" | "url" | "pdf";
 
@@ -51,7 +56,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
   const [paperError, setPaperError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [runtime, setRuntime] = useState<"sdk" | "claude-cli" | "none" | null>(null);
+  const [runtimes, setRuntimes] = useState<HealthResult["runtimes"] | null>(null);
 
   // Populate the cluster list and the credentials warning from the backend.
   useEffect(() => {
@@ -64,7 +69,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
         // keep the static fallback list
       });
     getHealth(controller.signal)
-      .then((h) => setRuntime(h.runtime))
+      .then((h) => setRuntimes(h.runtimes ?? null))
       .catch(() => {
         // health probe is best-effort; don't block the form
       });
@@ -82,6 +87,20 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
   }, []);
 
   const clusterOptions = clusters.map((c) => ({ value: c, label: c }));
+
+  const selectedFamily = models.find((m) => m.id === model)?.family;
+
+  // No notice when the selected model's runtime is available. Only surface a
+  // warning (inline by the model select) when it ISN'T — no API key / no logged-in
+  // CLI for that family. Runtime availability comes from GET /api/health `runtimes`.
+  const claudeRt = runtimes?.claude ?? null;
+  const codexRt = runtimes?.codex ?? null;
+  let modelWarning: string | null = null;
+  if (selectedFamily === "codex" && !codexRt) {
+    modelWarning = "Codex CLI not available — run `codex login`, then restart the backend.";
+  } else if (selectedFamily === "claude" && !claudeRt) {
+    modelWarning = "No Claude runtime — set ANTHROPIC_API_KEY or log in to the Claude CLI, then restart the backend.";
+  }
 
   const selectMode = useCallback((mode: PaperMode) => {
     setPaperMode(mode);
@@ -197,28 +216,6 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
             void onSubmit();
           }}
         >
-          {runtime === "none" && (
-            <div className="notice notice--warn form__notice">
-              <AlertTriangle size={15} />
-              <div>
-                <strong>Agent credentials not configured.</strong>
-                <p>
-                  Runs will fail until the backend has a generation runtime. Either
-                  set <code>ANTHROPIC_API_KEY</code> in the repo <code>.env</code>,
-                  or log in to the Claude Code CLI (run <code>claude</code> and sign
-                  in), then restart the backend.
-                </p>
-              </div>
-            </div>
-          )}
-          {runtime === "claude-cli" && (
-            <div className="notice form__notice">
-              <p>
-                Runs use the logged-in Claude Code CLI (no API key set).
-              </p>
-            </div>
-          )}
-
           <label className="field">
             <span className="field__label">Cluster</span>
             <SsotSelect
@@ -233,6 +230,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
             <div className="field">
               <span className="field__label">Model</span>
               <ModelSelect value={model} options={models} onChange={setModel} />
+              {modelWarning && <span className="field__err">{modelWarning}</span>}
             </div>
           )}
 

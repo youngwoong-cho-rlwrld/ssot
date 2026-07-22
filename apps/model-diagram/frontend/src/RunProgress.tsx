@@ -67,6 +67,11 @@ interface Props {
   // panel header is dropped — the host supplies its own chrome — and the stage
   // checklist fills the available space.
   embedded?: boolean;
+  // Controlled output-pane state: when the host supplies these (the Viewer, whose
+  // header owns the toggle), RunProgress renders no toggle of its own and reflects
+  // the host's open state. Omitted → RunProgress owns the toggle itself (standalone).
+  outputOpen?: boolean;
+  onOutputToggle?: () => void;
 }
 
 interface TerminalError {
@@ -74,19 +79,32 @@ interface TerminalError {
   detail: string;
 }
 
-export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) {
+export function RunProgress({
+  runId,
+  onDone,
+  onBack,
+  embedded = false,
+  outputOpen,
+  onOutputToggle,
+}: Props) {
   // null until we learn from the run record whether a paper is attached; that
   // decides whether the paper stages appear in the checklist.
   const [hasPaper, setHasPaper] = useState<boolean | null>(null);
   const [currentStage, setCurrentStage] = useState<string | null>(null);
-  const [detail, setDetail] = useState<string | null>(null);
   const [failed, setFailed] = useState<TerminalError | null>(null);
   const [mismatch, setMismatch] = useState<string | null>(null);
-  const [showOutput, setShowOutput] = useState(false);
+  const [internalShowOutput, setInternalShowOutput] = useState(false);
   const [output, setOutput] = useState<string[]>([]);
   const outputRef = useRef<HTMLPreElement>(null);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+
+  // The output pane is host-controlled when the Viewer passes onOutputToggle
+  // (its header owns the toggle); otherwise RunProgress owns it (standalone).
+  const controlledOutput = onOutputToggle !== undefined;
+  const showOutput = controlledOutput ? !!outputOpen : internalShowOutput;
+  const toggleOutput = () =>
+    controlledOutput ? onOutputToggle() : setInternalShowOutput((v) => !v);
 
   // Prime from the run record: learn paper status, and short-circuit if the run
   // already reached a terminal state before we opened the stream.
@@ -118,12 +136,11 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
   // events, closing itself on any terminal frame.
   useEffect(() => {
     const close = openRunEvents(runId, {
-      onStage: (stage, stageDetail) => {
+      onStage: (stage) => {
         // A paper stage arriving is proof a paper is attached, whatever the
         // run record said — never filter out the stage we're currently in.
         if (PAPER_STAGES.has(stage as Stage)) setHasPaper(true);
         setCurrentStage(stage);
-        setDetail(stageDetail || null);
       },
       onWarning: (kind, warnDetail) => {
         if (kind === "paper_mismatch") setMismatch(warnDetail);
@@ -142,10 +159,10 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
   }, [runId]);
 
   // Reset the output buffer when switching runs (the stream replays the new run's
-  // lines from the DB on connect).
+  // lines from the DB on connect). The host resets its own controlled open-state.
   useEffect(() => {
     setOutput([]);
-    setShowOutput(false);
+    setInternalShowOutput(false);
   }, [runId]);
 
   // Keep the pane pinned to the latest line while it's open.
@@ -226,9 +243,6 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
                   )}
                 </span>
                 <span className="stage__label">{STAGE_LABEL[stage]}</span>
-                {active && detail && (
-                  <span className="stage__detail">{detail}</span>
-                )}
               </li>
             );
           })}
@@ -241,15 +255,14 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
     </>
   );
 
-  // Collapsed-state output toggle: an icon-only button in the top-right corner —
-  // the same spot the output panel's close (X) occupies when expanded.
-  // ONE toggle button, fixed at the top-right: opens AND closes the output pane
-  // (pressed/active state per the suite's toggle grammar — OpenClaw's tool-toggle).
-  const outputToggle = (
+  // Own toggle, rendered only when uncontrolled (standalone). When the Viewer
+  // controls the pane, its header renders the toggle instead. One icon button
+  // opens AND closes (pressed/active state, OpenClaw tool-toggle grammar).
+  const outputToggle = controlledOutput ? null : (
     <button
       type="button"
       className={`ssot-icon-btn${showOutput ? " ssot-icon-btn--on" : ""}`}
-      onClick={() => setShowOutput((v) => !v)}
+      onClick={toggleOutput}
       title={showOutput ? "Hide agent output" : "Show agent output"}
       aria-label={showOutput ? "Hide agent output" : "Show agent output"}
       aria-pressed={showOutput}
