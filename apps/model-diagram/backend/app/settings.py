@@ -269,7 +269,20 @@ LIST_DIR_MAX_ENTRIES = int(os.environ.get("MODEL_DIAGRAM_LIST_DIR_MAX", "400"))
 AGENT_MAX_ITERATIONS = int(os.environ.get("MODEL_DIAGRAM_AGENT_MAX_ITERATIONS", "80"))
 
 # Wall-clock ceiling for a single run; on timeout the run is marked agent_failure.
-RUN_TIMEOUT_S = float(os.environ.get("MODEL_DIAGRAM_RUN_TIMEOUT_S", "1800"))
+# 3600s (1h) of headroom for large repos. The real cure for the finalize-timeout was
+# removing base64 sources from the tool payload (the backend fetches bytes itself);
+# this ceiling is insurance for long analysis, not a substitute for that fix.
+RUN_TIMEOUT_S = float(os.environ.get("MODEL_DIAGRAM_RUN_TIMEOUT_S", "3600"))
 
 # Consecutive finalize_diagram integrity failures before giving up (plan §6).
 MAX_FINALIZE_ATTEMPTS = int(os.environ.get("MODEL_DIAGRAM_MAX_FINALIZE_ATTEMPTS", "3"))
+
+
+def geometry_pass_enabled() -> bool:
+    """Whether the post-finalize headless-Chrome geometry pass runs (§7.2 / A6).
+
+    On by default; set MODEL_DIAGRAM_GEOMETRY_PASS=0 to skip it (tests, or hosts
+    where launching a browser during finalize is undesirable). It also self-skips
+    when no Chrome/Chromium binary is present.
+    """
+    return os.environ.get("MODEL_DIAGRAM_GEOMETRY_PASS", "1") != "0"

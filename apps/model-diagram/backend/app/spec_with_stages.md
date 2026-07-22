@@ -40,22 +40,32 @@ labels lower-confidence). The run still completes.
   disagree, the label shows both: `paper: T5 · repo default: CLIP-L/14`.
 - **Line ranges are 1-indexed inclusive** and must point at the DEFINING code (class/function/config
   block), not incidental usage.
-- **Sources are embedded byte-for-byte** — put the exact file bytes (base64) in `sources[].content_b64`
-  and the repo-relative path in `sources[].name`.
+- **Sources are named, not pasted** — for every file a snippet points at, add a `sources[]` entry with
+  the repo-relative path in `sources[].name` (and its `source_key`). Do NOT paste file contents: the
+  backend fetches each named file's exact bytes itself at finalize time (via the same scoped read-only
+  access you used) and embeds them byte-for-byte. Only name files that actually exist under the root —
+  a name the backend cannot read is a retryable error and finalize will be rejected.
 
 ## 3. Structured result (finalize_diagram fields — the tool schema is authoritative)
 
 - `canvas`: `{width, height}` — width 680 by convention, height tall enough for all boxes and wires.
-- `sources[]`: `{source_key, name, content_b64, line_count}` — every file any snippet points at, base64
-  of the exact bytes read at the pinned commit, plus its line count.
+- `sources[]`: `{source_key, name, line_count}` — every file any snippet points at: a stable
+  `source_key`, the repo-relative `name`, and OPTIONALLY the `line_count` you expect (for cross-check
+  only). You do NOT send file contents — the backend fetches the exact bytes of each named file at
+  finalize time and embeds them, then verifies every snippet range against those bytes.
 - `components[]`: `{component_key, kebab_id, kind, name_html, shape_html, position, hp_value, hp_cite,
   snippets[], paper_citations[]}`.
   - `kind` is `component` (a diagram box — must have a `position` `{left, top, width, min_height}` and at
     least one snippet) or `hp_row` (a hyperparameter row — must have `hp_value`; `position` is null).
   - `snippets[]` entries are `{source_key, start, end}` (1-indexed inclusive) in step order; more than one
     enables the stepper.
-  - `paper_citations[]` (per component) `{label, paper_value, paper_location, code_value, confidence}` —
-    ONLY when a paper is attached and matches; provenance for the §6 hyperparameter section.
+  - `paper_citations[]` (per component) `{label, paper_value, paper_location, code_value, confidence,
+    paper_quote, paper_anchor}` — ONLY when a paper is attached and matches; provenance for the §6
+    hyperparameter section AND the §10.3 embedded paper panel. `paper_quote` is the EXACT full
+    sentence / table-cell text (copied verbatim from the injected paper) that states this value — a
+    complete statement, never a bare keyword; the panel highlights it when the component is clicked.
+    Leave `paper_quote` empty when the paper does not state the value (say `not stated` in the row).
+    `paper_anchor` is optional (leave empty unless you can identify a real DOM id in the paper).
 - `edges[]`: `{path_d, from_component_key, to_component_key}` — orthogonal wires (see §5).
 
 Integrity requirements (enforced by the backend, §7.1): every diagram box has a `position` and at least
@@ -82,6 +92,16 @@ positions (§5), and the canvas height (`canvas_height`) — set it tall enough 
   optimizer, losses) in left/right columns.
 - `shape_html` fact lines may be made individually clickable (`.fact` spans) so each line links to its
   own snippet — see §10.2.
+
+**Topology — branch what the code branches.** The layout MUST reflect the code's real data flow, not a
+tidy single column. If the pipeline has side inputs (a text encoder, an image/vision encoder, a
+proprio/state branch), auxiliary losses (feature/depth/contrastive terms beside the main action loss),
+or an optimizer, each is its OWN side-column box with its own wire(s) into the main column — you get
+fan-out (one box feeding several) and fan-in (several boxes feeding one). A purely linear, one-per-row
+single column is correct ONLY when the code path is genuinely linear end to end. If your layout came out
+all-linear, treat that as a review trigger: go back and check for a side encoder, an auxiliary loss, or
+an optimizer you collapsed into the trunk, and branch it out. Do NOT invent splits the code does not have
+— a genuinely linear model stays linear.
 
 **Wires** — orthogonal (`M/V/H` only), stair-step, with arrowheads (the backend adds the marker). Set
 `path_d` using only `M`/`V`/`H` commands. Start at the source box's bottom/side edge and end at the
@@ -133,7 +153,9 @@ in order (skip the two paper stages when no paper is attached):
 - `cross_checking_paper` — (paper only) confirm the paper describes THIS model; if not,
   `report_paper_mismatch` and continue code-only.
 - `laying_out` — assign box positions, wire paths, and any per-line facts (§10.2).
-- `finalizing` — call `finalize_diagram`.
+- `finalizing` — assemble the structured result and call `finalize_diagram` (name the source files;
+  the backend fetches their bytes and runs the §7.1 checks). Emit this stage BEFORE the tool call so the
+  UI shows progress while the backend fetches sources and renders.
 
 Terminals: `done` (via `finalize_diagram`), `not_a_model_root` (via `report_problem`),
 `failed` (agent error / exhausted budget / failed §7.1). `paper_mismatch` is a non-terminal WARNING —
@@ -162,35 +184,62 @@ enough for the lowest box plus its wires (≈ lowest box bottom + 25).
 
 ### 10.2 Per-line facts *(active)*
 
-A box's `shape_html` may split its fact lines into individually clickable links instead of plain text:
+A box's `shape_html` may split its fact lines into individually clickable links instead of plain text.
+The FIRST fact line is the box's tensor dimensions (when the component carries tensors) rendered in the
+one permitted accent color; boxes with no tensor flow (losses, optimizer, eval protocol) lead with
+their key value instead. Prose facts follow.
 
 ```html
-<span class="fact" data-component="KEY" data-step="N">20 Hz · chunk 8 · T = 8</span><br>
-<span class="fact" data-component="KEY2" data-step="0">image [B,8,2,3,224,224]</span>
+<span class="fact dim" data-component="KEY" data-step="0">image [B,8,2,3,224,224]</span><br>
+<span class="fact" data-component="KEY" data-step="1">20 Hz · chunk 8 · T = 8</span>
 ```
 
 - Clicking a fact selects component `KEY` AND snippet index `N` (0-based), so one box can point each
-  line at a different snippet — and a fact MAY target a different component than its enclosing box.
+  line at a different snippet.
+- A fact MUST target its own box's component: `data-component` equals the enclosing box's
+  `component_key`. If a line needs code from another component's snippets, copy that snippet into this
+  component and point the fact at the local index — a cross-component target lights up the wrong box's
+  outline and reads as a bug.
+- Mark tensor-dimension facts with `class="fact dim"`; they render in the single accent color
+  (`#2563eb`) — the only non-grayscale allowed (amends the grayscale invariant). Detect dim lines by
+  their `[B,…]` bracket notation.
 - Every value in a fact must be present in the code the click opens. Paper-only numbers are forbidden
   in diagram boxes — they live in the §6 hyperparameter section with citations.
-- Facts count as data: the §7.1 backend check rejects any fact whose `data-component` is not a live
-  component/hp entry, or whose `data-step` is outside that component's snippet count. Omit `data-step`
-  only when the target has a single snippet (it defaults to 0).
+- Facts count as data: the §7.1 backend check rejects any fact whose `data-component` is not its own
+  box's component, or whose `data-step` is outside that component's snippet count. Omit `data-step`
+  only when the box has a single snippet (it defaults to 0).
 
-### 10.3 Embedded paper panel *(fast-follow — not in v1)*
+### 10.3 Embedded paper panel *(active)*
 
-The reference page also embeds the sanitized source paper in a lower right-pane panel and highlights
-the exact sentence / table cell backing each hyperparameter (per-component `paperRefs` of
-`{anchor, quote, label}`, with cross-node sentence marking). This is a documented fast-follow and is
-NOT part of the v1 `finalize_diagram` contract: in v1 the paper drives the §6 hyperparameter section
-only (`hp_row` components plus `paper_citations` provenance). Do not emit paper-panel fields.
+The page embeds the sanitized source paper in a lower right-pane panel and highlights the exact
+sentence / table cell backing each cited value. The backend owns everything visual: it sanitizes the
+paper to a whitelisted, id-preserving HTML rendering (arXiv/HTML papers) or per-page text sections
+(PDF papers), embeds it as `paperDoc`, and builds `paperRefs` from your `paper_citations`. Clicking a
+component (a diagram box or an `hp_row`) whose citation carries a `paper_quote` opens the pane and
+cross-highlights that sentence (multi-text-node matching handled by the backend JS).
 
-### 10.4 Wire generation & geometry gates *(fast-follow — not in v1)*
+Your ONLY job for the panel: on each `paper_citations[]` entry, supply `paper_quote` = the exact, full
+sentence or table-cell text you read in the injected paper that states the value (§3). One quoted
+sentence per component drives its highlight; the first non-empty quote per component wins. A citation
+with an empty `paper_quote` produces no ref and the pane stays hidden for that component. `paper_anchor`
+is optional — leave it empty unless you can name a real DOM id; the matcher searches the whole doc when
+it is empty. Never fabricate a quote: if the sentence is not in the paper, leave `paper_quote` empty.
 
-The reference generator never hand-places wires: it renders headless, measures every rendered box,
-then regenerates all `path_d` from the measured edges (same-column verticals, fan-out to the mid-gap,
-side-entry lanes, left corridors for skip-level hops), re-spacing columns to uniform gaps until the
-§7.2 overlap / wire-through-box report is clean, plus an endpoint audit and a real-browser screenshot
-(§7.3). In v1 you supply orthogonal `path_d` yourself from your intended layout (§5) with generous
-vertical gaps; the measure-and-regenerate loop and the §7.2/7.3 geometry gates remain the documented
-fast-follow.
+### 10.4 Wire generation & geometry gates *(measure pass active; §7.3 screenshot fast-follow)*
+
+You still supply your intended layout — box positions and orthogonal `path_d` (§5) with generous
+vertical gaps. But the backend no longer trusts them blind: after your `finalize_diagram` persists and
+the provisional page renders, the backend runs a headless-Chrome **geometry pass** (§7.2). It measures
+every box's REAL rendered rect (boxes are taller than `min_height` once fact text wraps), then:
+
+- resolves vertical overlaps by pushing lower boxes straight down, preserving your column structure;
+- sets each box's `min-height` to its measured height so wrapped text is always enclosed (fixes the
+  "text overflows the box / into the next box" class of bug);
+- grows the canvas (updates the A1 height triad); and
+- regenerates every wire from the measured geometry (orthogonal M/V/H, routed through the cleared
+  inter-row gaps, never through a box interior).
+
+So your job is a *sensible* layout, not a pixel-perfect one — lay boxes out in the right columns with
+comfortable gaps and the backend corrects the geometry. The measure pass degrades gracefully: on a host
+with no Chrome/Chromium binary it is skipped and your layout is kept as-is, so still leave real vertical
+gaps. The endpoint audit and the real-browser screenshot eyeball (§7.3) remain a documented fast-follow.

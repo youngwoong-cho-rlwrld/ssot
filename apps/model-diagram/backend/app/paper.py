@@ -12,6 +12,8 @@ import hashlib
 import io
 import re
 from dataclasses import dataclass
+from html import escape as _html_escape
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +44,8 @@ class PaperResult:
     parsed_title: Optional[str] = None
     is_pdf: bool = False
     text: Optional[str] = None  # extracted text for HTML papers
+    # A4 paper panel: path to the sanitized HTML rendering embedded in the page.
+    panel_path: Optional[str] = None
 
 
 # ── URL normalization ─────────────────────────────────────────────────────
@@ -69,6 +73,7 @@ async def validate_upload(data: bytes, *, filename: str = "") -> PaperResult:
         return PaperResult(ok=False, error=detail)
     sha256 = hashlib.sha256(data).hexdigest()
     stored = _store_blob(data, sha256, ".pdf")
+    panel_path = _store_panel(pdf_panel_html(data), sha256)
     return PaperResult(
         ok=True,
         kind="pdf",
@@ -78,6 +83,7 @@ async def validate_upload(data: bytes, *, filename: str = "") -> PaperResult:
         page_count=page_count,
         parsed_title=title,
         is_pdf=True,
+        panel_path=panel_path,
     )
 
 
@@ -111,10 +117,11 @@ async def validate_url(url: str) -> PaperResult:
             return PaperResult(ok=False, error=detail)
         sha256 = hashlib.sha256(data).hexdigest()
         stored = _store_blob(data, sha256, ".pdf")
+        panel_path = _store_panel(pdf_panel_html(data), sha256)
         return PaperResult(
             ok=True, kind="url", source_url=url, stored_path=str(stored),
             content_type="application/pdf", sha256=sha256, page_count=page_count,
-            parsed_title=title, is_pdf=True,
+            parsed_title=title, is_pdf=True, panel_path=panel_path,
         )
 
     if content_type in ("text/html", "application/xhtml+xml", "text/plain") or not content_type:
@@ -123,10 +130,12 @@ async def validate_url(url: str) -> PaperResult:
             return PaperResult(ok=False, error="no paper-like text found at URL")
         sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
         stored = _store_blob(text.encode("utf-8"), sha256, ".txt")
+        raw_html = data.decode("utf-8", errors="replace")
+        panel_path = _store_panel(sanitize_paper_html(raw_html), sha256)
         return PaperResult(
             ok=True, kind="url", source_url=url, stored_path=str(stored),
             content_type="text/html", sha256=sha256, page_count=None,
-            parsed_title=title, is_pdf=False, text=text,
+            parsed_title=title, is_pdf=False, text=text, panel_path=panel_path,
         )
 
     return PaperResult(ok=False, error=f"unsupported content type: {content_type or 'unknown'}")
@@ -148,9 +157,11 @@ async def resolve_paper(kind: str, *, url: Optional[str], paper_ref: Optional[st
         ok, detail, page_count, title = _decode_pdf(data)
         if not ok:
             return PaperResult(ok=False, error=detail)
+        panel_path = _store_panel(pdf_panel_html(data), paper_ref)
         return PaperResult(
             ok=True, kind="pdf", stored_path=str(stored), content_type="application/pdf",
             sha256=paper_ref, page_count=page_count, parsed_title=title, is_pdf=True,
+            panel_path=panel_path,
         )
     return PaperResult(ok=False, error=f"unknown paper kind: {kind}")
 
@@ -243,3 +254,136 @@ def _extract_html_text(data: bytes) -> tuple[str, Optional[str]]:
     text = text.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     lines = [_WS_RE.sub(" ", line).strip() for line in text.splitlines()]
     return "\n".join(line for line in lines if line), title
+
+
+# ── A4 paper-panel rendering (sanitized HTML embedded in the page) ──────────
+
+# Structural tags kept for the embedded paper pane; every attribute is stripped
+# except ``id`` (the LaTeXML anchors the cross-highlighting scrolls to).
+_PANEL_KEEP_TAGS = frozenset({
+    "section", "h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "em", "i", "b",
+    "strong", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "figure",
+    "figcaption", "ul", "ol", "li", "div", "br", "cite", "sub", "sup",
+})
+# Dropped WITH their content (subtree skipped): the noise/interactive/vector bits.
+_PANEL_DROP_TAGS = frozenset({"script", "style", "svg", "nav", "button", "annotation", "annotation-xml"})
+# Void elements never emit an end tag, so they must never touch the skip counter
+# (A4.1): an <img> inside a dropped subtree that bumps skip is never balanced and
+# silently truncates the rest of the document.
+_PANEL_VOID_TAGS = frozenset({
+    "br", "img", "hr", "input", "meta", "link", "area", "base", "col", "embed",
+    "source", "track", "wbr",
+})
+_ARTICLE_RE = re.compile(r"<article\b[^>]*>(.*?)</article>", re.IGNORECASE | re.DOTALL)
+_BODY_RE = re.compile(r"<body\b[^>]*>(.*?)</body>", re.IGNORECASE | re.DOTALL)
+
+
+class _PanelSanitizer(HTMLParser):
+    """Reduce arbitrary paper HTML to the whitelisted, id-preserving subset (A4.1)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._skip = 0  # depth inside a dropped subtree
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        tag = tag.lower()
+        if tag == "math":
+            # Render the LaTeX alt text as escaped text; skip the MathML children.
+            if not self._skip:
+                alt = dict(attrs).get("alttext")
+                if alt:
+                    self.parts.append(_html_escape(alt))
+            self._skip += 1
+            return
+        if tag in _PANEL_DROP_TAGS:
+            if tag not in _PANEL_VOID_TAGS:
+                self._skip += 1
+            return
+        if self._skip:
+            return
+        if tag not in _PANEL_KEEP_TAGS:
+            return
+        if tag in _PANEL_VOID_TAGS:
+            self.parts.append(f"<{tag}>")
+            return
+        anchor = dict(attrs).get("id")
+        if anchor:
+            self.parts.append(f'<{tag} id="{_html_escape(anchor, quote=True)}">')
+        else:
+            self.parts.append(f"<{tag}>")
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        tag = tag.lower()
+        if tag == "math" and not self._skip:
+            alt = dict(attrs).get("alttext")
+            if alt:
+                self.parts.append(_html_escape(alt))
+            return
+        if self._skip:
+            return
+        if tag in _PANEL_KEEP_TAGS and tag in _PANEL_VOID_TAGS:
+            self.parts.append(f"<{tag}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag == "math":
+            if self._skip:
+                self._skip -= 1
+            return
+        if tag in _PANEL_DROP_TAGS:
+            if tag not in _PANEL_VOID_TAGS and self._skip:
+                self._skip -= 1
+            return
+        if self._skip:
+            return
+        if tag in _PANEL_KEEP_TAGS and tag not in _PANEL_VOID_TAGS:
+            self.parts.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self.parts.append(_html_escape(data))
+
+
+def sanitize_paper_html(raw_html: str) -> str:
+    """Sanitized, id-preserving HTML for the embedded paper pane (A4.1).
+
+    Slices to the paper's <article> (else <body>) so head/nav text never leaks,
+    then keeps only the whitelisted structural tags with ids intact.
+    """
+    match = _ARTICLE_RE.search(raw_html) or _BODY_RE.search(raw_html)
+    fragment = match.group(1) if match else raw_html
+    parser = _PanelSanitizer()
+    parser.feed(fragment)
+    parser.close()
+    return "".join(parser.parts).strip()
+
+
+def pdf_panel_html(data: bytes) -> str:
+    """Panel HTML for a PDF paper: one id'd section per page of extracted text.
+
+    PDFs carry no DOM, so the pane falls back to per-page text sections
+    (``id="page-N"``) whose paragraphs the agent's quotes can still be found in.
+    """
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        pages = [page.extract_text() or "" for page in reader.pages]
+    except Exception:
+        return ""
+    sections: list[str] = []
+    for index, page_text in enumerate(pages, start=1):
+        paras = [_WS_RE.sub(" ", p).strip() for p in re.split(r"\n\s*\n", page_text)]
+        body = "".join(f"<p>{_html_escape(p)}</p>" for p in paras if p)
+        if not body:
+            continue
+        sections.append(f'<section id="page-{index}"><h3>Page {index}</h3>{body}</section>')
+    return "".join(sections)
+
+
+def _store_panel(panel_html: str, sha256: str) -> Optional[str]:
+    """Store the panel HTML next to its paper blob, keyed by the paper sha256."""
+    if not panel_html:
+        return None
+    path = settings.papers_dir() / f"{sha256}.panel.html"
+    path.write_text(panel_html, encoding="utf-8")
+    return str(path)

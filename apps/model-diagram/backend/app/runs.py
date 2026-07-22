@@ -1,261 +1,283 @@
-"""Run lifecycle: detached agent tasks + per-run SSE pub/sub.
+"""Run lifecycle: detached worker process + DB-tailing SSE.
 
-A run executes as a detached asyncio task. Stage events are persisted as they
-happen and also published to any live SSE subscribers. A client disconnecting
-from the SSE stream NEVER cancels the run — the task owns its own lifetime.
+A run executes in its own detached OS process (:mod:`app.run_worker`), spawned
+here, which writes ALL state (stages, agent output, finalize rows, terminal
+status) to the sqlite DB. The web process holds NO run state in memory, so a run
+survives a backend restart (dev-mode ``uvicorn --reload`` on every ``.py`` edit,
+deploys) — the worker keeps running and the DB stays the single source of truth.
 
-SSE messages are ``data: <json>\\n\\n`` with a ``type`` field per plan §10:
-``stage`` | ``warning`` | ``done`` | ``error``.
+The SSE stream (:func:`event_stream`) tails that DB: it replays persisted stage
+events + output lines, then polls for new rows and status changes, emitting the
+terminal frame the moment the row reaches ``done``/``error``. This survives
+worker/web restarts transparently — a client reconnect just resumes tailing — and
+delivers the terminal frame even when the run finished while no client was
+connected.
+
+SSE messages are ``data: <json>\\n\\n`` with a ``type`` field:
+``stage`` | ``warning`` | ``log`` | ``done`` | ``error``.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import os
+import signal
+import subprocess
+import sys
+import threading
 from typing import AsyncIterator, Optional
 
-from . import agent, agent_cli, agent_codex, db, paper as paper_mod, settings
-from .agent import CredentialsMissing
-from .agent_cli import CliUnavailable
-from .agent_codex import CodexUnavailable
-from .fsaccess import FsAccess, FsError, resolve_access
-from .pathcheck import precheck_path
-from .render import IntegrityError, render_page
-from .schemas import FinalizePayload
-from .user_context import user_scope
+from . import db, settings
 
 _TERMINAL_STATUSES = {"done", "error"}
-_NO_RUNTIME_DETAIL = (
-    "No agent runtime is configured. Set ANTHROPIC_API_KEY in the repo-root .env, "
-    "or log in to the Claude Code CLI (run `claude` and sign in), then restart the backend."
-)
-_NO_CODEX_RUNTIME_DETAIL = (
-    "The codex CLI is not available for this model. Install it and sign in "
-    "(run `codex login`), then restart the backend — or pick a Claude model."
-)
+# error_kind recorded for a user cancellation; the frontend treats it as a neutral
+# outcome (not a failure) — distinct from agent_failure et al.
+CANCELLED_KIND = "cancelled"
+CANCELLED_DETAIL = "cancelled by user"
+# How often the SSE stream polls the DB for new stages/output/status. ~1s keeps
+# the UI live without hammering sqlite for each connected client.
+_POLL_SECONDS = float(os.environ.get("MODEL_DIAGRAM_SSE_POLL_S", "1.0"))
+
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-class _Broker:
-    """Per-run fan-out of run events to live SSE subscribers."""
+def _spawn_worker(module: str, arg: int, label: str) -> Optional[int]:
+    """Spawn a detached worker (``python -m <module> <arg>``); return its pid or None.
 
-    def __init__(self) -> None:
-        self._subs: dict[int, set[asyncio.Queue]] = {}
-
-    def subscribe(self, run_id: int) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
-        self._subs.setdefault(run_id, set()).add(queue)
-        return queue
-
-    def unsubscribe(self, run_id: int, queue: asyncio.Queue) -> None:
-        subs = self._subs.get(run_id)
-        if subs:
-            subs.discard(queue)
-            if not subs:
-                self._subs.pop(run_id, None)
-
-    def publish(self, run_id: int, event: dict) -> None:
-        for queue in list(self._subs.get(run_id, ())):
-            queue.put_nowait(event)
-
-
-_broker = _Broker()
-# Hold references to detached tasks so they are not garbage-collected mid-run.
-_tasks: set[asyncio.Task] = set()
+    ``start_new_session=True`` detaches the worker into its own session/process group
+    so it is not killed when the web process (its parent) restarts; on a cross-restart
+    the worker reparents to init, which reaps it. A daemon reaper thread waits on the
+    child so it does not linger as a zombie within one web-process lifetime.
+    """
+    env = os.environ.copy()
+    # Pin the worker (and any MCP subprocess it launches) to the exact same DB the
+    # web process is using, regardless of how each resolves defaults.
+    env["MODEL_DIAGRAM_DB"] = str(settings.db_path())
+    proc = subprocess.Popen(
+        [sys.executable, "-m", module, str(arg)],
+        cwd=_BACKEND_DIR,
+        env=env,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+    )
+    threading.Thread(target=proc.wait, name=label, daemon=True).start()
+    return proc.pid
 
 
-def start_run(run_id: int, *, user_email: str) -> None:
-    """Spawn the detached agent task for a running run."""
-    task = asyncio.create_task(_execute_run(run_id, user_email))
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
+def start_run(run_id: int, *, user_email: str | None = None) -> None:
+    """Spawn the detached worker process that executes ``run_id`` (pid recorded so
+    reconciliation can probe liveness; the worker resolves its own user identity)."""
+    try:
+        pid = _spawn_worker("app.run_worker", run_id, f"reap-run-{run_id}")
+    except Exception as exc:  # spawning failed outright — fail the run in the DB
+        db.update_run_status(
+            run_id, "error", error_kind="agent_failure",
+            error_detail=f"could not start the generation worker: {exc}",
+        )
+        return
+    db.set_run_pid(run_id, pid)
 
 
-async def _execute_run(run_id: int, user_email: str) -> None:
-    # The task runs outside any HTTP request, so resolve settings as this user.
-    with user_scope(user_email):
-        try:
-            await asyncio.wait_for(_run_body(run_id), timeout=settings.RUN_TIMEOUT_S)
-        except asyncio.TimeoutError:
-            _fail(run_id, "agent_failure", f"run timed out after {settings.RUN_TIMEOUT_S:.0f}s")
-        except CodexUnavailable:
-            _fail(run_id, "credentials_not_configured", _NO_CODEX_RUNTIME_DETAIL)
-        except (CredentialsMissing, CliUnavailable):
-            _fail(run_id, "credentials_not_configured", _NO_RUNTIME_DETAIL)
-        except Exception as exc:  # never let a run task die silently
-            _fail(run_id, "agent_failure", f"unexpected error: {exc}")
+def start_chat(message_id: int) -> None:
+    """Spawn the detached chat worker that produces assistant ``message_id``."""
+    try:
+        pid = _spawn_worker("app.chat_worker", message_id, f"reap-chat-{message_id}")
+    except Exception as exc:
+        db.finish_chat_message(message_id, "error", error_detail=f"could not start the chat worker: {exc}")
+        return
+    db.set_chat_pid(message_id, pid)
 
 
-async def _run_body(run_id: int) -> None:
+# ── cancellation ─────────────────────────────────────────────────────────────
+
+
+async def cancel_run(run_id: int, *, grace_seconds: float = 3.0) -> str:
+    """Cancel a running run: record ``cancelled``, then stop its worker group.
+
+    Returns ``"cancelled"`` on success, ``"not_found"`` for an unknown run, or
+    ``"not_running"`` if the run is already terminal (the DB flip is guarded, so a
+    run that finished a moment before losing this race is left as-is).
+
+    The status is flipped FIRST (guarded, so it can't clobber a genuine terminal
+    result) so the SSE tail emits the cancelled frame even if the signal is slow;
+    then the worker's whole process group is SIGTERM'd (the worker is a session
+    leader via ``start_new_session``, so the CLI + MCP children die with it) and
+    escalated to SIGKILL after a short grace.
+    """
     run = db.get_run(run_id)
     if run is None:
-        return
+        return "not_found"
+    if run["status"] != "running":
+        return "not_running"
+    if not db.mark_terminal(run_id, "error", error_kind=CANCELLED_KIND, error_detail=CANCELLED_DETAIL):
+        return "not_running"  # finished concurrently — respect the real result
+    db.add_output_line(run_id, "cancelled by user")
+    await _terminate_worker_group(run.get("pid"), grace_seconds)
+    return "cancelled"
 
-    # Re-validate the path on every run (plan §4): resolve the root fresh.
-    check = await precheck_path(run["cluster"], run["path"])
-    if not check.ok or not check.resolved_root:
-        _fail(run_id, "broken_path", check.detail or "path precheck failed")
-        return
 
-    # The run's model was chosen at create time and stored on the row; older rows
-    # (pre-model-select) fall back to the backend default. Runtime is selected by
-    # the model's family: codex ids → codex CLI, claude ids → SDK/Claude CLI.
-    model = run.get("model") or settings.model_name()
-    runtime = settings.runtime_for_model(model)
-    if runtime == "none":
-        detail = _NO_CODEX_RUNTIME_DETAIL if settings.model_family(model) == "codex" else _NO_RUNTIME_DETAIL
-        _fail(run_id, "credentials_not_configured", detail)
+async def _terminate_worker_group(pid: object, grace_seconds: float) -> None:
+    """SIGTERM the worker's process group, escalating to SIGKILL after a grace."""
+    if not pid:
         return
-
-    # Resolve cluster access ONCE, here in the backend where the user's identity
-    # and settings are available. The resolved config is handed to the fs helpers
-    # and, on the CLI/codex runtimes, to the out-of-process MCP worker (which has no
-    # identity of its own) — so no subprocess ever reads ssot.db.
+    pid = int(pid)
     try:
-        access = await resolve_access(run["cluster"])
-    except FsError as exc:
-        _fail(run_id, "broken_path", str(exc))
+        pgid = os.getpgid(pid)
+    except OSError:
+        pgid = pid  # already gone, or we can't read it; killpg(pid) still targets its group
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        return  # worker already exited
+    except OSError:
+        return
+    deadline = asyncio.get_event_loop().time() + grace_seconds
+    while db._pid_alive(pid) and asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(0.2)
+    if db._pid_alive(pid):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
+async def cancel_chat(message_id: int, *, grace_seconds: float = 3.0) -> str:
+    """Cancel a pending chat turn: flip the message to a neutral cancelled state, then
+    stop its worker group. Mirrors :func:`cancel_run` (guarded write + SIGTERM/KILL)."""
+    msg = db.get_chat_message(message_id)
+    if msg is None:
+        return "not_found"
+    if msg["status"] != "pending":
+        return "not_running"
+    if not db.finish_chat_message(message_id, "error", error_detail=CANCELLED_DETAIL):
+        return "not_running"
+    db.add_chat_output_line(message_id, "cancelled by user")
+    await _terminate_worker_group(msg.get("pid"), grace_seconds)
+    return "cancelled"
+
+
+# ── SSE (DB-tailing) ─────────────────────────────────────────────────────────
+
+
+def _chat_message_frame(msg: dict) -> dict:
+    return {
+        "type": "message",
+        "id": msg["id"],
+        "role": msg["role"],
+        "content": msg.get("content") or "",
+        "status": msg["status"],
+        "error_detail": msg.get("error_detail"),
+        "revised_run_id": msg.get("revised_run_id"),
+        "seq": msg["seq"],
+        "ts": msg.get("updated_at") or msg.get("created_at"),
+    }
+
+
+async def chat_event_stream(message_id: int) -> AsyncIterator[dict]:
+    """Tail one assistant chat message from the DB: replay its activity log, stream new
+    log lines + status, and close on the terminal (done/error) message frame.
+
+    Same DB-tail design as :func:`event_stream` (survives restarts; a dead worker is
+    reconciled on each poll so the stream resolves instead of hanging)."""
+    last_seq = 0
+
+    def drain_logs() -> list[dict]:
+        nonlocal last_seq
+        out: list[dict] = []
+        for row in db.list_chat_output(message_id, after_seq=last_seq):
+            last_seq = row["seq"]
+            out.append({"type": "log", "seq": row["seq"], "line": row["line"], "ts": row["ts"]})
+        return out
+
+    for frame in drain_logs():
+        yield _sse(frame)
+
+    msg = db.get_chat_message(message_id)
+    if msg is None:
+        yield _sse({"type": "error", "detail": "chat message not found"})
+        return
+    yield _sse(_chat_message_frame(msg))
+    if msg["status"] != "pending":
         return
 
-    fs = FsAccess(run["cluster"], check.resolved_root, access=access)
-    paper_row = db.get_paper(run_id)
-
-    async def on_stage(stage: str, detail: str) -> None:
-        event = db.add_stage_event(run_id, stage, detail)
-        _broker.publish(run_id, {"type": "stage", "id": event["id"], "stage": stage, "detail": detail, "ts": event["ts"]})
-
-    async def on_paper_mismatch(reason: str) -> None:
-        db.set_paper_status(run_id, "mismatch", reason)
-        _broker.publish(run_id, {"type": "warning", "kind": "paper_mismatch", "detail": reason})
-
-    async def finalize_cb(raw: dict) -> tuple[bool, Optional[str]]:
-        return await _try_finalize(run_id, raw)
-
-    if runtime == "sdk":
-        paper_block = paper_mod.load_paper_block(paper_row) if paper_row else []
-        outcome = await agent.run_agent(
-            fs=fs,
-            cluster=run["cluster"],
-            root=check.resolved_root,
-            model=model,
-            paper_block=paper_block,
-            on_stage=on_stage,
-            finalize_cb=finalize_cb,
-            on_paper_mismatch=on_paper_mismatch,
-        )
-    elif runtime == "codex":  # the codex CLI serves the same tools over the same MCP server
-        paper_text = paper_mod.load_paper_text(paper_row) if paper_row else None
-        outcome = await agent_codex.run_agent_codex(
-            run_id=run_id,
-            cluster=run["cluster"],
-            root=check.resolved_root,
-            model=model,
-            access=access,
-            paper_text=paper_text,
-            has_paper=paper_row is not None,
-            on_stage=on_stage,
-            finalize_cb=finalize_cb,
-            on_paper_mismatch=on_paper_mismatch,
-        )
-    else:  # claude-cli: the CLI serves the same tools over a stdio MCP server
-        paper_text = paper_mod.load_paper_text(paper_row) if paper_row else None
-        outcome = await agent_cli.run_agent_cli(
-            run_id=run_id,
-            cluster=run["cluster"],
-            root=check.resolved_root,
-            model=model,
-            access=access,
-            paper_text=paper_text,
-            has_paper=paper_row is not None,
-            on_stage=on_stage,
-            finalize_cb=finalize_cb,
-            on_paper_mismatch=on_paper_mismatch,
-        )
-
-    if outcome.status == "done":
-        db.update_run_status(
-            run_id, "done", paper_status=outcome.paper_status, paper_warning=outcome.paper_warning or ""
-        )
-        _broker.publish(run_id, {"type": "done", "run_id": run_id})
-        return
-
-    kind = outcome.error_kind or "agent_failure"
-    db.update_run_status(run_id, "error", error_kind=kind, error_detail=outcome.error_detail)
-    _broker.publish(run_id, {"type": "error", "kind": kind, "detail": outcome.error_detail})
-
-
-async def _try_finalize(run_id: int, raw: dict) -> tuple[bool, Optional[str]]:
-    """Validate + persist + render one finalize attempt.
-
-    Returns (True, None) on success (rows persisted, HTML cached), or
-    (False, detail) so the agent can correct and call finalize_diagram again.
-    """
-    try:
-        payload = FinalizePayload.model_validate(raw)
-    except Exception as exc:
-        return False, f"payload does not match the schema: {exc}"
-
-    # Snippets must reference declared sources before we touch the DB.
-    source_keys = {s.source_key for s in payload.sources}
-    for comp in payload.components:
-        for snip in comp.snippets:
-            if snip.source_key not in source_keys:
-                return False, f"component {comp.component_key!r} snippet references unknown source {snip.source_key!r}"
-
-    db.persist_finalize(run_id, payload)
-    model = db.load_diagram_model(run_id)
-    try:
-        html = render_page(model)
-    except IntegrityError as exc:
-        return False, str(exc)
-    db.set_rendered_html(run_id, html)
-    return True, None
-
-
-def _fail(run_id: int, kind: str, detail: str) -> None:
-    db.update_run_status(run_id, "error", error_kind=kind, error_detail=detail)
-    _broker.publish(run_id, {"type": "error", "kind": kind, "detail": detail})
-
-
-# ── SSE ────────────────────────────────────────────────────────────────────
+    while True:
+        await asyncio.sleep(_POLL_SECONDS)
+        db.reconcile_chat_message_if_orphaned(message_id)
+        for frame in drain_logs():
+            yield _sse(frame)
+        msg = db.get_chat_message(message_id)
+        if msg is None:
+            yield _sse({"type": "error", "detail": "chat message not found"})
+            return
+        if msg["status"] != "pending":
+            for frame in drain_logs():
+                yield _sse(frame)
+            yield _sse(_chat_message_frame(msg))
+            return
 
 
 async def event_stream(run_id: int) -> AsyncIterator[dict]:
-    """Replay persisted stage events, then tail live events until terminal.
+    """Replay persisted stages + output from the DB, then tail it until terminal.
 
-    Yields sse_starlette-compatible dicts (``{"data": <json>}``). Disconnect does
-    not cancel the run. A terminal event closes the stream.
+    Yields sse_starlette-compatible dicts (``{"data": <json>}``). Nothing here can
+    cancel the run (it lives in another process). A terminal status closes the
+    stream. On every poll a run with a dead worker is reconciled to ``error`` so a
+    crashed worker still resolves the stream instead of hanging forever.
     """
-    queue = _broker.subscribe(run_id)
-    try:
-        seen_ids: set[int] = set()
+    last_stage_id = 0
+    last_seq = 0
+    warned_mismatch = False
+
+    def drain() -> list[dict]:
+        nonlocal last_stage_id, last_seq
+        frames: list[dict] = []
         for ev in db.list_stage_events(run_id):
-            seen_ids.add(ev["id"])
-            yield _sse({"type": "stage", "stage": ev["stage"], "detail": ev.get("detail") or "", "ts": ev["ts"]})
+            if ev["id"] > last_stage_id:
+                last_stage_id = ev["id"]
+                frames.append(
+                    {"type": "stage", "stage": ev["stage"], "detail": ev.get("detail") or "", "ts": ev["ts"]}
+                )
+        for out in db.list_output(run_id, after_seq=last_seq):
+            last_seq = out["seq"]
+            frames.append({"type": "log", "seq": out["seq"], "line": out["line"], "ts": out["ts"]})
+        return frames
+
+    for frame in drain():
+        yield _sse(frame)
+
+    run = db.get_run(run_id)
+    if run is None:
+        yield _sse({"type": "error", "kind": "agent_failure", "detail": "run not found"})
+        return
+    if run["paper_status"] == "mismatch":
+        warned_mismatch = True
+        yield _sse({"type": "warning", "kind": "paper_mismatch", "detail": run.get("paper_warning") or ""})
+    if run["status"] in _TERMINAL_STATUSES:
+        yield _sse(_terminal_from_run(run))
+        return
+
+    while True:
+        await asyncio.sleep(_POLL_SECONDS)
+        # A crashed/killed worker leaves the row 'running' forever; catch it here so
+        # the stream (and the watching client) resolves promptly.
+        db.reconcile_run_if_orphaned(run_id)
+
+        for frame in drain():
+            yield _sse(frame)
 
         run = db.get_run(run_id)
         if run is None:
             yield _sse({"type": "error", "kind": "agent_failure", "detail": "run not found"})
             return
+        if not warned_mismatch and run["paper_status"] == "mismatch":
+            warned_mismatch = True
+            yield _sse({"type": "warning", "kind": "paper_mismatch", "detail": run.get("paper_warning") or ""})
         if run["status"] in _TERMINAL_STATUSES:
+            # Final drain: catch stages/output written just before the status flip.
+            for frame in drain():
+                yield _sse(frame)
             yield _sse(_terminal_from_run(run))
             return
-
-        while True:
-            event = await queue.get()
-            etype = event.get("type")
-            if etype == "stage":
-                if event.get("id") in seen_ids:
-                    continue
-                yield _sse({"type": "stage", "stage": event["stage"], "detail": event.get("detail") or "", "ts": event.get("ts")})
-            elif etype == "warning":
-                yield _sse({"type": "warning", "kind": event.get("kind"), "detail": event.get("detail")})
-            elif etype == "done":
-                yield _sse({"type": "done", "run_id": run_id})
-                return
-            elif etype == "error":
-                yield _sse({"type": "error", "kind": event.get("kind"), "detail": event.get("detail")})
-                return
-    finally:
-        _broker.unsubscribe(run_id, queue)
 
 
 def _sse(payload: dict) -> dict:

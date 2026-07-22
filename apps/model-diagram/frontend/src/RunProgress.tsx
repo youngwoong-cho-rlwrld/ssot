@@ -2,12 +2,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
+  Ban,
   Check,
   CircleAlert,
   Loader2,
+  Terminal,
 } from "lucide-react";
 import { getRun, openRunEvents } from "./api";
 import type { Stage } from "./types";
+
+// Cap the agent-output pane so a long run cannot grow the DOM without bound; the
+// backend already keeps only the most recent lines, and older ones aren't useful
+// once scrolled past.
+const OUTPUT_DOM_CAP = 500;
 
 export const STAGE_LABEL: Record<Stage, string> = {
   inspecting_root: "Inspecting model root",
@@ -41,11 +48,12 @@ export const ERROR_TITLE: Record<string, string> = {
   not_a_model_root: "Not a model root",
   agent_failure: "Analysis failed",
   credentials_not_configured: "Agent credentials not configured",
+  cancelled: "Analysis cancelled",
 };
 
 function errorHint(kind: string): string | null {
   if (kind === "not_a_model_root")
-    return "That directory isn’t a single model codebase — pick another path.";
+    return "That directory isn’t a single model codebase. Pick another path.";
   if (kind === "credentials_not_configured")
     return "Set ANTHROPIC_API_KEY in the repo .env and try again.";
   return null;
@@ -74,6 +82,9 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
   const [detail, setDetail] = useState<string | null>(null);
   const [failed, setFailed] = useState<TerminalError | null>(null);
   const [mismatch, setMismatch] = useState<string | null>(null);
+  const [showOutput, setShowOutput] = useState(false);
+  const [output, setOutput] = useState<string[]>([]);
+  const outputRef = useRef<HTMLPreElement>(null);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
@@ -117,11 +128,32 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
       onWarning: (kind, warnDetail) => {
         if (kind === "paper_mismatch") setMismatch(warnDetail);
       },
+      onLog: (_seq, line) => {
+        setOutput((prev) => {
+          const next = prev.length >= OUTPUT_DOM_CAP ? prev.slice(1) : prev.slice();
+          next.push(line);
+          return next;
+        });
+      },
       onDone: () => onDoneRef.current(),
       onError: (kind, errDetail) => setFailed({ kind, detail: errDetail }),
     });
     return close;
   }, [runId]);
+
+  // Reset the output buffer when switching runs (the stream replays the new run's
+  // lines from the DB on connect).
+  useEffect(() => {
+    setOutput([]);
+    setShowOutput(false);
+  }, [runId]);
+
+  // Keep the pane pinned to the latest line while it's open.
+  useEffect(() => {
+    if (showOutput && outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [output, showOutput]);
 
   const stages = useMemo(
     () => BASE_ORDER.filter((s) => hasPaper !== false || !PAPER_STAGES.has(s)),
@@ -132,22 +164,36 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
     ? stages.indexOf(currentStage as Stage)
     : -1;
 
-  const body = (
-    <div className="panel__body runprog__body">
-        {mismatch !== null && (
-          <div className="notice notice--warn">
-            <AlertTriangle size={15} />
+  // The stages checklist + notices — the left column in split mode, and the whole
+  // body otherwise.
+  const stagePane = (
+    <>
+      {mismatch !== null && (
+        <div className="notice notice--warn">
+          <AlertTriangle size={15} />
+          <div>
+            <strong>Paper did not match the code.</strong>
+            <p>
+              {mismatch ||
+                "Continuing from the code only; paper-cited numbers are omitted."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {failed ? (
+        failed.kind === "cancelled" ? (
+          <div className="notice notice--muted">
+            <Ban size={15} />
             <div>
-              <strong>Paper did not match the code.</strong>
-              <p>
-                {mismatch ||
-                  "Continuing from the code only; paper-cited numbers are omitted."}
-              </p>
+              <strong>Analysis cancelled</strong>
+              <p>{failed.detail || "This run was cancelled."}</p>
+              <button type="button" className="ssot-btn" onClick={onBack}>
+                Back to diagrams
+              </button>
             </div>
           </div>
-        )}
-
-        {failed ? (
+        ) : (
           <div className="notice notice--err">
             <CircleAlert size={15} />
             <div>
@@ -161,41 +207,98 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
               </button>
             </div>
           </div>
-        ) : (
-          <ol className="stages">
-            {stages.map((stage, i) => {
-              const done = currentIndex > i;
-              const active = currentIndex === i;
-              const state = done ? "done" : active ? "active" : "todo";
-              return (
-                <li key={stage} className={`stage stage--${state}`}>
-                  <span className="stage__marker">
-                    {done ? (
-                      <Check size={13} />
-                    ) : active ? (
-                      <Loader2 size={13} className="spin" />
-                    ) : (
-                      <span className="stage__dot" />
-                    )}
-                  </span>
-                  <span className="stage__label">{STAGE_LABEL[stage]}</span>
-                  {active && detail && (
-                    <span className="stage__detail">{detail}</span>
+        )
+      ) : (
+        <ol className="stages">
+          {stages.map((stage, i) => {
+            const done = currentIndex > i;
+            const active = currentIndex === i;
+            const state = done ? "done" : active ? "active" : "todo";
+            return (
+              <li key={stage} className={`stage stage--${state}`}>
+                <span className="stage__marker">
+                  {done ? (
+                    <Check size={13} />
+                  ) : active ? (
+                    <Loader2 size={13} className="spin" />
+                  ) : (
+                    <span className="stage__dot" />
                   )}
-                </li>
-              );
-            })}
-          </ol>
-        )}
+                </span>
+                <span className="stage__label">{STAGE_LABEL[stage]}</span>
+                {active && detail && (
+                  <span className="stage__detail">{detail}</span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
 
-        {!failed && currentStage === null && (
-          <p className="runprog__waiting">Starting analysis…</p>
-        )}
+      {!failed && currentStage === null && (
+        <p className="runprog__waiting">Starting analysis…</p>
+      )}
+    </>
+  );
+
+  // Collapsed-state output toggle: an icon-only button in the top-right corner —
+  // the same spot the output panel's close (X) occupies when expanded.
+  // ONE toggle button, fixed at the top-right: opens AND closes the output pane
+  // (pressed/active state per the suite's toggle grammar — OpenClaw's tool-toggle).
+  const outputToggle = (
+    <button
+      type="button"
+      className={`ssot-icon-btn${showOutput ? " ssot-icon-btn--on" : ""}`}
+      onClick={() => setShowOutput((v) => !v)}
+      title={showOutput ? "Hide agent output" : "Show agent output"}
+      aria-label={showOutput ? "Hide agent output" : "Show agent output"}
+      aria-pressed={showOutput}
+    >
+      <Terminal size={15} />
+    </button>
+  );
+
+  // The right-hand OUTPUT panel — a proper .panel with its own head, like
+  // OpenClaw's side columns. No close button here: the single top-right toggle
+  // owns open/close.
+  const outputPanel = (
+    <section className="panel runprog__output-panel">
+      <div className="panel__head">
+        <Terminal size={14} className="runprog__output-icon" />
+        <h3 className="panel__title">Agent output</h3>
+        {output.length > 0 && <span className="panel__count">{output.length}</span>}
       </div>
+      <pre ref={outputRef} className="panel__body runprog__output" aria-label="Agent output">
+        {output.length === 0 ? "Waiting for agent output…" : output.join("\n")}
+      </pre>
+    </section>
+  );
+
+  // When the output is shown, the content becomes a two-column split (stages |
+  // output) that fills the height and stacks vertically on narrow widths; when
+  // hidden, it is the classic single centered column.
+  const content = showOutput ? (
+    <div className="runprog__split">
+      <div className="runprog__pane runprog__pane--stages">
+        <div className="panel__body runprog__body">{stagePane}</div>
+      </div>
+      {outputPanel}
+    </div>
+  ) : (
+    <div className="panel__body runprog__body">{stagePane}</div>
   );
 
   if (embedded) {
-    return <div className="runprog runprog--embedded">{body}</div>;
+    // No panel head here (the Viewer supplies its own chrome, incl. the cancel
+    // control), so the output toggle rides in a top-right actions bar.
+    return (
+      <div className="runprog runprog--embedded">
+        {outputToggle && (
+          <div className="runprog__embedded-actions">{outputToggle}</div>
+        )}
+        {content}
+      </div>
+    );
   }
 
   return (
@@ -213,9 +316,11 @@ export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) 
         <h2 className="panel__title">
           {failed ? "Analysis stopped" : "Generating diagram"}
         </h2>
+        {outputToggle && <span className="runprog__head-spacer" />}
+        {outputToggle}
       </div>
 
-      {body}
+      {content}
     </section>
   );
 }

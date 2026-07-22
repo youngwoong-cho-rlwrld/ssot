@@ -2,12 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
+  Ban,
+  ChevronDown,
+  ChevronRight,
   Loader2,
   RefreshCcw,
   Upload,
   X,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { SsotSelect } from "@ssot/ui/SsotSelect";
+import { ChatPanel } from "./ChatPanel";
+import { requestCancelConfirm } from "./lib/cancel-bus";
 import {
   ApiError,
   createRun,
@@ -15,6 +21,7 @@ import {
   getModels,
   getRun,
   runPageUrl,
+  updateDiagramMemo,
   uploadPaper,
   validate,
 } from "./api";
@@ -59,6 +66,10 @@ export function Viewer({
   const [error, setError] = useState<string | null>(null);
   const [paperWarning, setPaperWarning] = useState<string | null>(null);
   const [reprovisioning, setReprovisioning] = useState(false);
+  // Left-panel section states — collapsible strips (OpenClaw LIVE LOG grammar).
+  // Both start collapsed so the diagram has full width until the user opens one.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [memoOpen, setMemoOpen] = useState(false);
   // Bumped when an in-viewer running run completes, to re-fetch the diagram so
   // the run flips to "done" and the rendered page replaces the progress view.
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -127,6 +138,17 @@ export function Viewer({
             />
           </div>
         )}
+        {current?.status === "running" && (
+          <button
+            type="button"
+            className="ssot-icon-btn"
+            onClick={() => requestCancelConfirm(runId)}
+            title="Cancel run"
+            aria-label="Cancel run"
+          >
+            <Ban size={15} />
+          </button>
+        )}
         <button
           type="button"
           className="ssot-btn"
@@ -141,7 +163,7 @@ export function Viewer({
           <AlertTriangle size={15} />
           <span>
             {paperWarning ||
-              "The attached paper did not match this model — the diagram was built from code only, and paper-cited numbers are omitted."}
+              "The attached paper did not match this model, so the diagram was built from code only, and paper-cited numbers are omitted."}
           </span>
         </div>
       )}
@@ -179,14 +201,80 @@ export function Viewer({
             view its diagram.
           </div>
         ) : (
-          <iframe
-            key={runId}
-            className="viewer__iframe"
-            src={runPageUrl(runId)}
-            title="Model diagram"
-          />
+          // Done: an always-present LEFT panel of collapsible sections
+          // (chat + memo, OpenClaw LIVE LOG grammar) | the diagram fills the rest.
+          // Stacks on narrow widths.
+          <div className="viewer__split">
+            <div className="viewer__left">
+              <ChatPanel
+                key={`chat-${diagramId}`}
+                diagramId={diagramId}
+                runId={runId}
+                open={chatOpen}
+                onToggle={() => setChatOpen((v) => !v)}
+                onRevision={(newRunId) => {
+                  // A revision is a new sibling run: refresh + switch to it.
+                  setReloadNonce((n) => n + 1);
+                  onSelectRun(newRunId);
+                }}
+              />
+              {detail && (
+                <CollapsibleSection
+                  title="Memo"
+                  open={memoOpen}
+                  onToggle={() => setMemoOpen((v) => !v)}
+                >
+                  <MemoField key={diagramId} diagramId={diagramId} initial={detail.memo} />
+                </CollapsibleSection>
+              )}
+            </div>
+            <div className="viewer__diagram">
+              <iframe
+                key={runId}
+                className="viewer__iframe"
+                src={runPageUrl(runId)}
+                title="Model diagram"
+              />
+            </div>
+          </div>
         )}
       </div>
+    </section>
+  );
+}
+
+// A collapsible left-panel section mirroring OpenClaw's LIVE LOG grammar: a
+// borderless chevron+uppercase-title header strip that toggles the body; collapsed
+// shows only the strip.
+function CollapsibleSection({
+  title,
+  open,
+  onToggle,
+  className,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`panel vsection ${className ?? ""} ${open ? "vsection--open" : "vsection--closed"}`}
+    >
+      <div className="panel__head vsection__head">
+        <button
+          type="button"
+          className="vsection__toggle"
+          onClick={onToggle}
+          aria-expanded={open}
+        >
+          {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          <h3 className="panel__title">{title}</h3>
+        </button>
+      </div>
+      {open && children}
     </section>
   );
 }
@@ -429,5 +517,74 @@ function ReprovisionForm({
         </button>
       </div>
     </form>
+  );
+}
+
+type MemoStatus = "idle" | "saving" | "saved";
+
+// A minimal per-diagram note: auto-saves (debounced while typing, immediately on
+// blur) and shows a subtle, self-hiding "Saved" indicator.
+function MemoField({ diagramId, initial }: { diagramId: number; initial: string }) {
+  const [value, setValue] = useState(initial);
+  const [status, setStatus] = useState<MemoStatus>("idle");
+  const savedRef = useRef(initial);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const save = useCallback(
+    async (next: string) => {
+      if (next === savedRef.current) return;
+      setStatus("saving");
+      try {
+        await updateDiagramMemo(diagramId, next);
+        savedRef.current = next;
+        setStatus("saved");
+        if (hideRef.current) clearTimeout(hideRef.current);
+        hideRef.current = setTimeout(() => setStatus("idle"), 1800);
+      } catch {
+        setStatus("idle");
+      }
+    },
+    [diagramId],
+  );
+
+  const onChange = (next: string) => {
+    setValue(next);
+    setStatus("idle");
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => void save(next), 800);
+  };
+
+  const onBlur = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    void save(value);
+  };
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (hideRef.current) clearTimeout(hideRef.current);
+    },
+    [],
+  );
+
+  return (
+    <div className="viewer__memo">
+      <textarea
+        id={`memo-${diagramId}`}
+        className="ssot-input viewer__memo-input"
+        rows={3}
+        value={value}
+        placeholder="Notes about this diagram…"
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        spellCheck
+      />
+      {status !== "idle" && (
+        <span className="viewer__memo-status">
+          {status === "saving" ? "Saving…" : "Saved"}
+        </span>
+      )}
+    </div>
   );
 }

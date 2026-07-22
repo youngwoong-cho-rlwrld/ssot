@@ -22,6 +22,7 @@ from . import settings
 from .agent_tools import (
     AgentOutcome,
     FinalizeCallback,
+    LogCallback,
     MismatchCallback,
     StageCallback,
     build_initial_user,
@@ -32,9 +33,15 @@ from .agent_tools import (
     handle_paper_mismatch,
     handle_report_problem,
     handle_stage,
+    summarize_text,
+    summarize_tool_call,
     tool_specs,
 )
 from .fsaccess import FsAccess
+
+
+def _noop_log(_line: str) -> None:
+    pass
 
 _TASK_BUDGET = max(20000, int(os.environ.get("MODEL_DIAGRAM_TASK_BUDGET", "200000")))
 _MAX_TOKENS = int(os.environ.get("MODEL_DIAGRAM_MAX_TOKENS", "64000"))
@@ -66,6 +73,7 @@ async def run_agent(
     on_stage: StageCallback,
     finalize_cb: FinalizeCallback,
     on_paper_mismatch: MismatchCallback,
+    on_log: LogCallback = _noop_log,
 ) -> AgentOutcome:
     api_key = settings.anthropic_api_key()
     if not api_key:
@@ -97,6 +105,9 @@ async def run_agent(
             return outcome
 
         messages.append({"role": "assistant", "content": response.content})
+        for block in response.content:
+            if block.type == "text" and block.text.strip():
+                on_log(summarize_text(block.text))
         tool_uses = [b for b in response.content if b.type == "tool_use"]
         if not tool_uses:
             outcome.status = "error"
@@ -106,7 +117,11 @@ async def run_agent(
 
         tool_results: list[dict] = []
         for block in tool_uses:
+            args = block.input if isinstance(block.input, dict) else {}
+            on_log(summarize_tool_call(block.name, args))
             content, is_error = await _dispatch(block, fs, on_stage, finalize_cb, on_paper_mismatch, outcome)
+            if is_error:
+                on_log(f"  ! {block.name} error: {summarize_text(content, limit=300)}")
             tool_results.append(
                 {"type": "tool_result", "tool_use_id": block.id, "content": content, "is_error": is_error}
             )

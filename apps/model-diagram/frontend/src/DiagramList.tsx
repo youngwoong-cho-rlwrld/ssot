@@ -119,7 +119,7 @@ export function DiagramList({ reloadNonce, onNew, onOpen, onRerun }: Props) {
                         }`}
                         title={
                           run.paper_status === "mismatch"
-                            ? "Paper attached — did not match the code"
+                            ? "Paper attached: did not match the code"
                             : "Paper attached"
                         }
                       >
@@ -134,6 +134,11 @@ export function DiagramList({ reloadNonce, onNew, onOpen, onRerun }: Props) {
                   </div>
                   {run.title && <div className="diagram__title">{run.title}</div>}
                   <div className="diagram__path">{d.path}</div>
+                  {d.memo.trim() && (
+                    <div className="diagram__memo" title={d.memo}>
+                      {d.memo.trim()}
+                    </div>
+                  )}
                 </button>
 
                 <div className="diagram__actions">

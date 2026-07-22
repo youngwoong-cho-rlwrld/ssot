@@ -7,11 +7,9 @@ into the plan §8 tables on ingest.
 """
 from __future__ import annotations
 
-import base64
-import binascii
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 # Cluster is an open enum: configured cluster names + "local".
 Cluster = str
@@ -50,6 +48,19 @@ class ReprovisionRequest(BaseModel):
     model: Optional[str] = None
 
 
+class MemoRequest(BaseModel):
+    memo: str = Field(max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    # The run being viewed when the question was asked; the chat is anchored to it.
+    run_id: int
+    message: str = Field(min_length=1, max_length=8000)
+    # Optional per-turn generation model (allowlist-validated in the endpoint);
+    # omitted falls back to the anchor run's model.
+    model: Optional[str] = None
+
+
 # ── finalize_diagram payload (validated server-side) ──────────────────────
 
 
@@ -70,6 +81,12 @@ class FinalizePaperCitation(BaseModel):
     paper_location: str = ""
     code_value: Optional[str] = None
     confidence: Confidence = "high"
+    # A4 embedded-paper panel: the exact sentence/table-cell (from the injected
+    # paper) stating this value, plus an optional DOM anchor id in the sanitized
+    # paper doc. ``paper_quote`` drives cross-highlighting in the paper pane; when
+    # empty, the component gets no paper ref and the pane stays hidden for it.
+    paper_quote: str = ""
+    paper_anchor: str = ""
 
 
 class FinalizePosition(BaseModel):
@@ -82,17 +99,13 @@ class FinalizePosition(BaseModel):
 class FinalizeSource(BaseModel):
     source_key: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=500)
-    content_b64: str = Field(min_length=1)
-    line_count: int = Field(ge=0)
-
-    @field_validator("content_b64")
-    @classmethod
-    def _valid_b64(cls, value: str) -> str:
-        try:
-            base64.b64decode(value, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("content_b64 is not valid base64") from exc
-        return value
+    # The agent NAMES the file; the backend fetches its exact bytes at finalize
+    # time via the run's scoped read-only access (fsaccess) and embeds them. No
+    # base64 crosses the tool boundary — a real repo's files would blow the single
+    # finalize tool call past the run timeout. ``line_count`` is an OPTIONAL
+    # expected count for cross-checking; the backend recomputes the authoritative
+    # value from the bytes it fetches.
+    line_count: Optional[int] = Field(default=None, ge=0)
 
 
 class FinalizeComponent(BaseModel):
@@ -143,12 +156,11 @@ def finalize_tool_schema() -> dict:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["source_key", "name", "content_b64", "line_count"],
+                    "required": ["source_key", "name", "line_count"],
                     "properties": {
                         "source_key": {"type": "string"},
-                        "name": {"type": "string"},
-                        "content_b64": {"type": "string"},
-                        "line_count": {"type": "integer"},
+                        "name": {"type": "string", "description": "Repo-relative path; the backend fetches its exact bytes."},
+                        "line_count": {"type": ["integer", "null"], "description": "Optional expected line count (cross-check only)."},
                     },
                 },
             },
@@ -198,13 +210,18 @@ def finalize_tool_schema() -> dict:
                             "items": {
                                 "type": "object",
                                 "additionalProperties": False,
-                                "required": ["label", "paper_value", "paper_location", "code_value", "confidence"],
+                                "required": [
+                                    "label", "paper_value", "paper_location", "code_value",
+                                    "confidence", "paper_quote", "paper_anchor",
+                                ],
                                 "properties": {
                                     "label": {"type": "string"},
                                     "paper_value": {"type": "string"},
                                     "paper_location": {"type": "string"},
                                     "code_value": {"type": ["string", "null"]},
                                     "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+                                    "paper_quote": {"type": "string"},
+                                    "paper_anchor": {"type": "string"},
                                 },
                             },
                         },

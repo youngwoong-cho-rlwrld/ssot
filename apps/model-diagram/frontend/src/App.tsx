@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Toaster } from "sonner";
+import { CancelConfirmModal } from "./CancelConfirmModal";
 import { DiagramList } from "./DiagramList";
 import { NewDiagram } from "./NewDiagram";
 import { RunProgress } from "./RunProgress";
 import { Viewer } from "./Viewer";
+import { cancelRun } from "./api";
+import { setCancelConfirmHandler } from "./lib/cancel-bus";
 import { resumeActiveRuns, startRunWatcher } from "./lib/run-watcher";
 
 // Simple client-side view state — the suite's Vite apps (urdf, session-viewer)
@@ -21,7 +24,31 @@ export default function App() {
   // Bumped whenever a run finishes or a diagram is deleted, so the list
   // refetches when we return to it.
   const [listNonce, setListNonce] = useState(0);
+  // The single cancel-confirmation modal. Both entry points (the Viewer header
+  // icon and the run-watcher toast) open it via the cancel-bus; the neutral
+  // "cancelled" outcome then flows through the SSE stream / toast as before.
+  const [cancelRunId, setCancelRunId] = useState<number | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
   const portalUrl = import.meta.env.VITE_SSOT_PORTAL_URL ?? "/";
+
+  useEffect(() => {
+    setCancelConfirmHandler((runId) => setCancelRunId(runId));
+    return () => setCancelConfirmHandler(null);
+  }, []);
+
+  const confirmCancel = useCallback(async () => {
+    if (cancelRunId === null) return;
+    setCancelBusy(true);
+    try {
+      await cancelRun(cancelRunId);
+    } catch {
+      // 409 (already finished) or a transient error — the run's terminal frame
+      // still resolves the UI, so nothing more to do here.
+    } finally {
+      setCancelBusy(false);
+      setCancelRunId(null);
+    }
+  }, [cancelRunId]);
 
   const openViewer = useCallback((diagramId: number, runId: number) => {
     setView({ name: "viewer", diagramId, runId });
@@ -104,6 +131,14 @@ export default function App() {
           />
         )}
       </main>
+
+      {cancelRunId !== null && (
+        <CancelConfirmModal
+          onConfirm={() => void confirmCancel()}
+          onClose={() => setCancelRunId(null)}
+          busy={cancelBusy}
+        />
+      )}
 
       <Toaster position="bottom-right" richColors visibleToasts={9} />
     </div>

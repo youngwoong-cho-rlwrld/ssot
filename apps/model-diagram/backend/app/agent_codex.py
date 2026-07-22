@@ -15,11 +15,12 @@ callback — a constraint discovered empirically against this codex (0.144.x):
   hangs and codex reports "user cancelled MCP tool call". So the Claude-CLI
   design (four run-state tools POST back to a loopback endpoint) cannot work here.
 * codex's ``--json`` event stream, however, echoes every MCP tool call with its
-  full ``arguments`` (verified complete for a 12 KB argument). So instead of a
-  callback we DISPATCH FROM THE STREAM: the backend parses codex's stdout and
-  runs report_stage / report_paper_mismatch / report_problem / finalize_diagram
-  through the exact same handlers the SDK loop uses. The MCP server, seeing no
-  ``MD_CALLBACK_BASE``, answers those four tools with a local ack so the model
+  full ``arguments`` (verified complete for a 12 KB argument). So instead of the
+  DB-direct writes the Claude-CLI runtime uses (the sandbox also blocks writing the
+  DB file) we DISPATCH FROM THE STREAM: the worker parses codex's stdout and runs
+  report_stage / report_paper_mismatch / report_problem / finalize_diagram through
+  the exact same handlers the SDK loop uses. The MCP server, seeing no
+  ``MD_DB_DIRECT``, answers those four tools with a local ack so the model
   proceeds; the authoritative processing happens here from the stream.
 
 Safety / tool isolation. The ``-s read-only`` sandbox is the guarantee: it
@@ -68,11 +69,18 @@ from . import agent_tools, settings
 from .agent_tools import (
     AgentOutcome,
     FinalizeCallback,
+    LogCallback,
     MismatchCallback,
     StageCallback,
     build_initial_user,
     build_system_prompt,
+    summarize_text,
+    summarize_tool_call,
 )
+
+
+def _noop_log(_line: str) -> None:
+    pass
 
 _MCP_SERVER_NAME = "modeldiagram"
 _EFFORT_LEVELS = {"minimal", "low", "medium", "high", "xhigh"}
@@ -172,8 +180,8 @@ def _build_codex_cmd(
     for feature in _DISABLED_FEATURES:
         cmd += ["-c", f"features.{feature}=false"]
     # Attach our runtime-agnostic MCP server; codex launches it (sandboxed) and
-    # passes the env table through to it. No MD_CALLBACK_BASE is set → the server
-    # runs in stream-ack mode and run-state is dispatched here from --json.
+    # passes the env table through to it. No MD_DB_DIRECT is set → the server runs
+    # in stream-ack mode and run-state is dispatched here from --json.
     cmd += [
         "-c",
         f"mcp_servers.{_MCP_SERVER_NAME}.command={_toml_str(sys.executable)}",
@@ -201,12 +209,14 @@ class _StreamDispatcher:
         on_paper_mismatch: MismatchCallback,
         finalize_cb: FinalizeCallback,
         terminal: asyncio.Event,
+        on_log: LogCallback = _noop_log,
     ) -> None:
         self.outcome = outcome
         self.on_stage = on_stage
         self.on_paper_mismatch = on_paper_mismatch
         self.finalize_cb = finalize_cb
         self.terminal = terminal
+        self.on_log = on_log
         self.result: dict[str, object] = {}
         self._seen: set[str] = set()
 
@@ -217,6 +227,7 @@ class _StreamDispatcher:
             and b'"turn.failed"' not in line
             and b'"type":"error"' not in line
             and b'"mcp_tool_call"' not in line
+            and b'"agent_message"' not in line
         ):
             return
         try:
@@ -235,18 +246,26 @@ class _StreamDispatcher:
             await self._maybe_dispatch(event.get("item") or {})
 
     async def _maybe_dispatch(self, item: dict) -> None:
-        if item.get("type") != "mcp_tool_call" or item.get("server") != _MCP_SERVER_NAME:
+        itype = item.get("type")
+        if itype == "agent_message":
+            text = summarize_text(item.get("text") or "")
+            if text:
+                self.on_log(text)
+            return
+        if itype != "mcp_tool_call" or item.get("server") != _MCP_SERVER_NAME:
             return
         if item.get("status") != "completed":
             return
         tool = item.get("tool")
+        item_id = str(item.get("id") or "")
+        if item_id and item_id in self._seen:  # codex may echo an item more than once
+            return
+        if item_id:
+            self._seen.add(item_id)
+        args = item.get("arguments") or {}
+        self.on_log(summarize_tool_call(str(tool or ""), args))
         if tool not in _RUNSTATE_TOOLS:
             return
-        item_id = str(item.get("id") or "")
-        if item_id and item_id in self._seen:
-            return
-        self._seen.add(item_id)
-        args = item.get("arguments") or {}
         if tool == "report_stage":
             await agent_tools.handle_stage(self.on_stage, args)
         elif tool == "report_paper_mismatch":
@@ -281,6 +300,7 @@ async def run_agent_codex(
     on_stage: StageCallback,
     finalize_cb: FinalizeCallback,
     on_paper_mismatch: MismatchCallback,
+    on_log: LogCallback = _noop_log,
 ) -> AgentOutcome:
     codex_path = settings.codex_cli_path()
     if not codex_path:
@@ -290,7 +310,7 @@ async def run_agent_codex(
     scratch = tempfile.mkdtemp(prefix="md-codex-")
     proc: Optional[asyncio.subprocess.Process] = None
     try:
-        # No MD_CALLBACK_BASE → the MCP server runs in stream-ack mode; run-state is
+        # No MD_DB_DIRECT → the MCP server runs in stream-ack mode; run-state is
         # dispatched here from codex's --json output.
         mcp_env = {
             "MD_CLUSTER": cluster,
@@ -342,7 +362,7 @@ async def run_agent_codex(
         proc.stdin.close()
 
         terminal = asyncio.Event()
-        dispatcher = _StreamDispatcher(outcome, on_stage, on_paper_mismatch, finalize_cb, terminal)
+        dispatcher = _StreamDispatcher(outcome, on_stage, on_paper_mismatch, finalize_cb, terminal, on_log)
         debug_log = os.environ.get("MODEL_DIAGRAM_CODEX_LOG", "").strip() or None
         pump = asyncio.create_task(_pump_stream(proc, dispatcher, debug_log))
         watch = asyncio.create_task(terminal.wait())

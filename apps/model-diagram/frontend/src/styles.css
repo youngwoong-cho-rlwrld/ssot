@@ -441,6 +441,71 @@
   color: var(--ssot-text-faint);
 }
 
+/* Two-column split (stages | agent output), mirroring OpenClaw's
+   SESSIONS | CHAT grammar: side-by-side columns over a 1px line-colored gap that
+   reads as a hairline divider, each filling the available height, stacking
+   vertically on narrow widths. */
+.runprog__split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 1px;
+  background: var(--ssot-border);
+}
+
+.runprog__pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ssot-bg);
+}
+
+.runprog__pane--stages {
+  flex: 1 1 300px;
+  max-width: 460px;
+}
+
+.runprog__output-panel {
+  flex: 1.5 1 420px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.runprog__output-icon {
+  color: var(--ssot-text-faint);
+}
+
+.runprog__head-spacer {
+  margin-left: auto;
+}
+
+/* The live monospace log — the output panel's body, so it fills and scrolls. */
+.runprog__output {
+  margin: 0;
+  color: var(--ssot-text-soft);
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+@media (max-width: 760px) {
+  .runprog__split {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .runprog__pane--stages,
+  .runprog__output-panel {
+    flex: none;
+    max-width: none;
+    min-height: 220px;
+  }
+}
+
 /* Notices (mismatch warning, terminal error). */
 .notice {
   width: 100%;
@@ -481,6 +546,27 @@
   border-color: var(--ssot-danger);
   color: var(--ssot-danger);
 }
+
+/* Neutral terminal notice — a user cancellation is not a failure. */
+.notice--muted {
+  background: var(--ssot-surface-muted);
+  border-color: var(--ssot-border);
+  color: var(--ssot-text-soft);
+}
+
+/* Top-right actions bar for the embedded progress view (holds the output toggle). */
+.runprog__embedded-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ssot-border);
+}
+
+/* Modal chrome (overlay, panel, head, body, footer, confirm variant) now lives in
+   the shared @ssot/theme/modal.css, rendered via the @ssot/ui Modal. */
 
 /* -------------------------------- Viewer -------------------------------- */
 
@@ -533,6 +619,145 @@
   height: 100%;
   border: none;
   background: var(--ssot-bg);
+}
+
+/* Left-panel | diagram split (OpenClaw SESSIONS|MAIN grammar: hairline gap, full
+   height, stacks on narrow widths). Left holds the collapsible chat + memo
+   sections; the diagram fills the rest. */
+.viewer__split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 1px;
+  background: var(--ssot-border);
+}
+
+.viewer__left {
+  flex: 1 1 340px;
+  max-width: 520px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ssot-bg);
+}
+
+.viewer__left .vsection + .vsection {
+  border-top: 1px solid var(--ssot-border);
+}
+
+.viewer__diagram {
+  flex: 1.6 1 420px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  background: var(--ssot-bg);
+}
+
+/* Collapsible section — mirrors OpenClaw's .logfeed collapse grammar. */
+.vsection {
+  min-width: 0;
+  background: var(--ssot-bg);
+}
+
+.vsection--closed {
+  flex: 0 0 auto;
+}
+
+/* The chat section grows to fill the left column when open; memo stays compact. */
+.viewer__chat-section.vsection--open {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.vsection__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  color: var(--ssot-text-soft);
+  font: inherit;
+  text-align: left;
+}
+
+.vsection__toggle .panel__title {
+  color: inherit;
+}
+
+/* The chat body/composer come entirely from the shared @ssot/theme/chat.css
+   (panel__body.chat__body / bubble* / chat__compose·input·send) — no local chat
+   styles. The one model-diagram-specific addition is the revision link that a
+   diagram-revising turn appends to its bubble (no shared equivalent exists). */
+.chatpanel__revision {
+  margin-top: 8px;
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-semibold);
+  color: var(--ssot-accent);
+}
+
+.chatpanel__revision:hover {
+  text-decoration: underline;
+}
+
+/* Pressed/active state for an icon toggle — mirrors OpenClaw's .tool-toggle--on
+   (accent fill + accent border) so a single button reads as on/off. */
+.ssot-icon-btn--on {
+  color: var(--ssot-accent);
+  background: var(--ssot-accent-soft);
+  border-color: var(--ssot-accent);
+}
+
+@media (max-width: 760px) {
+  .viewer__split {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .viewer__left,
+  .viewer__diagram {
+    flex: none;
+    max-width: none;
+    min-height: 240px;
+  }
+}
+
+/* Per-diagram memo — the body of the collapsible "Memo" left-panel section. */
+.viewer__memo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.viewer__memo-status {
+  align-self: flex-end;
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-faint);
+}
+
+.viewer__memo-input {
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
+}
+
+/* One-line truncated memo preview on a diagram card. */
+.diagram__memo {
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ssot-text-xs);
+  color: var(--ssot-text-faint);
 }
 
 /* Re-provision inline form, dropped below the viewer head. */

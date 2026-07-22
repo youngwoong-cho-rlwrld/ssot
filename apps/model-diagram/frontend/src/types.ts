@@ -16,7 +16,8 @@ export type ErrorKind =
   | "broken_paper"
   | "not_a_model_root"
   | "agent_failure"
-  | "credentials_not_configured";
+  | "credentials_not_configured"
+  | "cancelled";
 
 // report_stage transitions (plan §7). The two paper stages only occur when a
 // paper is attached; the checklist hides them otherwise.
@@ -68,21 +69,75 @@ export interface RunDetail extends RunSummary {
 export interface DiagramListItem {
   id: number;
   path: string;
+  memo: string;
   latest_run: RunSummary;
 }
 
 export interface DiagramDetail {
   id: number;
   path: string;
+  memo: string;
   runs: RunSummary[];
+}
+
+// One condensed line of live agent activity (GET /api/runs/:id/output rows and
+// the SSE `log` frame carry the same shape).
+export interface OutputLine {
+  seq: number;
+  line: string;
+  ts: string;
 }
 
 // GET /api/runs/:id/events — SSE frames, discriminated by `type`.
 export type RunEvent =
   | { type: "stage"; stage: string; detail: string; ts: string }
   | { type: "warning"; kind: "paper_mismatch"; detail: string }
+  | { type: "log"; seq: number; line: string; ts: string }
   | { type: "done"; run_id: number }
   | { type: "error"; kind: ErrorKind; detail: string };
+
+// ── chat (follow-up conversation about a diagram) ─────────────────────────
+
+export type ChatRole = "user" | "assistant";
+export type ChatStatus = "pending" | "done" | "error";
+
+export interface ChatMessage {
+  id: number;
+  role: ChatRole;
+  content: string;
+  status: ChatStatus;
+  error_detail: string | null;
+  revised_run_id: number | null;
+  anchor_run_id: number | null;
+  seq: number;
+  created_at: string;
+}
+
+export interface ChatHistory {
+  thread_id: number;
+  messages: ChatMessage[];
+}
+
+export interface PostChatResult {
+  thread_id: number;
+  assistant_message_id: number;
+}
+
+// GET /api/chat/:message_id/events — SSE frames, discriminated by `type`.
+export type ChatEvent =
+  | { type: "log"; seq: number; line: string; ts: string }
+  | {
+      type: "message";
+      id: number;
+      role: ChatRole;
+      content: string;
+      status: ChatStatus;
+      error_detail: string | null;
+      revised_run_id: number | null;
+      seq: number;
+      ts: string;
+    }
+  | { type: "error"; detail: string };
 
 // POST /api/validate — always HTTP 200; discriminated by `ok`.
 export type ValidateResult =

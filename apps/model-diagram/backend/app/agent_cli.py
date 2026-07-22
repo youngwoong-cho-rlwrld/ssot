@@ -9,9 +9,19 @@ Bridge design (kept to one source of truth):
 
 - ``list_dir`` / ``read_file`` run inside the MCP subprocess via the same
   :class:`FsAccess` guard (given cluster+root).
-- The four run-state tools are POSTed back to the backend over a loopback HTTP
-  callback (per-run token) and dispatched through :mod:`app.callback`, which
-  calls the exact handlers the SDK loop uses.
+- The four run-state tools are written STRAIGHT TO THE SQLITE DB by the MCP
+  subprocess (``MD_DB_DIRECT=1`` + ``MODEL_DIAGRAM_DB``), reusing the same
+  ``agent_tools`` handlers and :func:`app.finalize.try_finalize` the SDK loop
+  uses. This runtime runs inside a detached worker process (:mod:`app.run_worker`),
+  not the web process, so an HTTP callback would have to target the worker; the DB
+  is already the single source of truth (the SSE stream tails it), so the tools
+  write there directly and no loopback endpoint is needed. The finalize integrity
+  verdict is returned to the model as the MCP tool result, preserving the
+  correct-and-retry loop (unlike the codex runtime, whose sandbox forces
+  single-attempt finalize).
+
+This worker drives the CLI, tails its stdout for a live agent-output log, and
+watches the DB for the terminal status the MCP writer records.
 
 Isolation: the CLI runs in a throwaway scratch CWD with ``--setting-sources ""``
 (no hooks / no user CLAUDE.md), ``--no-session-persistence``, built-in tools
@@ -27,23 +37,31 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import secrets
 import shutil
 import sys
 import tempfile
 from typing import Optional
 
-from . import callback, settings
+from . import db, settings
 from .agent_tools import (
     TOOL_NAMES,
     AgentOutcome,
     FinalizeCallback,
+    LogCallback,
     MismatchCallback,
     StageCallback,
     build_initial_user,
     build_system_prompt,
+    summarize_text,
+    summarize_tool_call,
 )
-from .callback import RunBridge
+
+_TERMINAL_STATUSES = {"done", "error"}
+
+
+def _noop_log(_line: str) -> None:
+    pass
+
 
 _MCP_SERVER_NAME = "modeldiagram"
 _EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
@@ -94,23 +112,13 @@ async def run_agent_cli(
     on_stage: StageCallback,
     finalize_cb: FinalizeCallback,
     on_paper_mismatch: MismatchCallback,
+    on_log: LogCallback = _noop_log,
 ) -> AgentOutcome:
     cli_path = settings.claude_cli_path()
     if not cli_path:
         raise CliUnavailable("the Claude CLI is not available")
 
     outcome = AgentOutcome(paper_status="attached" if has_paper else "none")
-    token = secrets.token_urlsafe(32)
-    bridge = RunBridge(
-        run_id=run_id,
-        token=token,
-        outcome=outcome,
-        on_stage=on_stage,
-        finalize_cb=finalize_cb,
-        on_paper_mismatch=on_paper_mismatch,
-        terminal=asyncio.Event(),
-    )
-    callback.register(bridge)
 
     scratch = tempfile.mkdtemp(prefix="md-cli-")
     proc: Optional[asyncio.subprocess.Process] = None
@@ -119,8 +127,9 @@ async def run_agent_cli(
             "MD_CLUSTER": cluster,
             "MD_ROOT": root,
             "MD_RUN_ID": str(run_id),
-            "MD_CALLBACK_BASE": f"http://{settings.api_host()}:{settings.api_port()}",
-            "MD_CALLBACK_TOKEN": token,
+            # The MCP subprocess writes run-state straight to this DB (no callback).
+            "MD_DB_DIRECT": "1",
+            "MODEL_DIAGRAM_DB": str(settings.db_path()),
             # Pre-resolved in the backend; the worker has no identity to look it up.
             "MD_ACCESS_JSON": json.dumps(access),
         }
@@ -182,13 +191,13 @@ async def run_agent_cli(
 
         result_event: dict[str, object] = {}
         debug_log = os.environ.get("MODEL_DIAGRAM_CLI_LOG", "").strip() or None
-        pump = asyncio.create_task(_pump_stdout(proc, result_event, debug_log))
-        watch = asyncio.create_task(bridge.terminal.wait())
+        pump = asyncio.create_task(_pump_stdout(proc, result_event, debug_log, on_log))
+        watch = asyncio.create_task(_watch_db_terminal(run_id))
         done, _pending = await asyncio.wait({pump, watch}, return_when=asyncio.FIRST_COMPLETED)
 
         if watch in done and pump not in done:
-            # A terminal tool (finalize / report_problem) fired. Give the CLI a
-            # brief window to wrap up, then stop it — the run's outcome is decided.
+            # The MCP writer recorded a terminal status (finalize / report_problem).
+            # Give the CLI a brief window to wrap up, then stop it — outcome decided.
             try:
                 await asyncio.wait_for(pump, timeout=8.0)
             except asyncio.TimeoutError:
@@ -198,10 +207,19 @@ async def run_agent_cli(
 
         await proc.wait()
         stderr = (await proc.stderr.read()).decode("utf-8", errors="replace") if proc.stderr else ""
-        _finalize_outcome(outcome, proc.returncode or 0, result_event, stderr)
+        # The DB is authoritative: if the MCP subprocess recorded a terminal status
+        # (done, integrity give-up, not_a_model_root), keep it. Only when the CLI
+        # exited with the row still 'running' do we map its exit into a failure.
+        run = db.get_run(run_id)
+        if run and run["status"] in _TERMINAL_STATUSES:
+            outcome.status = run["status"]
+            outcome.error_kind = run.get("error_kind")
+            outcome.error_detail = run.get("error_detail")
+            outcome._terminal = True
+        else:
+            _finalize_outcome(outcome, proc.returncode or 0, result_event, stderr)
         return outcome
     finally:
-        callback.unregister(run_id)
         if proc is not None and proc.returncode is None:
             proc.terminate()
             try:
@@ -211,20 +229,41 @@ async def run_agent_cli(
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-async def _pump_stdout(proc: asyncio.subprocess.Process, result_event: dict, debug_log: Optional[str] = None) -> None:
-    """Consume the CLI's stream-json output, capturing the terminal result event.
+async def _watch_db_terminal(run_id: int, poll_seconds: float = 0.5) -> None:
+    """Return once the run's DB row reaches a terminal status.
 
-    Tool calls themselves arrive via MCP (stages/finalize flow through runs.py),
-    so this only watches lifecycle: the final ``result`` event carries is_error /
-    subtype / terminal_reason, and MCP connection status appears in ``init``.
-    Set MODEL_DIAGRAM_CLI_LOG to tee the raw stream-json to a file for debugging.
+    The MCP subprocess writes run-state (including the terminal done/error) straight
+    to the DB, so the worker learns the outcome by polling the row rather than via a
+    callback event. This only drives the early-stop of the CLI; the authoritative
+    status is read from the DB after the process exits.
+    """
+    while True:
+        await asyncio.sleep(poll_seconds)
+        run = db.get_run(run_id)
+        if run and run["status"] in _TERMINAL_STATUSES:
+            return
+
+
+async def _pump_stdout(
+    proc: asyncio.subprocess.Process,
+    result_event: dict,
+    debug_log: Optional[str] = None,
+    on_log: LogCallback = _noop_log,
+) -> None:
+    """Consume the CLI's stream-json output: capture lifecycle + emit an activity log.
+
+    The final ``result`` event carries is_error / subtype / terminal_reason and MCP
+    connection status appears in ``init``; those small lines are parsed for
+    :func:`_finalize_outcome`. Assistant messages are additionally condensed into
+    ``on_log`` lines (text + tool calls) for the live agent-output pane. Set
+    MODEL_DIAGRAM_CLI_LOG to tee the raw stream-json to a file for debugging.
 
     Reads in fixed-size chunks and splits lines by hand, deliberately NOT using
     ``proc.stdout.readline`` / ``async for`` — those enforce asyncio's 64KB line
     limit and raise LimitOverrunError. Individual stream-json lines routinely
     exceed that (the finalize_diagram assistant message carries base64 sources),
     and a crash here would leave the CLI blocked on a full stdout pipe until the
-    run times out. We only parse the small lifecycle lines and skip the rest.
+    run times out. Oversized lines are summarized without a full JSON parse.
     """
     assert proc.stdout is not None
     log = open(debug_log, "a", encoding="utf-8") if debug_log else None
@@ -244,37 +283,65 @@ async def _pump_stdout(proc: asyncio.subprocess.Process, result_event: dict, deb
                     break
                 line = bytes(buf[: nl])
                 del buf[: nl + 1]
-                _handle_stream_line(line, result_event, log)
+                _handle_stream_line(line, result_event, log, on_log)
         if buf:
-            _handle_stream_line(bytes(buf), result_event, log)
+            _handle_stream_line(bytes(buf), result_event, log, on_log)
     finally:
         if log:
             log.close()
 
 
 # Cheap byte-substring gate: only the small lifecycle lines are worth parsing.
-# Huge assistant tool_use lines (base64 finalize payload) are logged but not parsed.
+# Huge assistant tool_use lines (base64 finalize payload) are summarized, not parsed.
 _INIT_MARKER = b'"subtype":"init"'
 _RESULT_MARKER = b'"type":"result"'
+_ASSISTANT_MARKER = b'"type":"assistant"'
+# Above this size a line is summarized by shape (never full-parsed) — the base64
+# finalize payload routinely exceeds it, and json.loads on it is pure waste.
+_LOG_PARSE_MAX = 65536
 
 
-def _handle_stream_line(line: bytes, result_event: dict, log) -> None:
+def _handle_stream_line(line: bytes, result_event: dict, log, on_log: LogCallback = _noop_log) -> None:
     if not line.strip():
         return
     if log:
         log.write(line.decode("utf-8", errors="replace") + "\n")
         log.flush()
-    if _RESULT_MARKER not in line and _INIT_MARKER not in line:
+    if _RESULT_MARKER in line or _INIT_MARKER in line:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        etype = event.get("type")
+        if etype == "system" and event.get("subtype") == "init":
+            result_event["init"] = event
+        elif etype == "result":
+            result_event["result"] = event
+        return
+    if _ASSISTANT_MARKER in line:
+        _emit_assistant_log(line, on_log)
+
+
+def _emit_assistant_log(line: bytes, on_log: LogCallback) -> None:
+    """Condense one stream-json ``assistant`` message into activity-log lines."""
+    if len(line) > _LOG_PARSE_MAX:
+        # The only routinely-huge assistant line is the finalize_diagram tool_use.
+        if b"finalize_diagram" in line:
+            on_log("→ finalize_diagram (submitting diagram payload)")
         return
     try:
         event = json.loads(line)
     except json.JSONDecodeError:
         return
-    etype = event.get("type")
-    if etype == "system" and event.get("subtype") == "init":
-        result_event["init"] = event
-    elif etype == "result":
-        result_event["result"] = event
+    message = event.get("message") or {}
+    for block in message.get("content") or []:
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+        if btype == "text" and str(block.get("text", "")).strip():
+            on_log(summarize_text(block["text"]))
+        elif btype == "tool_use":
+            on_log(summarize_tool_call(block.get("name", ""), block.get("input") or {}))
 
 
 def _finalize_outcome(outcome: AgentOutcome, returncode: int, result_event: dict, stderr: str) -> None:

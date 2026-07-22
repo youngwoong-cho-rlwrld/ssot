@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { ApiError, getRun, openRunEvents } from "../api";
+import { requestCancelConfirm } from "./cancel-bus";
 import { ERROR_TITLE, STAGE_LABEL } from "../RunProgress";
 import type { Stage } from "../types";
 
@@ -84,16 +85,31 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
   let startedAt = Date.now();
   let currentStage: string | null = null;
 
+  // Mirror copy-watcher's cancel affordance: the loading toast carries a Cancel
+  // action. It opens the shared confirmation modal (safety guard) rather than
+  // cancelling directly; the backend records error_kind='cancelled', which the
+  // terminal-frame handler below surfaces as a neutral outcome, not a failure.
+  const cancelAction = {
+    label: "Cancel",
+    onClick: () => requestCancelConfirm(runId),
+  };
+
+  // A queued interval tick can fire after the terminal toast replaced the
+  // loading one (same id) and resurrect it — never render loading past terminal.
+  let terminal = false;
   const renderLoading = () => {
+    if (terminal) return;
     const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
     toast.loading("Generating diagram", {
       id: toastId,
       description: `${stageLabel(currentStage)} · ${mmss(elapsed)}`,
       duration: Infinity,
+      action: cancelAction,
     });
   };
 
   const showSuccess = () => {
+    terminal = true;
     // Completion is terminal and worth acknowledging: keep it up until the user
     // dismisses it (or clicks through), rather than auto-closing.
     toast.success("Diagram ready", {
@@ -112,9 +128,17 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
   };
 
   const showError = (kind: string, detail: string) => {
+    terminal = true;
     // Dismiss the loading toast first — sonner with `richColors` sometimes
     // renders just the icon when a `loading` toast is replaced in-place.
     toast.dismiss(toastId);
+    // A user cancellation is a neutral outcome, not a failure: a plain,
+    // auto-dismissing toast (mirrors copy-watcher's "Copy cancelled").
+    if (kind === "cancelled") {
+      toast("Analysis cancelled", { duration: 4000 });
+      removeActive(runId);
+      return;
+    }
     toast.error(ERROR_TITLE[kind] ?? "Analysis failed", {
       id: toastId,
       description: detail || undefined,

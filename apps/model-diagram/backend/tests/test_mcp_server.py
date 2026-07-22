@@ -189,6 +189,69 @@ def test_runstate_tools_ack_locally_without_callback_base():
             proc.kill()
 
 
+def test_db_direct_runstate_writes_straight_to_db(tmp_path, monkeypatch):
+    """Claude-CLI runtime: with MD_DB_DIRECT the four run-state tools persist to the
+    sqlite DB directly (no callback), reusing the shared handlers. report_stage lands
+    a stage_event; report_problem records the terminal error status on the row.
+    """
+    dbfile = tmp_path / "md.db"
+    monkeypatch.setenv("MODEL_DIAGRAM_DB", str(dbfile))
+    monkeypatch.setenv("SSOT_DATA_DIR", str(tmp_path / "data"))
+
+    from app import db
+
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="claude-fable-5"
+    )
+
+    env = dict(os.environ)
+    env.update(
+        {
+            "MD_CLUSTER": "local",
+            "MD_ROOT": str(tmp_path),
+            "MD_RUN_ID": str(run_id),
+            "MD_DB_DIRECT": "1",
+            "MODEL_DIAGRAM_DB": str(dbfile),
+            "MD_ACCESS_JSON": '{"kind":"local"}',
+        }
+    )
+    env.pop("MD_CALLBACK_BASE", None)
+    proc = subprocess.Popen(
+        [sys.executable, _SERVER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+    )
+    try:
+        def rpc(rid, method, params=None):
+            msg = {"jsonrpc": "2.0", "id": rid, "method": method}
+            if params is not None:
+                msg["params"] = params
+            proc.stdin.write(json.dumps(msg) + "\n")
+            proc.stdin.flush()
+            return json.loads(proc.stdout.readline())
+
+        rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}})
+        r = rpc(2, "tools/call", {"name": "report_stage", "arguments": {"stage": "inspecting_root", "detail": "looking"}})
+        assert json.loads(r["result"]["content"][0]["text"]) == {"ok": True}
+        rpc(3, "tools/call", {"name": "report_problem", "arguments": {"kind": "not_a_model_root", "message": "nope"}})
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    stages = [s["stage"] for s in db.list_stage_events(run_id)]
+    assert "inspecting_root" in stages
+    run = db.get_run(run_id)
+    assert run["status"] == "error"
+    assert run["error_kind"] == "not_a_model_root"
+    assert run["error_detail"] == "nope"
+
+
 def test_ssh_access_from_env_no_config_lookup():
     """Regression: the worker must consume the pre-resolved MD_ACCESS_JSON and
     take the ssh path — never fail with 'cluster ... is not configured' (which

@@ -15,20 +15,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-from . import callback, cluster_settings, db, paper as paper_mod, runs, settings, user_context
-from .callback import BridgeAuthError
+from . import cluster_settings, db, paper as paper_mod, runs, settings, user_context
 from .paper import PaperResult
 from .pathcheck import precheck_path
-from .schemas import CreateDiagramRequest, PaperRef, ReprovisionRequest, ValidateRequest
+from .schemas import (
+    ChatRequest,
+    CreateDiagramRequest,
+    MemoRequest,
+    PaperRef,
+    ReprovisionRequest,
+    ValidateRequest,
+)
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     db.init_db()
-    # A run's generation task does not survive a process restart (dev mode reloads
-    # on every edit), so any run still 'running' at startup is orphaned — fail it in
-    # the DB, which is the SSE source of truth, so reconnecting clients see the error.
-    db.reconcile_stale_runs()
+    # Runs execute in detached worker processes and survive a backend restart, so a
+    # row left 'running' is only orphaned when its worker is actually gone. Fail
+    # those (dead/missing pid) in the DB — the SSE source of truth — so reconnecting
+    # clients see the error; live workers are left running.
+    db.reconcile_orphaned_runs()
+    db.reconcile_orphaned_chat()
     yield
 
 
@@ -108,28 +116,6 @@ async def health() -> dict:
         "runtime": settings.active_runtime(),
         "runtimes": settings.available_runtimes(),
     }
-
-
-# ── internal loopback callback (CLI runtime's MCP bridge) ───────────────────
-# Not under /api, so the gateway never proxies it; the backend binds loopback only.
-# Authenticated by the per-run token in the body (not x-ssot-user).
-
-
-@app.post("/internal/mcp/tool")
-async def internal_mcp_tool(request: Request) -> JSONResponse:
-    body = await request.json()
-    try:
-        run_id = int(body.get("run_id"))
-    except (TypeError, ValueError):
-        raise HTTPException(400, "invalid run_id")
-    token = str(body.get("token") or "")
-    tool = str(body.get("tool") or "")
-    args = body.get("args") or {}
-    try:
-        result, is_error = await callback.dispatch_tool(run_id, token, tool, args)
-    except BridgeAuthError:
-        raise HTTPException(403, "invalid callback token")
-    return JSONResponse({"result": result, "is_error": is_error})
 
 
 @app.get("/api/models")
@@ -273,6 +259,7 @@ async def list_diagrams() -> dict:
             {
                 "id": d["id"],
                 "path": d["path"],
+                "memo": d.get("memo") or "",
                 "latest_run": _run_summary(d["latest_run"]) if d["latest_run"] else None,
             }
             for d in items
@@ -289,8 +276,17 @@ async def get_diagram(diagram_id: int) -> dict:
     return {
         "id": diagram["id"],
         "path": diagram["path"],
+        "memo": diagram.get("memo") or "",
         "runs": [_run_summary(r) for r in db.list_runs(diagram_id)],
     }
+
+
+@app.patch("/api/diagrams/{diagram_id}")
+async def update_diagram_memo(diagram_id: int, body: MemoRequest) -> dict:
+    email = _require_user()
+    if not db.set_diagram_memo(diagram_id, user_email=email, memo=body.memo):
+        raise HTTPException(404, "diagram not found")
+    return {"id": diagram_id, "memo": body.memo}
 
 
 @app.delete("/api/diagrams/{diagram_id}", status_code=204)
@@ -307,6 +303,10 @@ async def get_run(run_id: int) -> dict:
     run = db.get_run(run_id)
     if run is None or run["user_email"] != email:
         raise HTTPException(404, "run not found")
+    # Lazily catch a run whose worker died so a fetch reflects the failure without
+    # waiting for the next startup sweep.
+    if run["status"] == "running" and db.reconcile_run_if_orphaned(run_id):
+        run = db.get_run(run_id) or run
     return _run_detail(run)
 
 
@@ -318,6 +318,132 @@ async def run_events(run_id: int, request: Request) -> EventSourceResponse:
         raise HTTPException(404, "run not found")
     headers = {"Cache-Control": "no-cache, no-transform"}
     return EventSourceResponse(runs.event_stream(run_id), headers=headers, ping=15)
+
+
+@app.post("/api/runs/{run_id}/cancel")
+async def cancel_run(run_id: int) -> dict:
+    email = _require_user()
+    run = db.get_run(run_id)
+    if run is None or run["user_email"] != email:
+        raise HTTPException(404, "run not found")
+    if run["status"] != "running":
+        raise HTTPException(409, "run is not running")
+    result = await runs.cancel_run(run_id)
+    if result == "not_found":
+        raise HTTPException(404, "run not found")
+    if result == "not_running":
+        raise HTTPException(409, "run is not running")
+    return {"status": "cancelled"}
+
+
+@app.get("/api/runs/{run_id}/output")
+async def run_output(run_id: int, after_seq: int = 0) -> dict:
+    email = _require_user()
+    run = db.get_run(run_id)
+    if run is None or run["user_email"] != email:
+        raise HTTPException(404, "run not found")
+    lines = db.list_output(run_id, after_seq=after_seq)
+    return {"lines": lines, "last_seq": lines[-1]["seq"] if lines else after_seq}
+
+
+# ── chat (follow-up conversation about a diagram) ──────────────────────────
+
+
+def _chat_message_out(msg: dict) -> dict:
+    return {
+        "id": msg["id"],
+        "role": msg["role"],
+        "content": msg.get("content") or "",
+        "status": msg["status"],
+        "error_detail": msg.get("error_detail"),
+        "revised_run_id": msg.get("revised_run_id"),
+        "anchor_run_id": msg.get("anchor_run_id"),
+        "seq": msg["seq"],
+        "created_at": msg["created_at"],
+    }
+
+
+@app.get("/api/diagrams/{diagram_id}/chat")
+async def get_chat(diagram_id: int) -> dict:
+    email = _require_user()
+    diagram = db.get_diagram(diagram_id)
+    if diagram is None or diagram["user_email"] != email:
+        raise HTTPException(404, "diagram not found")
+    thread_id = db.get_or_create_thread(diagram_id, email)
+    messages = db.list_chat_messages(thread_id)
+    return {"thread_id": thread_id, "messages": [_chat_message_out(m) for m in messages]}
+
+
+@app.post("/api/diagrams/{diagram_id}/chat", status_code=201)
+async def post_chat(diagram_id: int, body: ChatRequest) -> dict:
+    email = _require_user()
+    diagram = db.get_diagram(diagram_id)
+    if diagram is None or diagram["user_email"] != email:
+        raise HTTPException(404, "diagram not found")
+    anchor = db.get_run(body.run_id)
+    if anchor is None or anchor["user_email"] != email or anchor["diagram_id"] != diagram_id:
+        raise HTTPException(404, "run not found")
+    if anchor["status"] != "done":
+        raise HTTPException(409, "chat is only available on a completed diagram run")
+
+    # A per-turn model override is allowlist-validated; omitted → the anchor's model.
+    if body.model:
+        try:
+            model = settings.resolve_model(body.model)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+    else:
+        model = anchor.get("model")
+
+    thread_id = db.get_or_create_thread(diagram_id, email)
+    db.add_chat_message(thread_id, role="user", content=body.message.strip(),
+                        status="done", anchor_run_id=body.run_id)
+    assistant = db.add_chat_message(
+        thread_id, role="assistant", content="", status="pending",
+        anchor_run_id=body.run_id, model=model,
+    )
+    runs.start_chat(assistant["id"])
+    return {"thread_id": thread_id, "assistant_message_id": assistant["id"]}
+
+
+def _require_chat_message(message_id: int, email: str) -> dict:
+    msg = db.get_chat_message(message_id)
+    if msg is None:
+        raise HTTPException(404, "chat message not found")
+    anchor = db.get_run(int(msg["anchor_run_id"])) if msg.get("anchor_run_id") else None
+    if anchor is None or anchor["user_email"] != email:
+        raise HTTPException(404, "chat message not found")
+    return msg
+
+
+@app.get("/api/chat/{message_id}/events")
+async def chat_events(message_id: int, request: Request) -> EventSourceResponse:
+    email = _require_user()
+    _require_chat_message(message_id, email)
+    headers = {"Cache-Control": "no-cache, no-transform"}
+    return EventSourceResponse(runs.chat_event_stream(message_id), headers=headers, ping=15)
+
+
+@app.get("/api/chat/{message_id}/output")
+async def chat_output(message_id: int, after_seq: int = 0) -> dict:
+    email = _require_user()
+    _require_chat_message(message_id, email)
+    lines = db.list_chat_output(message_id, after_seq=after_seq)
+    return {"lines": lines, "last_seq": lines[-1]["seq"] if lines else after_seq}
+
+
+@app.post("/api/chat/{message_id}/cancel")
+async def cancel_chat(message_id: int) -> dict:
+    email = _require_user()
+    msg = _require_chat_message(message_id, email)
+    if msg["status"] != "pending":
+        raise HTTPException(409, "chat message is not pending")
+    result = await runs.cancel_chat(message_id)
+    if result == "not_found":
+        raise HTTPException(404, "chat message not found")
+    if result == "not_running":
+        raise HTTPException(409, "chat message is not pending")
+    return {"status": "cancelled"}
 
 
 @app.get("/api/runs/{run_id}/page")
@@ -343,4 +469,5 @@ def _attach_paper(run_id: int, result: PaperResult | None) -> None:
         sha256=result.sha256,
         page_count=result.page_count,
         parsed_title=result.parsed_title,
+        panel_path=result.panel_path,
     )

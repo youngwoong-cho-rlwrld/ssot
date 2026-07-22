@@ -62,3 +62,4 @@ __pycache__/
 .omc/
 data/
 board.json
+artifacts/

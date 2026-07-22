@@ -12,6 +12,7 @@ import base64
 import html
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 
@@ -120,20 +121,23 @@ def check_integrity(model: dict) -> list[str]:
                     f"component {key!r} snippet {start}-{end} out of range for {src!r} (1..{n})"
                 )
 
-    # Per-line facts (spec §10.2): every .fact span must target a live components
-    # entry with an in-range step index, so a click never lands on nothing.
+    # Per-line facts (spec §10.2): every .fact span must target its OWN box's
+    # component (clicking a line in box A must never light up box B) with an
+    # in-range step index, so a click never lands on nothing.
     for comp in model["components"]:
         if comp["kind"] != "component":
             continue
+        own_key = comp["component_key"]
+        own_steps = len(comp_json.get(own_key, []))
         for target_key, step in _fact_refs(comp.get("shape_html") or ""):
-            if target_key not in comp_json:
+            if target_key != own_key:
                 errors.append(
-                    f"component {comp['component_key']!r} fact targets unknown component {target_key!r}"
+                    f"component {own_key!r} fact targets {target_key!r} but a fact must target its "
+                    f"own box's component"
                 )
-            elif not (0 <= step < len(comp_json[target_key])):
+            elif not (0 <= step < own_steps):
                 errors.append(
-                    f"component {comp['component_key']!r} fact data-step {step} out of range for "
-                    f"{target_key!r} (0..{len(comp_json[target_key]) - 1})"
+                    f"component {own_key!r} fact data-step {step} out of range (0..{own_steps - 1})"
                 )
 
     # Every data-component attribute must have a components entry and vice versa.
@@ -188,6 +192,8 @@ def render_page(model: dict) -> str:
     wires_html = _wires_svg(model, canvas_w, canvas_h)
     hp_html = _hp_section(model) if show_hp else ""
 
+    paper_doc, paper_refs, paper_bar_prefix = _paper_panel(model, components, show_hp)
+
     sources_js = json.dumps(sources, ensure_ascii=False)
     components_js = json.dumps(components, ensure_ascii=False)
 
@@ -203,7 +209,56 @@ def render_page(model: dict) -> str:
         sources_js=sources_js,
         components_js=components_js,
         initial_component=json.dumps(initial_key),
+        paper_doc_js=json.dumps(paper_doc),
+        paper_refs_js=json.dumps(paper_refs, ensure_ascii=False),
+        paper_bar_prefix_js=json.dumps(paper_bar_prefix, ensure_ascii=False),
     )
+
+
+def _paper_panel(
+    model: dict, components: dict[str, list], show_hp: bool
+) -> tuple[str, dict[str, dict], str]:
+    """Data for the embedded paper pane (spec §10 A4): (doc_b64, refs, bar_prefix).
+
+    ``refs`` maps a RENDERED component_key -> {anchor, quote, label}: the sanitized
+    paper scrolls/highlights the cited sentence when that component is active. Only
+    citations carrying a ``paper_quote`` become refs, so the pane stays hidden for
+    components with no paper statement. On a paper mismatch (show_hp False) the pane
+    is fully suppressed, mirroring the dropped hyperparameter section.
+    """
+    if not show_hp:
+        return "", {}, ""
+    paper = model.get("paper") or {}
+    panel_path = paper.get("panel_path")
+    if not panel_path:
+        return "", {}, ""
+    try:
+        panel_html = Path(panel_path).read_text(encoding="utf-8")
+    except OSError:
+        return "", {}, ""
+    if not panel_html.strip():
+        return "", {}, ""
+
+    comp_key_by_id = {c["id"]: c["component_key"] for c in model["components"]}
+    refs: dict[str, dict] = {}
+    for cite in model.get("citations", []):
+        quote = (cite.get("paper_quote") or "").strip()
+        if not quote:
+            continue
+        key = comp_key_by_id.get(cite.get("component_id"))
+        if not key or key not in components or key in refs:
+            continue  # first cited sentence per rendered component wins
+        refs[key] = {
+            "anchor": cite.get("paper_anchor") or "",
+            "quote": quote,
+            "label": cite.get("paper_location") or cite.get("label") or "",
+        }
+    if not refs:
+        return "", {}, ""
+
+    doc_b64 = base64.b64encode(panel_html.encode("utf-8")).decode("ascii")
+    bar_prefix = f"{paper.get('parsed_title') or 'paper'} · "
+    return doc_b64, refs, bar_prefix
 
 
 def _initial_component(model: dict, components: dict[str, list]) -> str:
@@ -449,9 +504,24 @@ _PAGE_TEMPLATE = """<!doctype html>
 
     .fact {{ cursor: pointer; }}
     .fact:hover {{ text-decoration: underline; }}
+    .fact.dim {{ color: #2563eb; }}
 
 {position_css}
 {hp_css}
+
+    .code-pane {{ display: flex; flex-direction: column; }}
+    .editor {{ flex: 1 1 auto; min-height: 0; height: auto; }}
+    .paper-pane {{ flex: 0 0 45%; display: flex; flex-direction: column; min-height: 0; border-top: 2px solid #333; background: #fff; color: #111; }}
+    .paper-pane[hidden] {{ display: none; }}
+    .paper-bar {{ flex: 0 0 32px; line-height: 32px; padding: 0 14px; border-bottom: 1px solid #ccc; background: #f4f4f4; font: 11px/32px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: #333; }}
+    .paper-scroll {{ flex: 1 1 auto; min-height: 0; overflow: auto; }}
+    .paper-body {{ position: relative; max-width: 760px; padding: 14px 22px 40px; font: 13px/1.6 Georgia, "Times New Roman", serif; overflow-wrap: break-word; word-break: break-word; }}
+    .paper-body h1, .paper-body h2, .paper-body h3, .paper-body h4 {{ font-family: inherit; margin: 14px 0 6px; }}
+    .paper-body h2 {{ font-size: 16px; }} .paper-body h3 {{ font-size: 14px; }} .paper-body h4 {{ font-size: 13px; }}
+    .paper-body p {{ margin: 6px 0; }}
+    .paper-body table {{ border-collapse: collapse; margin: 8px 0; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
+    .paper-body td, .paper-body th {{ border: 1px solid #ccc; padding: 2px 7px; }}
+    .paper-mark {{ background: #ffd54d; }}
 
     .code-pane {{
       min-width: 0;
@@ -585,6 +655,13 @@ _PAGE_TEMPLATE = """<!doctype html>
           <div class="code" id="code" data-testid="code-preview"></div>
         </div>
       </div>
+
+        <div class="paper-pane" id="paper-pane" hidden>
+          <div class="paper-bar" id="paper-bar" data-testid="paper-bar"></div>
+          <div class="paper-scroll" id="paper-scroll">
+            <div class="paper-body" id="paper-body" data-testid="paper-body"></div>
+          </div>
+        </div>
     </section>
   </main>
 
@@ -592,6 +669,10 @@ _PAGE_TEMPLATE = """<!doctype html>
     const sources = {sources_js};
 
     const components = {components_js};
+
+    const paperDoc = {paper_doc_js};
+    const paperRefs = {paper_refs_js};
+    const paperBarPrefix = {paper_bar_prefix_js};
 
     const cache = new Map();
     const code = document.getElementById("code");
@@ -601,6 +682,10 @@ _PAGE_TEMPLATE = """<!doctype html>
     const stepCount = document.getElementById("step-count");
     const previous = document.getElementById("previous");
     const next = document.getElementById("next");
+    const paperPane = document.getElementById("paper-pane");
+    const paperBar = document.getElementById("paper-bar");
+    const paperScroll = document.getElementById("paper-scroll");
+    const paperBody = document.getElementById("paper-body");
     const componentButtons = [...document.querySelectorAll(".component")];
 
     let activeComponent = {initial_component};
@@ -612,6 +697,67 @@ _PAGE_TEMPLATE = """<!doctype html>
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;");
+    }}
+
+    function updatePaper() {{
+      const ref = paperRefs[activeComponent];
+      if (!ref || !paperDoc) {{ paperPane.hidden = true; return; }}
+      if (!paperBody.dataset.ready) {{
+        const bytes = Uint8Array.from(atob(paperDoc), (c) => c.charCodeAt(0));
+        paperBody.innerHTML = new TextDecoder().decode(bytes);
+        paperBody.dataset.ready = "1";
+      }}
+      paperPane.hidden = false;
+      paperBar.textContent = paperBarPrefix + (ref.label || "");
+      paperBody.querySelectorAll(".paper-mark").forEach((el) => el.replaceWith(document.createTextNode(el.textContent)));
+      const target = ref.anchor ? paperBody.querySelector('[id="' + ref.anchor + '"]') : null;
+      let marked = null;
+      if (ref.quote) {{
+        const scope = target || paperBody;
+        const needle = ref.quote.replace(/\\s+/g, " ").trim();
+        const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+        const chars = [];
+        let hay = "";
+        let node;
+        while ((node = walker.nextNode())) {{
+          const text = node.textContent;
+          for (let i = 0; i < text.length; i++) {{
+            const ch = /\\s/.test(text[i]) ? " " : text[i];
+            if (ch === " " && (hay.length === 0 || hay.endsWith(" "))) continue;
+            hay += ch;
+            chars.push({{ node, offset: i }});
+          }}
+        }}
+        const idx = hay.indexOf(needle);
+        if (idx >= 0) {{
+          let cur = idx;
+          const last = idx + needle.length - 1;
+          while (cur <= last) {{
+            const n = chars[cur].node;
+            let seg = cur;
+            while (seg + 1 <= last && chars[seg + 1].node === n) seg++;
+            const range = document.createRange();
+            range.setStart(n, chars[cur].offset);
+            range.setEnd(n, chars[seg].offset + 1);
+            const mark = document.createElement("span");
+            mark.className = "paper-mark";
+            try {{ range.surroundContents(mark); if (!marked) marked = mark; }} catch (e) {{}}
+            cur = seg + 1;
+          }}
+        }}
+      }}
+      const scrollTarget = marked || target;
+      if (scrollTarget) {{
+        paperScroll.scrollTop = Math.max(0,
+          scrollTarget.getBoundingClientRect().top - paperScroll.getBoundingClientRect().top
+          + paperScroll.scrollTop - paperScroll.clientHeight * 0.3);
+      }} else {{
+        // Deliberate deviation from the reference: when the cited sentence is not
+        // present in the embedded paper (no mark, no resolvable anchor) there is
+        // no corresponding text to show, so close the pane instead of leaving an
+        // unhighlighted document open.
+        paperPane.hidden = true;
+      }}
     }}
 
     async function loadSource(key) {{
@@ -632,6 +778,8 @@ _PAGE_TEMPLATE = """<!doctype html>
       componentButtons.forEach((button) => {{
         button.classList.toggle("is-active", button.dataset.component === activeComponent);
       }});
+
+      updatePaper();
 
       fileName.textContent = source.name;
       stepper.hidden = snippets.length === 1;

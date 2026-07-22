@@ -1,11 +1,15 @@
 import type {
+  ChatEvent,
+  ChatHistory,
   CreateDiagramResult,
   CreateRunResult,
   DiagramDetail,
   DiagramListItem,
   HealthResult,
   ModelsResult,
+  OutputLine,
   PaperInput,
+  PostChatResult,
   RunDetail,
   RunEvent,
   UploadResult,
@@ -143,9 +147,37 @@ export async function getRun(id: number, signal?: AbortSignal): Promise<RunDetai
   return requestJson<RunDetail>(`${BASE}/runs/${id}`, { signal });
 }
 
+/** Catch-up fetch of the agent-output log (the SSE stream also replays these). */
+export async function getRunOutput(
+  id: number,
+  afterSeq = 0,
+  signal?: AbortSignal,
+): Promise<{ lines: OutputLine[]; last_seq: number }> {
+  return requestJson<{ lines: OutputLine[]; last_seq: number }>(
+    `${BASE}/runs/${id}/output?after_seq=${afterSeq}`,
+    { signal },
+  );
+}
+
 export async function deleteDiagram(id: number): Promise<void> {
   const res = await fetch(`${BASE}/diagrams/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw await readError(res);
+}
+
+/** Save a diagram's memo (free-text note). Throws ApiError(404) if not found. */
+export async function updateDiagramMemo(id: number, memo: string): Promise<void> {
+  const res = await fetch(`${BASE}/diagrams/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ memo }),
+  });
+  if (!res.ok) throw await readError(res);
+}
+
+/** Cancel a running run. Throws ApiError(409) if the run is already terminal. */
+export async function cancelRun(id: number): Promise<void> {
+  const res = await fetch(`${BASE}/runs/${id}/cancel`, { method: "POST" });
+  if (!res.ok) throw await readError(res);
 }
 
 /** Self-contained rendered diagram page, embedded in an iframe. */
@@ -156,6 +188,7 @@ export function runPageUrl(runId: number): string {
 export interface RunEventHandlers {
   onStage?: (stage: string, detail: string, ts: string) => void;
   onWarning?: (kind: string, detail: string) => void;
+  onLog?: (seq: number, line: string, ts: string) => void;
   onDone?: (runId: number) => void;
   onError?: (kind: string, detail: string) => void;
 }
@@ -200,6 +233,9 @@ export function openRunEvents(
       case "warning":
         handlers.onWarning?.(event.kind, event.detail);
         break;
+      case "log":
+        handlers.onLog?.(event.seq, event.line, event.ts);
+        break;
       case "done":
         closed = true;
         es.close();
@@ -212,6 +248,90 @@ export function openRunEvents(
         break;
     }
   };
+  };
+  connect();
+  return () => {
+    closed = true;
+    if (retry !== null) clearTimeout(retry);
+    es.close();
+  };
+}
+
+// ── chat ────────────────────────────────────────────────────────────────
+
+/** Full chat history (thread + messages) for a diagram. */
+export async function getChat(
+  diagramId: number,
+  signal?: AbortSignal,
+): Promise<ChatHistory> {
+  return requestJson<ChatHistory>(`${BASE}/diagrams/${diagramId}/chat`, { signal });
+}
+
+/** Ask a follow-up question anchored to a completed run. Throws on 404/409. */
+export async function postChat(
+  diagramId: number,
+  runId: number,
+  message: string,
+  model?: string,
+): Promise<PostChatResult> {
+  return requestJson<PostChatResult>(
+    `${BASE}/diagrams/${diagramId}/chat`,
+    jsonBody({ run_id: runId, message, model }),
+  );
+}
+
+/** Cancel a pending chat turn. Throws ApiError(409) if it already finished. */
+export async function cancelChat(messageId: number): Promise<void> {
+  const res = await fetch(`${BASE}/chat/${messageId}/cancel`, { method: "POST" });
+  if (!res.ok) throw await readError(res);
+}
+
+export interface ChatEventHandlers {
+  onLog?: (seq: number, line: string) => void;
+  onMessage?: (msg: Extract<ChatEvent, { type: "message" }>) => void;
+  onError?: (detail: string) => void;
+}
+
+/**
+ * Subscribe to one assistant chat message's SSE stream. Mirrors openRunEvents:
+ * replays the turn's log, streams new lines + status, and closes on the terminal
+ * `message` frame (status done/error). Returns a disposer.
+ */
+export function openChatEvents(
+  messageId: number,
+  handlers: ChatEventHandlers,
+): () => void {
+  let es: EventSource;
+  let closed = false;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  const connect = () => {
+    es = new EventSource(`${BASE}/chat/${messageId}/events`);
+    es.onerror = () => {
+      if (closed || es.readyState !== EventSource.CLOSED) return;
+      retry = setTimeout(connect, 3000);
+    };
+    es.onmessage = (ev) => {
+      let event: ChatEvent | null = null;
+      try {
+        event = JSON.parse(ev.data) as ChatEvent;
+      } catch {
+        return;
+      }
+      if (!event) return;
+      if (event.type === "log") {
+        handlers.onLog?.(event.seq, event.line);
+      } else if (event.type === "message") {
+        handlers.onMessage?.(event);
+        if (event.status !== "pending") {
+          closed = true;
+          es.close();
+        }
+      } else if (event.type === "error") {
+        closed = true;
+        es.close();
+        handlers.onError?.(event.detail);
+      }
+    };
   };
   connect();
   return () => {

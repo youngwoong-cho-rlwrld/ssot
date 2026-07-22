@@ -5,6 +5,7 @@ a cache in ``runs.rendered_html``. Schema follows the plan §10.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,10 +17,18 @@ from .schemas import FinalizePayload
 VALID_STATUSES = {"running", "done", "error"}
 VALID_PAPER_STATUS = {"none", "attached", "mismatch"}
 
-_STALE_RUN_DETAIL = (
-    "the backend restarted while this run was in progress, so its generation task "
-    "was lost; start a new run"
+# A run whose worker process is confirmed gone (pid recorded but dead) died mid-run
+# — most often it was OOM-killed or crashed, since a clean finish writes a terminal
+# status before exiting. Runs now survive a *backend* restart (the worker is its own
+# detached process), so a plain "backend restarted" is no longer a failure cause.
+_ORPHAN_RUN_DETAIL = (
+    "the generation worker for this run is no longer running (it crashed or was "
+    "killed before finishing); start a new run"
 )
+
+# Keep at most this many agent-output lines per run; older lines are pruned as new
+# ones arrive so a long run cannot grow the DB without bound.
+_OUTPUT_KEEP_LINES = 2000
 
 
 def _now() -> str:
@@ -42,6 +51,7 @@ CREATE TABLE IF NOT EXISTS diagrams (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_email TEXT NOT NULL,
   path TEXT NOT NULL,
+  memo TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -60,6 +70,7 @@ CREATE TABLE IF NOT EXISTS runs (
   error_detail TEXT,
   paper_status TEXT NOT NULL DEFAULT 'none',
   paper_warning TEXT,
+  pid INTEGER,
   canvas_width INTEGER,
   canvas_height INTEGER,
   rendered_html TEXT,
@@ -67,6 +78,16 @@ CREATE TABLE IF NOT EXISTS runs (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_diagram ON runs(diagram_id);
+
+CREATE TABLE IF NOT EXISTS run_output (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  line TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  UNIQUE(run_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_run_output_run ON run_output(run_id, seq);
 
 CREATE TABLE IF NOT EXISTS stage_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +108,7 @@ CREATE TABLE IF NOT EXISTS papers (
   sha256 TEXT,
   page_count INTEGER,
   parsed_title TEXT,
+  panel_path TEXT,
   fetched_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_papers_run ON papers(run_id);
@@ -138,6 +160,8 @@ CREATE TABLE IF NOT EXISTS paper_citations (
   paper_location TEXT,
   code_value TEXT,
   confidence TEXT,
+  paper_quote TEXT,
+  paper_anchor TEXT,
   ordinal INTEGER NOT NULL
 );
 
@@ -149,16 +173,90 @@ CREATE TABLE IF NOT EXISTS edges (
   to_component_id INTEGER REFERENCES components(id) ON DELETE SET NULL,
   ordinal INTEGER NOT NULL
 );
+
+-- Follow-up chat about a diagram. One thread per diagram; each turn is a user
+-- message + an assistant message. The assistant message is produced by a detached
+-- chat worker (same infra as runs): it carries pid + status ('pending' until the
+-- worker finishes) and, when the turn revised the diagram, revised_run_id points at
+-- the new run persisted under the diagram.
+CREATE TABLE IF NOT EXISTS chat_threads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  diagram_id INTEGER NOT NULL REFERENCES diagrams(id) ON DELETE CASCADE,
+  user_email TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(diagram_id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  anchor_run_id INTEGER,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'done',
+  error_detail TEXT,
+  revised_run_id INTEGER,
+  model TEXT,
+  pid INTEGER,
+  seq INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, seq);
+
+CREATE TABLE IF NOT EXISTS chat_output (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  line TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  UNIQUE(message_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_output_msg ON chat_output(message_id, seq);
 """
 
 
 def init_db() -> None:
     conn = _connect()
     try:
+        # WAL lets the web process, each detached run worker, and (on the CLI
+        # runtime) the MCP subprocess read/write the one DB concurrently without
+        # blocking. It is a persistent property of the file; _connect sets the
+        # PRAGMA on every open, but assert it actually took here at init time.
+        mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+        if str(mode).lower() != "wal":  # e.g. :memory: or a filesystem without mmap
+            conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive migrations for DBs created before a column/table existed.
+
+    ``CREATE TABLE IF NOT EXISTS`` never alters an existing table, so a ``runs``
+    table from before the detached-worker change lacks ``pid``; add it in place.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    if "pid" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN pid INTEGER")
+
+    diagram_cols = {r["name"] for r in conn.execute("PRAGMA table_info(diagrams)").fetchall()}
+    if diagram_cols and "memo" not in diagram_cols:
+        conn.execute("ALTER TABLE diagrams ADD COLUMN memo TEXT NOT NULL DEFAULT ''")
+
+    paper_cols = {r["name"] for r in conn.execute("PRAGMA table_info(papers)").fetchall()}
+    if paper_cols and "panel_path" not in paper_cols:
+        conn.execute("ALTER TABLE papers ADD COLUMN panel_path TEXT")
+
+    cite_cols = {r["name"] for r in conn.execute("PRAGMA table_info(paper_citations)").fetchall()}
+    if cite_cols and "paper_quote" not in cite_cols:
+        conn.execute("ALTER TABLE paper_citations ADD COLUMN paper_quote TEXT")
+    if cite_cols and "paper_anchor" not in cite_cols:
+        conn.execute("ALTER TABLE paper_citations ADD COLUMN paper_anchor TEXT")
 
 
 # ── diagrams + runs ───────────────────────────────────────────────────────
@@ -228,6 +326,20 @@ def get_diagram(diagram_id: int) -> Optional[dict]:
         conn.close()
 
 
+def set_diagram_memo(diagram_id: int, *, user_email: str, memo: str) -> bool:
+    """Update a diagram's memo (ownership-scoped); True if a row was updated."""
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            "UPDATE diagrams SET memo = ?, updated_at = ? WHERE id = ? AND user_email = ?",
+            (memo, _now(), diagram_id, user_email),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def delete_diagram(diagram_id: int, *, user_email: str) -> bool:
     conn = _connect()
     try:
@@ -268,6 +380,7 @@ def list_diagrams(user_email: str) -> list[dict]:
                 {
                     "id": row["id"],
                     "path": row["path"],
+                    "memo": row["memo"],
                     "created_at": row["created_at"],
                     "updated_at": row["updated_at"],
                     "latest_run": dict(latest) if latest else None,
@@ -332,35 +445,146 @@ def update_run_status(
         conn.close()
 
 
-def reconcile_stale_runs(older_than_seconds: float = 5.0) -> list[int]:
-    """Fail runs left ``running`` by a crashed/restarted backend (returns their ids).
+def mark_terminal(
+    run_id: int,
+    status: str,
+    *,
+    error_kind: Optional[str] = None,
+    error_detail: Optional[str] = None,
+    paper_status: Optional[str] = None,
+    paper_warning: Optional[str] = None,
+) -> bool:
+    """Flip a still-``running`` row to a terminal status; return True if it flipped.
 
-    A run executes as a detached asyncio task owned by the worker process; when the
-    process dies (dev mode's ``uvicorn --reload`` restarts on every file edit) the
-    task vanishes but the row stays ``running`` forever. On startup no run task can
-    still be alive, so every such row is orphaned — mark it ``error`` /
-    ``agent_failure``. The DB is the SSE source of truth (``event_stream`` replays a
-    terminal frame from the row), so a reconnecting client sees the failure.
-
-    ``older_than_seconds`` skips very fresh rows so this can never race a run being
-    created concurrently (created_at is an ISO-8601 UTC string, so lexical order is
-    chronological).
+    A terminal status is FINAL — this only updates ``WHERE status = 'running'``. That
+    makes the terminal write race-safe: once the cancel endpoint records
+    ``cancelled``, a worker/MCP write that lands a moment later is a no-op, so the
+    worker's own error handling can never resurrect a cancelled (or otherwise
+    already-terminal) run.
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)).isoformat()
+    fields = ["status = ?", "updated_at = ?"]
+    params: list[Any] = [status, _now()]
+    if error_kind is not None:
+        fields.append("error_kind = ?")
+        params.append(error_kind)
+    if error_detail is not None:
+        fields.append("error_detail = ?")
+        params.append(error_detail)
+    if paper_status is not None:
+        fields.append("paper_status = ?")
+        params.append(paper_status)
+    if paper_warning is not None:
+        fields.append("paper_warning = ?")
+        params.append(paper_warning)
+    params.append(run_id)
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            f"UPDATE runs SET {', '.join(fields)} WHERE id = ? AND status = 'running'", params
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_run_pid(run_id: int, pid: int) -> None:
+    """Record the detached worker's pid so reconciliation can probe its liveness."""
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE runs SET pid = ?, updated_at = ? WHERE id = ?", (pid, _now(), run_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _pid_alive(pid: Optional[int]) -> bool:
+    """True if ``pid`` names a live process. ``os.kill(pid, 0)`` sends no signal —
+    it only checks existence: no error → alive; ProcessLookupError → gone;
+    PermissionError → exists but owned by another user (treat as alive)."""
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _fail_orphan(conn: sqlite3.Connection, run_id: int) -> None:
+    conn.execute(
+        "UPDATE runs SET status = 'error', error_kind = 'agent_failure', "
+        "error_detail = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+        (_ORPHAN_RUN_DETAIL, _now(), run_id),
+    )
+
+
+def reconcile_orphaned_runs(spawn_grace_seconds: float = 15.0) -> list[int]:
+    """Fail ``running`` rows whose worker process is gone (returns their ids).
+
+    Each run now executes in its own detached OS process (:mod:`app.run_worker`)
+    whose pid is stored on the row, so a run *survives* a backend restart — the
+    worker keeps going and writes its terminal status straight to the DB. A row is
+    only orphaned when its worker is actually dead:
+
+    * pid recorded and no longer alive → the worker crashed/was killed → fail.
+    * pid still NULL and the row is older than ``spawn_grace_seconds`` → the worker
+      never came up (or the backend died between the INSERT and the spawn) → fail.
+      Fresh NULL-pid rows are left alone so this never races a run mid-spawn.
+
+    The DB is the SSE source of truth (``event_stream`` tails it), so a reconnecting
+    client sees the failure frame.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=spawn_grace_seconds)).isoformat()
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT id FROM runs WHERE status = 'running' AND created_at < ?", (cutoff,)
+            "SELECT id, pid, created_at FROM runs WHERE status = 'running'"
         ).fetchall()
-        ids = [int(r["id"]) for r in rows]
-        if ids:
-            conn.execute(
-                "UPDATE runs SET status = 'error', error_kind = 'agent_failure', "
-                "error_detail = ?, updated_at = ? WHERE status = 'running' AND created_at < ?",
-                (_STALE_RUN_DETAIL, _now(), cutoff),
-            )
+        failed: list[int] = []
+        for row in rows:
+            pid = row["pid"]
+            if pid is None:
+                if row["created_at"] < cutoff:  # never spawned; not a live mid-spawn row
+                    _fail_orphan(conn, int(row["id"]))
+                    failed.append(int(row["id"]))
+            elif not _pid_alive(pid):
+                _fail_orphan(conn, int(row["id"]))
+                failed.append(int(row["id"]))
+        if failed:
             conn.commit()
-        return ids
+        return failed
+    finally:
+        conn.close()
+
+
+def reconcile_run_if_orphaned(run_id: int, spawn_grace_seconds: float = 15.0) -> bool:
+    """Lazily fail one ``running`` run whose worker is dead; True if it was failed.
+
+    Called when a single run is fetched/tailed so a dead worker is caught without
+    waiting for the next startup sweep.
+    """
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT id, pid, status, created_at FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row is None or row["status"] != "running":
+            return False
+        pid = row["pid"]
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=spawn_grace_seconds)).isoformat()
+        dead = (pid is None and row["created_at"] < cutoff) or (pid is not None and not _pid_alive(pid))
+        if not dead:
+            return False
+        _fail_orphan(conn, run_id)
+        conn.commit()
+        return True
     finally:
         conn.close()
 
@@ -418,6 +642,56 @@ def list_stage_events(run_id: int) -> list[dict]:
         conn.close()
 
 
+# ── agent output (live activity log) ──────────────────────────────────────
+
+
+def add_output_line(run_id: int, line: str) -> dict:
+    """Append one agent-output line and return ``{seq, line, ts}``.
+
+    ``seq`` is a per-run monotonic counter (max+1). Older lines beyond
+    :data:`_OUTPUT_KEEP_LINES` are pruned by seq threshold — cheap and safe
+    because seq is monotonic and never reused, and tailing keys off ``after_seq``
+    so the gap left by pruning is harmless.
+    """
+    ts = _now()
+    text = line if len(line) <= 4000 else line[:4000] + " …[truncated]"
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) AS m FROM run_output WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        seq = int(row["m"]) + 1
+        conn.execute(
+            "INSERT INTO run_output (run_id, seq, line, ts) VALUES (?, ?, ?, ?)",
+            (run_id, seq, text, ts),
+        )
+        if seq > _OUTPUT_KEEP_LINES:
+            conn.execute(
+                "DELETE FROM run_output WHERE run_id = ? AND seq <= ?",
+                (run_id, seq - _OUTPUT_KEEP_LINES),
+            )
+        conn.commit()
+        return {"seq": seq, "line": text, "ts": ts}
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def list_output(run_id: int, after_seq: int = 0) -> list[dict]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT seq, line, ts FROM run_output WHERE run_id = ? AND seq > ? ORDER BY seq ASC",
+            (run_id, after_seq),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 # ── papers ────────────────────────────────────────────────────────────────
 
 
@@ -431,16 +705,18 @@ def add_paper(
     sha256: Optional[str],
     page_count: Optional[int],
     parsed_title: Optional[str],
+    panel_path: Optional[str] = None,
 ) -> int:
     conn = _connect()
     try:
         cur = conn.execute(
             """
             INSERT INTO papers (run_id, kind, source_url, stored_path, content_type,
-                                sha256, page_count, parsed_title, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                sha256, page_count, parsed_title, panel_path, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (run_id, kind, source_url, stored_path, content_type, sha256, page_count, parsed_title, _now()),
+            (run_id, kind, source_url, stored_path, content_type, sha256, page_count,
+             parsed_title, panel_path, _now()),
         )
         # Reflect the attachment on the run so the API/viewer see paper_status
         # 'attached' immediately (it only becomes 'mismatch' if the agent later
@@ -476,14 +752,299 @@ def get_paper(run_id: int) -> Optional[dict]:
         conn.close()
 
 
+def get_source_b64_by_name(run_id: int) -> dict[str, str]:
+    """Map ``name -> content_b64`` for a run's stored sources (chat-revise reuse).
+
+    A chat revision references the anchor run's already-embedded files; reusing
+    those bytes by name avoids re-reading the whole repo on every follow-up turn.
+    """
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT name, content_b64 FROM sources WHERE run_id = ?", (run_id,)
+        ).fetchall()
+        return {r["name"]: r["content_b64"] for r in rows}
+    finally:
+        conn.close()
+
+
+# ── chat (follow-up conversation about a diagram) ──────────────────────────
+
+_CHAT_OUTPUT_KEEP_LINES = 2000
+_CHAT_ORPHAN_DETAIL = (
+    "the chat worker for this reply is no longer running (it crashed or was killed); "
+    "ask again"
+)
+
+
+def get_or_create_thread(diagram_id: int, user_email: str) -> int:
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT id FROM chat_threads WHERE diagram_id = ?", (diagram_id,)
+        ).fetchone()
+        if row is not None:
+            return int(row["id"])
+        now = _now()
+        cur = conn.execute(
+            "INSERT INTO chat_threads (diagram_id, user_email, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (diagram_id, user_email, now, now),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def add_chat_message(
+    thread_id: int,
+    *,
+    role: str,
+    content: str = "",
+    status: str = "done",
+    anchor_run_id: Optional[int] = None,
+    model: Optional[str] = None,
+) -> dict:
+    """Append a chat message (per-thread monotonic ``seq``); returns the row."""
+    now = _now()
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) AS m FROM chat_messages WHERE thread_id = ?", (thread_id,)
+        ).fetchone()
+        seq = int(row["m"]) + 1
+        cur = conn.execute(
+            """
+            INSERT INTO chat_messages (thread_id, anchor_run_id, role, content, status, model,
+                                       seq, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (thread_id, anchor_run_id, role, content, status, model, seq, now, now),
+        )
+        conn.execute("UPDATE chat_threads SET updated_at = ? WHERE id = ?", (now, thread_id))
+        conn.commit()
+        msg = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (int(cur.lastrowid),)).fetchone()
+        return dict(msg)
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_chat_message(message_id: int) -> Optional[dict]:
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_chat_messages(thread_id: int, after_seq: int = 0) -> list[dict]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM chat_messages WHERE thread_id = ? AND seq > ? ORDER BY seq ASC",
+            (thread_id, after_seq),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def set_chat_pid(message_id: int, pid: int) -> None:
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE chat_messages SET pid = ?, updated_at = ? WHERE id = ?", (pid, _now(), message_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def finish_chat_message(
+    message_id: int,
+    status: str,
+    *,
+    content: Optional[str] = None,
+    error_detail: Optional[str] = None,
+    revised_run_id: Optional[int] = None,
+) -> bool:
+    """Flip a still-``pending`` assistant message to terminal; True if it flipped.
+
+    Guarded like :func:`mark_terminal` so a cancel that landed first (or a double
+    write) is never clobbered.
+    """
+    fields = ["status = ?", "updated_at = ?"]
+    params: list[Any] = [status, _now()]
+    if content is not None:
+        fields.append("content = ?")
+        params.append(content)
+    if error_detail is not None:
+        fields.append("error_detail = ?")
+        params.append(error_detail)
+    if revised_run_id is not None:
+        fields.append("revised_run_id = ?")
+        params.append(revised_run_id)
+    params.append(message_id)
+    conn = _connect()
+    try:
+        cur = conn.execute(
+            f"UPDATE chat_messages SET {', '.join(fields)} WHERE id = ? AND status = 'pending'", params
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_chat_revised(message_id: int, revised_run_id: int) -> None:
+    """Stamp the revision run id on a pending assistant message (does not finish it).
+
+    Used by the CLI-runtime MCP revise handler so the worker can read the new run id
+    after the CLI exits; the worker still owns the terminal ``finish_chat_message``.
+    """
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE chat_messages SET revised_run_id = ?, updated_at = ? WHERE id = ?",
+            (revised_run_id, _now(), message_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def add_chat_output_line(message_id: int, line: str) -> dict:
+    ts = _now()
+    text = line if len(line) <= 4000 else line[:4000] + " …[truncated]"
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) AS m FROM chat_output WHERE message_id = ?", (message_id,)
+        ).fetchone()
+        seq = int(row["m"]) + 1
+        conn.execute(
+            "INSERT INTO chat_output (message_id, seq, line, ts) VALUES (?, ?, ?, ?)",
+            (message_id, seq, text, ts),
+        )
+        if seq > _CHAT_OUTPUT_KEEP_LINES:
+            conn.execute(
+                "DELETE FROM chat_output WHERE message_id = ? AND seq <= ?",
+                (message_id, seq - _CHAT_OUTPUT_KEEP_LINES),
+            )
+        conn.commit()
+        return {"seq": seq, "line": text, "ts": ts}
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def list_chat_output(message_id: int, after_seq: int = 0) -> list[dict]:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT seq, line, ts FROM chat_output WHERE message_id = ? AND seq > ? ORDER BY seq ASC",
+            (message_id, after_seq),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def reconcile_chat_message_if_orphaned(message_id: int, spawn_grace_seconds: float = 15.0) -> bool:
+    """Fail a ``pending`` assistant message whose worker is dead; True if failed."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT id, pid, status, created_at FROM chat_messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        if row is None or row["status"] != "pending":
+            return False
+        pid = row["pid"]
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=spawn_grace_seconds)).isoformat()
+        dead = (pid is None and row["created_at"] < cutoff) or (pid is not None and not _pid_alive(pid))
+        if not dead:
+            return False
+        conn.execute(
+            "UPDATE chat_messages SET status = 'error', error_detail = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'pending'",
+            (_CHAT_ORPHAN_DETAIL, _now(), message_id),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def reconcile_orphaned_chat(spawn_grace_seconds: float = 15.0) -> list[int]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=spawn_grace_seconds)).isoformat()
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, pid, created_at FROM chat_messages WHERE status = 'pending'"
+        ).fetchall()
+        failed: list[int] = []
+        for row in rows:
+            pid = row["pid"]
+            dead = (pid is None and row["created_at"] < cutoff) or (pid is not None and not _pid_alive(pid))
+            if dead:
+                conn.execute(
+                    "UPDATE chat_messages SET status = 'error', error_detail = ?, updated_at = ? "
+                    "WHERE id = ? AND status = 'pending'",
+                    (_CHAT_ORPHAN_DETAIL, _now(), int(row["id"])),
+                )
+                failed.append(int(row["id"]))
+        if failed:
+            conn.commit()
+        return failed
+    finally:
+        conn.close()
+
+
+def copy_paper(from_run_id: int, to_run_id: int) -> None:
+    """Copy the latest paper row from one run to another (for a chat revision)."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM papers WHERE run_id = ? ORDER BY id DESC LIMIT 1", (from_run_id,)
+        ).fetchone()
+        if row is None:
+            return
+        conn.execute(
+            """
+            INSERT INTO papers (run_id, kind, source_url, stored_path, content_type,
+                                sha256, page_count, parsed_title, panel_path, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (to_run_id, row["kind"], row["source_url"], row["stored_path"], row["content_type"],
+             row["sha256"], row["page_count"], row["parsed_title"], row["panel_path"], _now()),
+        )
+        conn.execute(
+            "UPDATE runs SET paper_status = 'attached', updated_at = ? WHERE id = ? AND paper_status = 'none'",
+            (_now(), to_run_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ── finalize persistence ──────────────────────────────────────────────────
 
 
-def persist_finalize(run_id: int, payload: FinalizePayload) -> None:
+def persist_finalize(run_id: int, payload: FinalizePayload, source_b64: dict[str, str]) -> None:
     """Insert the normalized diagram rows for a finalized run (atomic).
 
-    ``line_count`` is recomputed from the decoded content (not trusted from the
-    agent) so the render-time highlight bounds match the embedded bytes.
+    ``source_b64`` maps each ``source_key`` to the base64 of the exact bytes the
+    backend fetched from the model root at finalize time (the agent no longer
+    sends file contents). ``line_count`` is recomputed from those bytes so the
+    render-time highlight bounds provably match the embedded source.
     """
     conn = _connect()
     try:
@@ -500,10 +1061,11 @@ def persist_finalize(run_id: int, payload: FinalizePayload) -> None:
 
         source_ids: dict[str, int] = {}
         for src in payload.sources:
-            line_count = _b64_line_count(src.content_b64)
+            content_b64 = source_b64[src.source_key]
+            line_count = _b64_line_count(content_b64)
             cur = conn.execute(
                 "INSERT INTO sources (run_id, source_key, name, content_b64, line_count) VALUES (?, ?, ?, ?, ?)",
-                (run_id, src.source_key, src.name, src.content_b64, line_count),
+                (run_id, src.source_key, src.name, content_b64, line_count),
             )
             source_ids[src.source_key] = int(cur.lastrowid)
 
@@ -541,11 +1103,13 @@ def persist_finalize(run_id: int, payload: FinalizePayload) -> None:
                 conn.execute(
                     """
                     INSERT INTO paper_citations (run_id, component_id, label, paper_value,
-                                                 paper_location, code_value, confidence, ordinal)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                                 paper_location, code_value, confidence,
+                                                 paper_quote, paper_anchor, ordinal)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (run_id, comp_id, cite.label, cite.paper_value, cite.paper_location,
-                     cite.code_value, cite.confidence, cite_ordinal),
+                     cite.code_value, cite.confidence, cite.paper_quote, cite.paper_anchor,
+                     cite_ordinal),
                 )
                 cite_ordinal += 1
 
@@ -560,6 +1124,43 @@ def persist_finalize(run_id: int, payload: FinalizePayload) -> None:
         conn.execute(
             "UPDATE runs SET title = ?, commit_hash = ?, canvas_width = ?, canvas_height = ?, updated_at = ? WHERE id = ?",
             (payload.title, payload.commit_hash, payload.canvas.width, payload.canvas.height, _now(), run_id),
+        )
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def apply_geometry(
+    run_id: int,
+    box_geom: dict[str, tuple[int, int]],
+    canvas_height: int,
+    edge_paths: dict[int, str],
+) -> None:
+    """Persist the headless-measured geometry pass (spec §7.2 / A6).
+
+    ``box_geom`` maps component_key -> (top_px, min_height_px); ``edge_paths`` maps
+    an edge ordinal -> regenerated orthogonal path_d. Written atomically so the
+    re-rendered page always reflects a self-consistent layout.
+    """
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for component_key, (top_px, min_height_px) in box_geom.items():
+            conn.execute(
+                "UPDATE components SET top_px = ?, min_height_px = ? WHERE run_id = ? AND component_key = ?",
+                (top_px, min_height_px, run_id, component_key),
+            )
+        for ordinal, path_d in edge_paths.items():
+            conn.execute(
+                "UPDATE edges SET path_d = ? WHERE run_id = ? AND ordinal = ?",
+                (path_d, run_id, ordinal),
+            )
+        conn.execute(
+            "UPDATE runs SET canvas_height = ?, updated_at = ? WHERE id = ?",
+            (canvas_height, _now(), run_id),
         )
         conn.commit()
     except BaseException:

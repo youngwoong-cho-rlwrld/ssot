@@ -110,35 +110,38 @@ def test_render_with_paper_section():
 def test_fact_handler_and_css_present():
     html = render_page(_model())
     assert ".fact { cursor: pointer; }" in html
+    assert ".fact.dim { color: #2563eb; }" in html  # the one permitted accent (spec §10.2)
     assert 'document.querySelectorAll(".fact")' in html
 
 
-def test_valid_fact_passes_integrity():
+def test_valid_fact_targets_own_box():
     model = _model()
-    # head has two snippets? no — head has one; dataset has one. Target dataset step 0.
+    # dataset owns one snippet (step 0); a dim tensor line pointing at its own box.
     model["components"][0]["shape_html"] = (
-        '<span class="fact" data-component="head" data-step="0">points at head</span>'
+        '<span class="fact dim" data-component="dataset" data-step="0">[B,8,7]</span>'
     )
     assert check_integrity(model) == []
-    assert "points at head" in render_page(model)
+    html = render_page(model)
+    assert '<span class="fact dim" data-component="dataset"' in html
 
 
-def test_fact_unknown_component_flagged():
+def test_fact_cross_component_flagged():
     model = _model()
+    # dataset box points a fact at 'head' — forbidden by §10.2 (must target own box).
     model["components"][0]["shape_html"] = (
-        '<span class="fact" data-component="nope" data-step="0">x</span>'
+        '<span class="fact" data-component="head" data-step="0">x</span>'
     )
     errors = check_integrity(model)
-    assert any("fact targets unknown component 'nope'" in e for e in errors)
+    assert any("must target its own box's component" in e for e in errors)
     with pytest.raises(IntegrityError):
         render_page(model)
 
 
 def test_fact_step_out_of_range_flagged():
     model = _model()
-    # head has exactly one snippet (step 0); step 3 is out of range.
+    # dataset owns exactly one snippet (step 0); step 3 is out of range.
     model["components"][0]["shape_html"] = (
-        '<span class="fact" data-component="head" data-step="3">x</span>'
+        '<span class="fact" data-component="dataset" data-step="3">x</span>'
     )
     errors = check_integrity(model)
     assert any("data-step 3 out of range" in e for e in errors)
@@ -149,3 +152,73 @@ def test_paper_mismatch_hides_hp_section():
     assert 'class="hp"' not in html
     # the hp_row components have no snippets rendered as diagram boxes, so still no data-component leak
     assert "hidden dim" not in html
+
+
+# ── A4 embedded paper panel ─────────────────────────────────────────────────
+
+_PANEL_DOC = '<section id="S3"><p>Hidden dim is 512 in all runs.</p></section>'
+
+
+def _model_with_panel(tmp_path, *, quote="Hidden dim is 512 in all runs.", paper_status="attached"):
+    """A paper model whose clickable hp row carries a paper_quote → paper ref."""
+    model = _model(with_paper=True, paper_status=paper_status)
+    panel = tmp_path / "paper.panel.html"
+    panel.write_text(_PANEL_DOC, encoding="utf-8")
+    model["paper"] = {"parsed_title": "Tiny Paper", "panel_path": str(panel)}
+    # hp-hidden-dim (component_id 20) is the clickable row; attach a quote to it.
+    model["citations"] = [
+        {"id": 1, "component_id": 20, "label": "hidden dim", "paper_value": "512",
+         "paper_location": "§3 / Table 1", "code_value": "1", "confidence": "medium",
+         "paper_quote": quote, "paper_anchor": "S3", "ordinal": 0},
+    ]
+    return model
+
+
+def test_paper_pane_markup_always_present():
+    # The pane chrome ships on every page (hidden when no ref), matching the reference.
+    html = render_page(_model())
+    assert 'id="paper-pane"' in html
+    assert "function updatePaper()" in html
+    assert "const paperRefs = {}" in html  # no paper → empty refs
+    assert 'const paperDoc = ""' in html
+
+
+def test_paper_pane_refs_and_doc_embedded(tmp_path):
+    html = render_page(_model_with_panel(tmp_path))
+    assert '"hp-hidden-dim":' in html  # ref keyed by the rendered component
+    assert "Hidden dim is 512 in all runs." in html  # the cited sentence (quote)
+    assert 'const paperDoc = ""' not in html  # doc actually embedded
+    assert "Tiny Paper" in html  # bar prefix from the paper title
+
+
+def test_paper_pane_skips_citation_without_quote(tmp_path):
+    model = _model_with_panel(tmp_path, quote="")
+    html = render_page(model)
+    # No quote → no ref → pane stays inert and the doc is not embedded.
+    assert "const paperRefs = {}" in html
+    assert 'const paperDoc = ""' in html
+
+
+def test_paper_pane_suppressed_on_mismatch(tmp_path):
+    model = _model_with_panel(tmp_path, paper_status="mismatch")
+    html = render_page(model)
+    assert "const paperRefs = {}" in html
+    assert 'const paperDoc = ""' in html
+
+
+def test_paper_body_wraps_long_tokens():
+    # The paper pane must wrap unbroken tokens (PDF/math text) instead of scrolling
+    # horizontally forever ("doesn't change lines"): overflow-wrap/word-break on it.
+    html = render_page(_model())
+    assert "overflow-wrap: break-word" in html
+    assert "word-break: break-word" in html
+
+
+def test_paper_pane_autocloses_when_quote_absent():
+    # Deliberate deviation from the reference: when no cited sentence matches, the
+    # pane closes rather than showing an unhighlighted paper. The else branch of the
+    # scroll decision must hide the pane.
+    html = render_page(_model())
+    idx = html.index("const scrollTarget = marked || target;")
+    tail = html[idx:idx + 800]
+    assert "} else {" in tail and "paperPane.hidden = true;" in tail

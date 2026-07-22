@@ -5,6 +5,8 @@ import "@ssot/theme/tokens.css";
 import "@ssot/theme/base.css";
 import "@ssot/theme/header.css";
 import "@ssot/theme/controls.css";
+import "@ssot/theme/chat.css";
+import "@ssot/theme/modal.css";
 import "@ssot/theme/theme-init.js";
 import "@ssot/theme/runtime.js";
 import "./styles.css";
