@@ -15,8 +15,7 @@ import { ModelSelect } from "./ModelSelect";
 import type { ChatMessage, ModelOption } from "./types";
 
 interface Props {
-  diagramId: number;
-  runId: number; // the run being viewed; the chat is anchored to it
+  runId: number; // the run being viewed; its own chat thread
   open: boolean;
   onToggle: () => void;
   onRevision: (newRunId: number) => void;
@@ -28,7 +27,7 @@ const CANCELLED_DETAIL = "cancelled by user";
 // body reuses the shared @ssot/theme/chat.css grammar verbatim — the same
 // panel__body.chat__body / bubble* / typing / chat__compose·input·send used by
 // OpenClaw's Chat.tsx and results-sheet's ResultsAgentPanel.
-export function ChatPanel({ diagramId, runId, open, onToggle, onRevision }: Props) {
+export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -44,7 +43,7 @@ export function ChatPanel({ diagramId, runId, open, onToggle, onRevision }: Prop
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    getChat(diagramId, controller.signal)
+    getChat(runId, controller.signal)
       .then((h) => setMessages(h.messages))
       .catch(() => {});
     Promise.all([getModels(controller.signal), getRun(runId, controller.signal)])
@@ -54,7 +53,7 @@ export function ChatPanel({ diagramId, runId, open, onToggle, onRevision }: Prop
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [diagramId, runId, open]);
+  }, [runId, open]);
 
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -87,8 +86,8 @@ export function ChatPanel({ diagramId, runId, open, onToggle, onRevision }: Prop
     ]);
     setInput("");
     try {
-      const { assistant_message_id } = await postChat(diagramId, runId, text, model || undefined);
-      const history = await getChat(diagramId);
+      const { assistant_message_id } = await postChat(runId, text, model || undefined);
+      const history = await getChat(runId);
       setMessages(history.messages);
       setSending(false);
       setPendingId(assistant_message_id);
@@ -118,7 +117,7 @@ export function ChatPanel({ diagramId, runId, open, onToggle, onRevision }: Prop
         },
       ]);
     }
-  }, [input, busy, diagramId, runId, model, upsert]);
+  }, [input, busy, runId, model, upsert]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {

@@ -8,6 +8,7 @@ plan §10 boundary.
 from __future__ import annotations
 
 import os
+import socket
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
@@ -115,6 +116,9 @@ async def health() -> dict:
         "anthropic_configured": settings.anthropic_api_key() is not None,
         "runtime": settings.active_runtime(),
         "runtimes": settings.available_runtimes(),
+        # The machine the backend (and thus the agent CLIs) run on — auth setup must
+        # happen HERE, not on the user's laptop, so the setup modal names it.
+        "hostname": socket.gethostname(),
     }
 
 
@@ -363,44 +367,49 @@ def _chat_message_out(msg: dict) -> dict:
     }
 
 
-@app.get("/api/diagrams/{diagram_id}/chat")
-async def get_chat(diagram_id: int) -> dict:
-    email = _require_user()
-    diagram = db.get_diagram(diagram_id)
-    if diagram is None or diagram["user_email"] != email:
-        raise HTTPException(404, "diagram not found")
-    thread_id = db.get_or_create_thread(diagram_id, email)
-    messages = db.list_chat_messages(thread_id)
-    return {"thread_id": thread_id, "messages": [_chat_message_out(m) for m in messages]}
+# Chat is per RUN: each run has its own transcript (a revision's new run starts
+# empty). Routes are keyed by run_id; the thread is created lazily on first use.
 
 
-@app.post("/api/diagrams/{diagram_id}/chat", status_code=201)
-async def post_chat(diagram_id: int, body: ChatRequest) -> dict:
+@app.get("/api/runs/{run_id}/chat")
+async def get_run_chat(run_id: int) -> dict:
     email = _require_user()
-    diagram = db.get_diagram(diagram_id)
-    if diagram is None or diagram["user_email"] != email:
-        raise HTTPException(404, "diagram not found")
-    anchor = db.get_run(body.run_id)
-    if anchor is None or anchor["user_email"] != email or anchor["diagram_id"] != diagram_id:
+    run = db.get_run(run_id)
+    if run is None or run["user_email"] != email:
         raise HTTPException(404, "run not found")
-    if anchor["status"] != "done":
+    thread_id = db.get_or_create_thread(run_id, run["diagram_id"], email)
+    messages = db.list_chat_messages(thread_id)
+    return {
+        "thread_id": thread_id,
+        "run_id": run_id,
+        "messages": [_chat_message_out(m) for m in messages],
+    }
+
+
+@app.post("/api/runs/{run_id}/chat", status_code=201)
+async def post_run_chat(run_id: int, body: ChatRequest) -> dict:
+    email = _require_user()
+    run = db.get_run(run_id)
+    if run is None or run["user_email"] != email:
+        raise HTTPException(404, "run not found")
+    if run["status"] != "done":
         raise HTTPException(409, "chat is only available on a completed diagram run")
 
-    # A per-turn model override is allowlist-validated; omitted → the anchor's model.
+    # A per-turn model override is allowlist-validated; omitted → the run's model.
     if body.model:
         try:
             model = settings.resolve_model(body.model)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
     else:
-        model = anchor.get("model")
+        model = run.get("model")
 
-    thread_id = db.get_or_create_thread(diagram_id, email)
+    thread_id = db.get_or_create_thread(run_id, run["diagram_id"], email)
     db.add_chat_message(thread_id, role="user", content=body.message.strip(),
-                        status="done", anchor_run_id=body.run_id)
+                        status="done", anchor_run_id=run_id)
     assistant = db.add_chat_message(
         thread_id, role="assistant", content="", status="pending",
-        anchor_run_id=body.run_id, model=model,
+        anchor_run_id=run_id, model=model,
     )
     runs.start_chat(assistant["id"])
     return {"thread_id": thread_id, "assistant_message_id": assistant["id"]}

@@ -96,7 +96,7 @@ class _FakeProc:
 def test_start_chat_spawns_detached_worker(tmp_env, monkeypatch):
     db.init_db()
     diagram_id, run_id = _done_diagram()
-    thread_id = db.get_or_create_thread(diagram_id, "u@example.com")
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
     msg = db.add_chat_message(thread_id, role="assistant", status="pending", anchor_run_id=run_id)
     captured = {}
 
@@ -113,6 +113,52 @@ def test_start_chat_spawns_detached_worker(tmp_env, monkeypatch):
     assert db.get_chat_message(msg["id"])["pid"] == 7777
 
 
+def test_chat_threads_migrate_to_per_run(tmp_env):
+    """An old per-diagram chat_threads (UNIQUE(diagram_id)) migrates to per-run,
+    backfilling run_id to the diagram's latest run and preserving the transcript."""
+    db.init_db()
+    diagram_id, run_id = _done_diagram()
+
+    conn = db._connect()
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.executescript(
+            """
+            DROP TABLE chat_threads;
+            CREATE TABLE chat_threads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              diagram_id INTEGER NOT NULL REFERENCES diagrams(id) ON DELETE CASCADE,
+              user_email TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(diagram_id)
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO chat_threads (id, diagram_id, user_email, created_at, updated_at) "
+            "VALUES (1, ?, 'u@example.com', 't', 't')",
+            (diagram_id,),
+        )
+        conn.execute(
+            "INSERT INTO chat_messages (thread_id, anchor_run_id, role, content, status, seq, created_at, updated_at) "
+            "VALUES (1, ?, 'user', 'legacy message', 'done', 1, 't', 't')",
+            (run_id,),
+        )
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = ON")
+    finally:
+        conn.close()
+
+    db.init_db()  # runs the per-run rebuild
+
+    cols = {r["name"] for r in db._connect().execute("PRAGMA table_info(chat_threads)").fetchall()}
+    assert "run_id" in cols
+    # The legacy thread now points at the diagram's latest run, and its message survived.
+    assert db.get_or_create_thread(run_id, diagram_id, "u@example.com") == 1
+    assert [m["content"] for m in db.list_chat_messages(1)] == ["legacy message"]
+
+
 # ── MCP chat-mode revise dispatch (Claude-CLI path) ─────────────────────────
 
 
@@ -122,7 +168,7 @@ def test_mcp_chat_revise_persists_and_stamps(tmp_path, monkeypatch):
     monkeypatch.setenv("SSOT_DATA_DIR", str(tmp_path / "data"))
     db.init_db()
     diagram_id, run_id = _done_diagram()
-    thread_id = db.get_or_create_thread(diagram_id, "u@example.com")
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
     msg = db.add_chat_message(thread_id, role="assistant", status="pending", anchor_run_id=run_id)
     # The revise flow fetches the named source's bytes from the root at finalize time.
     (tmp_path / "model.py").write_text(_SRC)
@@ -175,7 +221,7 @@ def test_mcp_chat_revise_persists_and_stamps(tmp_path, monkeypatch):
 async def test_chat_event_stream_replays_and_terminates(tmp_env):
     db.init_db()
     diagram_id, run_id = _done_diagram()
-    thread_id = db.get_or_create_thread(diagram_id, "u@example.com")
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
     msg = db.add_chat_message(thread_id, role="assistant", status="pending", anchor_run_id=run_id)
     db.add_chat_output_line(msg["id"], "→ read_file model.py")
     db.finish_chat_message(msg["id"], "done", content="It reads the head from model.py:2.")
@@ -192,7 +238,7 @@ async def test_chat_event_stream_reconciles_dead_worker(tmp_env, monkeypatch):
     monkeypatch.setattr(runs, "_POLL_SECONDS", 0.01)
     db.init_db()
     diagram_id, run_id = _done_diagram()
-    thread_id = db.get_or_create_thread(diagram_id, "u@example.com")
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
     msg = db.add_chat_message(thread_id, role="assistant", status="pending", anchor_run_id=run_id)
     db.set_chat_pid(msg["id"], 2**31 - 1)  # dead pid → reconciled on first poll
 
@@ -212,54 +258,68 @@ def client(tmp_env, monkeypatch):
 
 
 def test_post_chat_creates_turn_and_history(client):
-    diagram_id, run_id = _done_diagram()
-    res = client.post(f"/api/diagrams/{diagram_id}/chat", headers=_USER,
-                      json={"run_id": run_id, "message": "why is the head 4-dim?"})
+    _, run_id = _done_diagram()
+    res = client.post(f"/api/runs/{run_id}/chat", headers=_USER,
+                      json={"message": "why is the head 4-dim?"})
     assert res.status_code == 201
     assistant_id = res.json()["assistant_message_id"]
     assert db.get_chat_message(assistant_id)["status"] == "pending"
     # History carries the user turn + the pending assistant turn.
-    hist = client.get(f"/api/diagrams/{diagram_id}/chat", headers=_USER).json()
+    hist = client.get(f"/api/runs/{run_id}/chat", headers=_USER).json()
     roles = [m["role"] for m in hist["messages"]]
     assert roles == ["user", "assistant"]
     assert hist["messages"][0]["content"] == "why is the head 4-dim?"
 
 
+def test_chat_is_per_run(client):
+    """Two runs under one diagram have INDEPENDENT transcripts."""
+    diagram_id, run1 = _done_diagram()
+    run2 = db.create_run(diagram_id=diagram_id, user_email="u@example.com",
+                         cluster="local", path="/models/tiny", model="claude-fable-5")
+    db.update_run_status(run2, "done")
+    client.post(f"/api/runs/{run1}/chat", headers=_USER, json={"message": "about run 1"})
+    client.post(f"/api/runs/{run2}/chat", headers=_USER, json={"message": "about run 2"})
+    h1 = client.get(f"/api/runs/{run1}/chat", headers=_USER).json()
+    h2 = client.get(f"/api/runs/{run2}/chat", headers=_USER).json()
+    assert h1["thread_id"] != h2["thread_id"]
+    assert h1["messages"][0]["content"] == "about run 1"
+    assert h2["messages"][0]["content"] == "about run 2"
+    assert all("run 2" not in m["content"] for m in h1["messages"])
+
+
 def test_post_chat_uses_given_model(client):
-    diagram_id, run_id = _done_diagram()  # anchor model = claude-fable-5
-    res = client.post(f"/api/diagrams/{diagram_id}/chat", headers=_USER,
-                      json={"run_id": run_id, "message": "hi", "model": "claude-haiku-4-5"})
+    _, run_id = _done_diagram()  # run model = claude-fable-5
+    res = client.post(f"/api/runs/{run_id}/chat", headers=_USER,
+                      json={"message": "hi", "model": "claude-haiku-4-5"})
     assert res.status_code == 201
     assert db.get_chat_message(res.json()["assistant_message_id"])["model"] == "claude-haiku-4-5"
 
 
-def test_post_chat_defaults_to_anchor_model(client):
-    diagram_id, run_id = _done_diagram()
-    res = client.post(f"/api/diagrams/{diagram_id}/chat", headers=_USER,
-                      json={"run_id": run_id, "message": "hi"})
+def test_post_chat_defaults_to_run_model(client):
+    _, run_id = _done_diagram()
+    res = client.post(f"/api/runs/{run_id}/chat", headers=_USER, json={"message": "hi"})
     assert res.status_code == 201
     assert db.get_chat_message(res.json()["assistant_message_id"])["model"] == "claude-fable-5"
 
 
 def test_post_chat_rejects_unknown_model(client):
-    diagram_id, run_id = _done_diagram()
-    res = client.post(f"/api/diagrams/{diagram_id}/chat", headers=_USER,
-                      json={"run_id": run_id, "message": "hi", "model": "totally-bogus-9"})
+    _, run_id = _done_diagram()
+    res = client.post(f"/api/runs/{run_id}/chat", headers=_USER,
+                      json={"message": "hi", "model": "totally-bogus-9"})
     assert res.status_code == 422
 
 
-def test_post_chat_rejects_running_anchor(client):
-    diagram_id, run_id = db.create_diagram_with_run(
+def test_post_chat_rejects_running_run(client):
+    _, run_id = db.create_diagram_with_run(
         user_email="u@example.com", cluster="local", path="/p", model="claude-fable-5"
     )  # still 'running'
-    res = client.post(f"/api/diagrams/{diagram_id}/chat", headers=_USER,
-                      json={"run_id": run_id, "message": "hi"})
+    res = client.post(f"/api/runs/{run_id}/chat", headers=_USER, json={"message": "hi"})
     assert res.status_code == 409
 
 
 def test_chat_cancel_404_and_409(client):
     diagram_id, run_id = _done_diagram()
     assert client.post("/api/chat/999999/cancel", headers=_USER).status_code == 404
-    thread_id = db.get_or_create_thread(diagram_id, "u@example.com")
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
     msg = db.add_chat_message(thread_id, role="assistant", status="done", anchor_run_id=run_id)
     assert client.post(f"/api/chat/{msg['id']}/cancel", headers=_USER).status_code == 409

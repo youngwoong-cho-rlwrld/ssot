@@ -56,11 +56,10 @@ class MemoRequest(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    # The run being viewed when the question was asked; the chat is anchored to it.
-    run_id: int
+    # Chat is anchored to the run in the URL path; the body carries just the turn.
     message: str = Field(min_length=1, max_length=8000)
     # Optional per-turn generation model (allowlist-validated in the endpoint);
-    # omitted falls back to the anchor run's model.
+    # omitted falls back to the run's model.
     model: Optional[str] = None
 
 

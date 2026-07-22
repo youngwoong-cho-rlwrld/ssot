@@ -273,6 +273,56 @@
   color: var(--ssot-danger);
 }
 
+.field__err--action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.field__action {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-semibold);
+  color: var(--ssot-accent);
+  text-decoration: underline;
+}
+
+/* Auth-setup modal body: guidance + copyable command lines. */
+.authsetup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.authsetup p {
+  margin: 0;
+}
+
+.authsetup__cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.authsetup__cmd code {
+  flex: 1 1 auto;
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-xs);
+  background: var(--ssot-surface-muted);
+  padding: 6px 8px;
+  border-radius: var(--ssot-radius-sm);
+  overflow-x: auto;
+}
+
+.authsetup__note {
+  color: var(--ssot-text-faint);
+}
+
 .form__err {
   padding: 8px 10px;
   font-size: var(--ssot-text-sm);

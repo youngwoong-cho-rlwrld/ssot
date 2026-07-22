@@ -179,13 +179,16 @@ CREATE TABLE IF NOT EXISTS edges (
 -- chat worker (same infra as runs): it carries pid + status ('pending' until the
 -- worker finishes) and, when the turn revised the diagram, revised_run_id points at
 -- the new run persisted under the diagram.
+-- One chat thread per RUN (a run's transcript is independent of its siblings; a
+-- revision run starts empty). diagram_id is kept for ownership/scoping.
 CREATE TABLE IF NOT EXISTS chat_threads (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER,
   diagram_id INTEGER NOT NULL REFERENCES diagrams(id) ON DELETE CASCADE,
   user_email TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE(diagram_id)
+  UNIQUE(run_id)
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -257,6 +260,44 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE paper_citations ADD COLUMN paper_quote TEXT")
     if cite_cols and "paper_anchor" not in cite_cols:
         conn.execute("ALTER TABLE paper_citations ADD COLUMN paper_anchor TEXT")
+
+    # chat_threads went from one-per-diagram (UNIQUE(diagram_id)) to one-per-run
+    # (UNIQUE(run_id)). SQLite can't drop a UNIQUE constraint in place, so rebuild
+    # the table, backfilling each old diagram-thread's run_id to that diagram's
+    # latest run (its transcript moves there). Message ids are preserved, so
+    # chat_messages.thread_id keeps pointing at the same threads.
+    ct_cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_threads)").fetchall()}
+    if ct_cols and "run_id" not in ct_cols:
+        _rebuild_chat_threads_per_run(conn)
+
+
+def _rebuild_chat_threads_per_run(conn: sqlite3.Connection) -> None:
+    conn.commit()  # ensure no open transaction before toggling foreign_keys
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE chat_threads_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              run_id INTEGER,
+              diagram_id INTEGER NOT NULL REFERENCES diagrams(id) ON DELETE CASCADE,
+              user_email TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(run_id)
+            );
+            INSERT INTO chat_threads_new (id, run_id, diagram_id, user_email, created_at, updated_at)
+              SELECT t.id,
+                     (SELECT r.id FROM runs r WHERE r.diagram_id = t.diagram_id ORDER BY r.id DESC LIMIT 1),
+                     t.diagram_id, t.user_email, t.created_at, t.updated_at
+              FROM chat_threads t;
+            DROP TABLE chat_threads;
+            ALTER TABLE chat_threads_new RENAME TO chat_threads;
+            """
+        )
+        conn.commit()
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 # ── diagrams + runs ───────────────────────────────────────────────────────
@@ -777,18 +818,19 @@ _CHAT_ORPHAN_DETAIL = (
 )
 
 
-def get_or_create_thread(diagram_id: int, user_email: str) -> int:
+def get_or_create_thread(run_id: int, diagram_id: int, user_email: str) -> int:
+    """The chat thread for one run (created on first use); one thread per run."""
     conn = _connect()
     try:
         row = conn.execute(
-            "SELECT id FROM chat_threads WHERE diagram_id = ?", (diagram_id,)
+            "SELECT id FROM chat_threads WHERE run_id = ?", (run_id,)
         ).fetchone()
         if row is not None:
             return int(row["id"])
         now = _now()
         cur = conn.execute(
-            "INSERT INTO chat_threads (diagram_id, user_email, created_at, updated_at) VALUES (?, ?, ?, ?)",
-            (diagram_id, user_email, now, now),
+            "INSERT INTO chat_threads (run_id, diagram_id, user_email, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (run_id, diagram_id, user_email, now, now),
         )
         conn.commit()
         return int(cur.lastrowid)

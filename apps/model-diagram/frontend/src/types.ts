@@ -115,6 +115,7 @@ export interface ChatMessage {
 
 export interface ChatHistory {
   thread_id: number;
+  run_id?: number;
   messages: ChatMessage[];
 }
 
@@ -180,6 +181,8 @@ export interface HealthResult {
   anthropic_configured: boolean;
   runtime: Runtime;
   runtimes?: { claude: ClaudeRuntime; codex: CodexRuntime };
+  // The machine the backend (and the agent CLIs) run on — auth setup happens here.
+  hostname?: string;
 }
 
 // GET /api/models — the generation-model allowlist and the backend default.

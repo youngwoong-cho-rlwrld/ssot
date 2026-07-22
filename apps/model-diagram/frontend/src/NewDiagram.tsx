@@ -11,6 +11,7 @@ import {
   uploadPaper,
   validate,
 } from "./api";
+import { AuthSetupModal } from "./AuthSetupModal";
 import { ModelSelect } from "./ModelSelect";
 import {
   FALLBACK_CLUSTERS,
@@ -57,6 +58,9 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [runtimes, setRuntimes] = useState<HealthResult["runtimes"] | null>(null);
+  const [hostname, setHostname] = useState<string | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
 
   // Populate the cluster list and the credentials warning from the backend.
   useEffect(() => {
@@ -69,7 +73,10 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
         // keep the static fallback list
       });
     getHealth(controller.signal)
-      .then((h) => setRuntimes(h.runtimes ?? null))
+      .then((h) => {
+        setRuntimes(h.runtimes ?? null);
+        setHostname(h.hostname ?? null);
+      })
       .catch(() => {
         // health probe is best-effort; don't block the form
       });
@@ -97,10 +104,27 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
   const codexRt = runtimes?.codex ?? null;
   let modelWarning: string | null = null;
   if (selectedFamily === "codex" && !codexRt) {
-    modelWarning = "Codex CLI not available — run `codex login`, then restart the backend.";
+    modelWarning = "Codex CLI not available. Set up authentication on the backend host.";
   } else if (selectedFamily === "claude" && !claudeRt) {
-    modelWarning = "No Claude runtime — set ANTHROPIC_API_KEY or log in to the Claude CLI, then restart the backend.";
+    modelWarning = "No Claude runtime available. Set up authentication on the backend host.";
   }
+
+  // Re-fetch /api/health; if the selected model's runtime now appears, close the
+  // setup modal (the inline warning clears from the refreshed `runtimes`).
+  const recheckAuth = useCallback(async () => {
+    setRechecking(true);
+    try {
+      const h = await getHealth();
+      setRuntimes(h.runtimes ?? null);
+      setHostname(h.hostname ?? null);
+      const ok = selectedFamily === "codex" ? !!h.runtimes?.codex : !!h.runtimes?.claude;
+      if (ok) setAuthOpen(false);
+    } catch {
+      // leave the modal open so the user can retry
+    } finally {
+      setRechecking(false);
+    }
+  }, [selectedFamily]);
 
   const selectMode = useCallback((mode: PaperMode) => {
     setPaperMode(mode);
@@ -230,7 +254,18 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
             <div className="field">
               <span className="field__label">Model</span>
               <ModelSelect value={model} options={models} onChange={setModel} />
-              {modelWarning && <span className="field__err">{modelWarning}</span>}
+              {modelWarning && (
+                <span className="field__err field__err--action">
+                  {modelWarning}
+                  <button
+                    type="button"
+                    className="field__action"
+                    onClick={() => setAuthOpen(true)}
+                  >
+                    Set up authentication
+                  </button>
+                </span>
+              )}
             </div>
           )}
 
@@ -341,6 +376,16 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
           </div>
         </form>
       </div>
+
+      {authOpen && (
+        <AuthSetupModal
+          hostname={hostname}
+          family={selectedFamily}
+          rechecking={rechecking}
+          onRecheck={() => void recheckAuth()}
+          onClose={() => setAuthOpen(false)}
+        />
+      )}
     </section>
   );
 }

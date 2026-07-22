@@ -230,8 +230,7 @@ export function Viewer({
           <div className="viewer__split">
             <div className="viewer__left">
               <ChatPanel
-                key={`chat-${diagramId}`}
-                diagramId={diagramId}
+                key={`chat-${runId}`}
                 runId={runId}
                 open={chatOpen}
                 onToggle={() => setChatOpen((v) => !v)}

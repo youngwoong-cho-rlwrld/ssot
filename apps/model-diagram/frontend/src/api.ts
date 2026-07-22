@@ -259,24 +259,23 @@ export function openRunEvents(
 
 // ── chat ────────────────────────────────────────────────────────────────
 
-/** Full chat history (thread + messages) for a diagram. */
+/** Full chat history (thread + messages) for a single run. */
 export async function getChat(
-  diagramId: number,
+  runId: number,
   signal?: AbortSignal,
 ): Promise<ChatHistory> {
-  return requestJson<ChatHistory>(`${BASE}/diagrams/${diagramId}/chat`, { signal });
+  return requestJson<ChatHistory>(`${BASE}/runs/${runId}/chat`, { signal });
 }
 
-/** Ask a follow-up question anchored to a completed run. Throws on 404/409. */
+/** Ask a follow-up question on a completed run's thread. Throws on 404/409. */
 export async function postChat(
-  diagramId: number,
   runId: number,
   message: string,
   model?: string,
 ): Promise<PostChatResult> {
   return requestJson<PostChatResult>(
-    `${BASE}/diagrams/${diagramId}/chat`,
-    jsonBody({ run_id: runId, message, model }),
+    `${BASE}/runs/${runId}/chat`,
+    jsonBody({ message, model }),
   );
 }
 
