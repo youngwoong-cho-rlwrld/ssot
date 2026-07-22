@@ -38,26 +38,9 @@ export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const onRevisionRef = useRef(onRevision);
   onRevisionRef.current = onRevision;
-
-  // Load history + model options (defaulting to the anchor run's model) on open.
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    getChat(runId, controller.signal)
-      .then((h) => setMessages(h.messages))
-      .catch(() => {});
-    Promise.all([getModels(controller.signal), getRun(runId, controller.signal)])
-      .then(([m, run]) => {
-        setModels(m.models);
-        setModel((prev) => prev || run.model || m.default);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [runId, open]);
-
-  useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [messages, pendingId]);
+  // Disposer for the currently-open assistant SSE stream, so we can tear it down
+  // on unmount / thread switch and avoid leaking or double-subscribing.
+  const streamCloserRef = useRef<(() => void) | null>(null);
 
   const upsert = useCallback((m: ChatMessage) => {
     setMessages((prev) => {
@@ -68,6 +51,74 @@ export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
       return next;
     });
   }, []);
+
+  // Enter the pending UX for one assistant message and stream its reply live: the
+  // typing bubble + busy composer + cancel affordance follow from pendingId, and
+  // the SSE tail replays anything already produced then delivers the terminal
+  // frame. Used both when sending a new turn and when restoring a turn that was
+  // still pending on (re)load, so a refresh mid-reply looks like nothing closed.
+  const subscribe = useCallback(
+    (assistantId: number) => {
+      streamCloserRef.current?.();
+      setPendingId(assistantId);
+      streamCloserRef.current = openChatEvents(assistantId, {
+        onMessage: (m) => {
+          upsert({
+            id: m.id, role: m.role, content: m.content, status: m.status,
+            error_detail: m.error_detail, revised_run_id: m.revised_run_id,
+            anchor_run_id: runId, seq: m.seq, created_at: new Date().toISOString(),
+          });
+          if (m.status !== "pending") {
+            setPendingId(null);
+            streamCloserRef.current = null;
+            if (m.revised_run_id) onRevisionRef.current(m.revised_run_id);
+          }
+        },
+        onError: () => {
+          setPendingId(null);
+          streamCloserRef.current = null;
+        },
+      });
+    },
+    [runId, upsert],
+  );
+
+  // Load history + model options (defaulting to the anchor run's model) on open.
+  // If the latest assistant row is still pending (a turn that was running when the
+  // page was closed/refreshed), re-enter the pending UX and re-open its stream so
+  // the answer lands live; an errored/done row just renders from history.
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    getChat(runId, controller.signal)
+      .then((h) => {
+        setMessages(h.messages);
+        const last = h.messages[h.messages.length - 1];
+        if (last && last.role === "assistant" && last.status === "pending") {
+          subscribe(last.id);
+        } else {
+          // Reconcile: a turn that resolved while the panel was closed must not
+          // leave a stale pending bubble / busy composer on reopen.
+          setPendingId(null);
+        }
+      })
+      .catch(() => {});
+    Promise.all([getModels(controller.signal), getRun(runId, controller.signal)])
+      .then(([m, run]) => {
+        setModels(m.models);
+        setModel((prev) => prev || run.model || m.default);
+      })
+      .catch(() => {});
+    return () => {
+      controller.abort();
+      streamCloserRef.current?.();
+      streamCloserRef.current = null;
+    };
+  }, [runId, open, subscribe]);
+
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+  }, [messages, pendingId]);
 
   const busy = sending || pendingId !== null;
 
@@ -90,21 +141,7 @@ export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
       const history = await getChat(runId);
       setMessages(history.messages);
       setSending(false);
-      setPendingId(assistant_message_id);
-      openChatEvents(assistant_message_id, {
-        onMessage: (m) => {
-          upsert({
-            id: m.id, role: m.role, content: m.content, status: m.status,
-            error_detail: m.error_detail, revised_run_id: m.revised_run_id,
-            anchor_run_id: runId, seq: m.seq, created_at: new Date().toISOString(),
-          });
-          if (m.status !== "pending") {
-            setPendingId(null);
-            if (m.revised_run_id) onRevisionRef.current(m.revised_run_id);
-          }
-        },
-        onError: () => setPendingId(null),
-      });
+      subscribe(assistant_message_id);
     } catch (e) {
       setSending(false);
       setMessages((prev) => [
@@ -117,7 +154,7 @@ export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
         },
       ]);
     }
-  }, [input, busy, runId, model, upsert]);
+  }, [input, busy, runId, model, subscribe]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {

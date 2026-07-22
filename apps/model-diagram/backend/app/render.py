@@ -242,15 +242,17 @@ def _paper_panel(
     comp_key_by_id = {c["id"]: c["component_key"] for c in model["components"]}
     refs: dict[str, dict] = {}
     for cite in model.get("citations", []):
-        quote = (cite.get("paper_quote") or "").strip()
-        if not quote:
-            continue
         key = comp_key_by_id.get(cite.get("component_id"))
         if not key or key not in components or key in refs:
-            continue  # first cited sentence per rendered component wins
+            continue  # first citation per rendered component wins
+        # Any component that carries a paper citation gets a ref, so clicking it
+        # OPENS the paper pane. A ``paper_quote`` (when present and locatable) drives
+        # the sentence highlight; without one — or when it can't be found — the pane
+        # still opens, just unhighlighted. Older runs whose citations predate the
+        # quote field therefore keep working.
         refs[key] = {
             "anchor": cite.get("paper_anchor") or "",
-            "quote": quote,
+            "quote": (cite.get("paper_quote") or "").strip(),
             "label": cite.get("paper_location") or cite.get("label") or "",
         }
     if not refs:
@@ -754,11 +756,11 @@ _PAGE_TEMPLATE = """<!doctype html>
           scrollTarget.getBoundingClientRect().top - paperScroll.getBoundingClientRect().top
           + paperScroll.scrollTop - paperScroll.clientHeight * 0.3);
       }} else {{
-        // Deliberate deviation from the reference: when the cited sentence is not
-        // present in the embedded paper (no mark, no resolvable anchor) there is
-        // no corresponding text to show, so close the pane instead of leaving an
-        // unhighlighted document open.
-        paperPane.hidden = true;
+        // The component HAS a paper ref, so the pane stays OPEN; we just couldn't
+        // locate the quote (missing/unmatchable) — show the paper unhighlighted from
+        // the top (the reference page's behavior). The pane is hidden ONLY when the
+        // active component has no ref at all (the early return above).
+        paperScroll.scrollTop = 0;
       }}
     }}
 

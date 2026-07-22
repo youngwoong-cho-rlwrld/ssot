@@ -16,7 +16,7 @@ import os
 import sys
 from typing import Optional
 
-from . import chat, db, settings
+from . import chat, db, paper as paper_mod, settings
 from .fsaccess import FsAccess, FsError, resolve_access
 from .pathcheck import precheck_path
 from .user_context import user_scope
@@ -95,18 +95,26 @@ async def _chat_body(message_id: int, msg: dict, anchor: Optional[dict]) -> None
         history = [m for m in history if m["id"] != user_rows[-1]["id"]]
 
     summary = chat.build_diagram_summary(anchor["id"])
+    # Papers are inherited across a diagram's runs, so the anchor run always carries
+    # the diagram's paper. Inject it into the chat turn exactly as generation does,
+    # so paper-mapping questions and revisions can cite it (a revision that omits the
+    # paper's citations is otherwise rejected by finalize's integrity check).
+    paper_row = db.get_paper(anchor["id"])
     outcome = chat.ChatOutcome()
 
     def on_log(line: str) -> None:
         _log(message_id, line)
 
     _log(message_id, f"chat · {runtime} runtime · model {model}")
+    if paper_row:
+        _log(message_id, "paper attached — injecting into chat context")
 
     if runtime == "sdk":
         fs = FsAccess(anchor["cluster"], check.resolved_root, access=access)
+        paper_block = paper_mod.load_paper_block(paper_row) if paper_row else []
         await chat.run_chat_sdk(
             fs=fs, cluster=anchor["cluster"], root=check.resolved_root, model=model,
-            summary=summary, history=history, user_message=user_text,
+            summary=summary, history=history, user_message=user_text, paper_block=paper_block,
             revise_cb=chat.make_revise_cb(
                 anchor_run=anchor, diagram_id=anchor["diagram_id"], user_email=anchor["user_email"],
                 outcome=outcome, fs=fs,
@@ -114,9 +122,11 @@ async def _chat_body(message_id: int, msg: dict, anchor: Optional[dict]) -> None
             outcome=outcome, on_log=on_log,
         )
     else:  # claude-cli
+        paper_text = paper_mod.load_paper_text(paper_row) if paper_row else None
         await chat.run_chat_cli(
             message_id=message_id, cluster=anchor["cluster"], root=check.resolved_root, model=model,
             access=access, summary=summary, history=history, user_message=user_text,
+            paper_text=paper_text, has_paper=paper_row is not None,
             outcome=outcome, on_log=on_log,
         )
 

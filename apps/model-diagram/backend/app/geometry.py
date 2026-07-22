@@ -185,6 +185,11 @@ async def measure_page(html: str, chrome_path: str, *, timeout: float = 25.0) ->
     Returns None on any launch/protocol/timeout failure — the caller keeps the
     un-measured page rather than failing the run.
     """
+    return await _run_headless(html, chrome_path, _MEASURE_JS, timeout=timeout)
+
+
+async def _run_headless(html: str, chrome_path: str, expr: str, *, timeout: float) -> Optional[dict]:
+    """Launch headless Chrome on ``html`` and return ``JSON.parse`` of ``expr``."""
     tmp = tempfile.mkdtemp(prefix="md-measure-")
     html_path = os.path.join(tmp, "page.html")
     with open(html_path, "w", encoding="utf-8") as fh:
@@ -202,7 +207,7 @@ async def measure_page(html: str, chrome_path: str, *, timeout: float = 25.0) ->
         ws_url = await asyncio.wait_for(_read_ws_url(proc), timeout)
         if not ws_url:
             return None
-        return await asyncio.wait_for(_drive_cdp(ws_url, html_path), timeout)
+        return await asyncio.wait_for(_drive_cdp(ws_url, html_path, expr), timeout)
     except (asyncio.TimeoutError, OSError, websockets.WebSocketException, json.JSONDecodeError, KeyError):
         return None
     finally:
@@ -226,7 +231,7 @@ async def _read_ws_url(proc) -> Optional[str]:
             return match.group(1)
 
 
-async def _drive_cdp(browser_ws: str, html_path: str) -> Optional[dict]:
+async def _drive_cdp(browser_ws: str, html_path: str, expr: str) -> Optional[dict]:
     async with websockets.connect(browser_ws, max_size=None) as ws:
         counter = [0]
 
@@ -260,12 +265,21 @@ async def _drive_cdp(browser_ws: str, html_path: str) -> Optional[dict]:
 
         evaluated = await send(
             "Runtime.evaluate",
-            {"expression": _MEASURE_JS, "returnByValue": True},
+            {"expression": expr, "returnByValue": True},
             session=session,
         )
         value = evaluated.get("result", {}).get("result", {}).get("value")
         await send("Target.closeTarget", {"targetId": target_id})
         return json.loads(value) if value else None
+
+
+async def evaluate_page(html: str, chrome_path: str, expr: str, *, timeout: float = 25.0) -> Optional[dict]:
+    """Render ``html`` headless and return ``JSON.parse`` of ``expr``'s result, or None.
+
+    ``expr`` must evaluate to a JSON string. Used by tests to drive real interaction
+    (e.g. click a component, then read the paper pane's visibility).
+    """
+    return await _run_headless(html, chrome_path, expr, timeout=timeout)
 
 
 def boxes_from_measurement(measurement: dict) -> dict[str, Rect]:

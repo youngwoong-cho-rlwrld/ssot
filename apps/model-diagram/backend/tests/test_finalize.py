@@ -115,3 +115,63 @@ async def test_finalize_exhausted_attempts_end_run(tmp_env, monkeypatch):
     _, e2 = await handle_finalize(outcome, cb, bad)
     assert e2 is True and outcome._terminal is True  # second: exhausted → terminal
     assert outcome.status == "error" and outcome.error_kind == "agent_failure"
+
+
+# ── paper citation coverage (spec §6/§7.1) ──────────────────────────────────
+
+
+def _attach_paper(run_id):
+    db.add_paper(
+        run_id, kind="url", source_url="http://x/p.pdf", stored_path=None,
+        content_type="application/pdf", sha256="deadbeef", page_count=1, parsed_title="P",
+    )
+
+
+async def test_finalize_matched_paper_without_quotes_is_retryable(tmp_env):
+    # A matched paper + citations with no verbatim quote (the observed codex failure)
+    # is a RETRYABLE integrity error, not a silent done-with-empty-panel.
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    _attach_paper(run_id)  # run.paper_status → 'attached' (matched)
+    # _payload()'s single citation has an empty paper_quote.
+    ok, err = await finalize.try_finalize(run_id, _payload().model_dump(), fake_fs())
+    assert not ok
+    assert "paper is attached and matched" in err and "report_paper_mismatch" in err
+    assert db.get_run(run_id)["status"] == "running"  # not marked terminal
+
+
+async def test_finalize_paper_mismatch_waives_quote_requirement(tmp_env):
+    # When the agent reported the paper does not describe this model, no citations
+    # are required — the run finalizes code-only.
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    _attach_paper(run_id)
+    db.set_paper_status(run_id, "mismatch", "paper is about a different model")
+    ok, err = await finalize.try_finalize(run_id, _payload().model_dump(), fake_fs())
+    assert ok and err is None
+
+
+async def test_finalize_matched_paper_with_quote_passes(tmp_env):
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    _attach_paper(run_id)
+    raw = _payload().model_dump()
+    raw["components"][1]["paper_citations"][0]["paper_quote"] = "The hidden dim is 512."
+    ok, err = await finalize.try_finalize(run_id, raw, fake_fs())
+    assert ok and err is None
+
+
+async def test_finalize_no_paper_needs_no_citations(tmp_env):
+    # A run with no paper attached is unaffected by the coverage check.
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    ok, err = await finalize.try_finalize(run_id, _payload().model_dump(), fake_fs())
+    assert ok and err is None

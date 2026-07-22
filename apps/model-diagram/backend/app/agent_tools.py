@@ -238,16 +238,21 @@ def build_initial_user(cluster: str, root: str, has_paper: bool, *, paper_via_to
         "finalize_diagram. Report each stage as you go."
     )
     if has_paper:
-        if paper_via_tool:
-            intro += (
-                f"\n\nA source paper is attached. Read it with the read_file tool at the path '{PAPER_VPATH}' "
-                "and use it for the hyperparameter section if it matches this model."
-            )
-        else:
-            intro += (
-                "\n\nA source paper is attached below; use it for the hyperparameter section if it matches "
-                "this model."
-            )
+        where = (
+            f"Read it with the read_file tool at the path '{PAPER_VPATH}'"
+            if paper_via_tool
+            else "It is attached below"
+        )
+        intro += (
+            f"\n\nA source paper is attached. {where}. If it describes THIS model you MUST, before "
+            "finalizing: (1) add one hp_row per hyperparameter the paper states, each with its `hp_cite` "
+            "and a snippet pointing at the verified code/config (spec §6); and (2) on every "
+            "paper_citation set `paper_quote` to the EXACT sentence or table-cell text from the paper "
+            "that states the value — copied VERBATIM and contiguous, word-for-word, never paraphrased or "
+            "stitched from fragments. Finalizing a MATCHED paper with no quoted paper_citations is "
+            "rejected. If the paper does NOT describe this model, call report_paper_mismatch(reason) and "
+            "continue code-only."
+        )
     return intro
 
 

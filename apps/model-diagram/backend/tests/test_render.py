@@ -191,12 +191,14 @@ def test_paper_pane_refs_and_doc_embedded(tmp_path):
     assert "Tiny Paper" in html  # bar prefix from the paper title
 
 
-def test_paper_pane_skips_citation_without_quote(tmp_path):
+def test_paper_pane_opens_for_citation_without_quote(tmp_path):
+    # A citation with NO quote (e.g. an older run) still gets a ref so the pane
+    # OPENS when the component is clicked — just with an empty quote (unhighlighted).
     model = _model_with_panel(tmp_path, quote="")
     html = render_page(model)
-    # No quote → no ref → pane stays inert and the doc is not embedded.
-    assert "const paperRefs = {}" in html
-    assert 'const paperDoc = ""' in html
+    assert '"hp-hidden-dim":' in html  # ref present → pane can open
+    assert 'const paperDoc = ""' not in html  # doc embedded
+    assert '"quote": ""' in html  # empty quote → opens unhighlighted
 
 
 def test_paper_pane_suppressed_on_mismatch(tmp_path):
@@ -214,11 +216,48 @@ def test_paper_body_wraps_long_tokens():
     assert "word-break: break-word" in html
 
 
-def test_paper_pane_autocloses_when_quote_absent():
-    # Deliberate deviation from the reference: when no cited sentence matches, the
-    # pane closes rather than showing an unhighlighted paper. The else branch of the
-    # scroll decision must hide the pane.
+def test_paper_pane_stays_open_when_quote_unmatched():
+    # When a ref exists but the quote can't be located, the pane must stay OPEN
+    # (unhighlighted, scrolled to top) — NOT hide. Only the no-ref early return hides.
     html = render_page(_model())
     idx = html.index("const scrollTarget = marked || target;")
     tail = html[idx:idx + 800]
-    assert "} else {" in tail and "paperPane.hidden = true;" in tail
+    assert "} else {" in tail and "paperScroll.scrollTop = 0;" in tail
+    # the else branch must NOT hide the pane
+    else_block = tail[tail.index("} else {"):]
+    assert "paperPane.hidden = true" not in else_block
+    # the ONLY hide is the early no-ref guard
+    assert "if (!ref || !paperDoc) { paperPane.hidden = true; return; }" in html
+
+
+def test_paper_pane_visibility_live_in_chrome(tmp_path):
+    # Headless-Chrome reproduction of the regression: render from DB-style rows,
+    # click a component that HAS a citation whose quote is NOT in the paper doc →
+    # the pane must OPEN; click a component with NO citation → the pane must HIDE.
+    from app import geometry
+
+    chrome = geometry.find_chrome()
+    if not chrome:
+        import pytest
+        pytest.skip("no Chrome/Chromium binary on this host")
+    import asyncio
+
+    model = _model_with_panel(tmp_path, quote="a sentence that does not appear anywhere in the paper zzz")
+    html = render_page(model)
+
+    expr = """
+    (function () {
+      var out = {};
+      document.querySelector('[data-component="hp-hidden-dim"]').click();
+      out.refPaneHidden = document.getElementById('paper-pane').hidden;
+      document.querySelector('[data-component="dataset"]').click();
+      out.norefPaneHidden = document.getElementById('paper-pane').hidden;
+      return JSON.stringify(out);
+    })()
+    """
+    res = asyncio.run(geometry.evaluate_page(html, chrome, expr))
+    assert res is not None, "headless evaluation failed"
+    # ref present but quote unmatchable → pane OPEN (the regression: it was hiding)
+    assert res["refPaneHidden"] is False
+    # no citation on 'dataset' → pane hidden
+    assert res["norefPaneHidden"] is True

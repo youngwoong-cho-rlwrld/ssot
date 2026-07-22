@@ -62,10 +62,13 @@ labels lower-confidence). The run still completes.
   - `paper_citations[]` (per component) `{label, paper_value, paper_location, code_value, confidence,
     paper_quote, paper_anchor}` — ONLY when a paper is attached and matches; provenance for the §6
     hyperparameter section AND the §10.3 embedded paper panel. `paper_quote` is the EXACT full
-    sentence / table-cell text (copied verbatim from the injected paper) that states this value — a
-    complete statement, never a bare keyword; the panel highlights it when the component is clicked.
-    Leave `paper_quote` empty when the paper does not state the value (say `not stated` in the row).
-    `paper_anchor` is optional (leave empty unless you can identify a real DOM id in the paper).
+    sentence / table-cell text that states this value — copied VERBATIM and CONTIGUOUS from the injected
+    paper text (word-for-word, one unbroken span; never paraphrased, summarized, or stitched from
+    separate fragments), a complete statement rather than a bare keyword; the panel locates it by
+    substring, so an inexact quote will not highlight. Leave `paper_quote` empty only when the paper does
+    not state the value (say `not stated` in the row). `paper_anchor` is optional (leave empty unless you
+    can identify a real DOM id in the paper). When a paper is attached and matches, finalizing with NO
+    quoted `paper_citations` is rejected (§7.1) — supply them, or call `report_paper_mismatch`.
 - `edges[]`: `{path_d, from_component_key, to_component_key}` — orthogonal wires (see §5).
 
 Integrity requirements (enforced by the backend, §7.1): every diagram box has a `position` and at least
@@ -126,8 +129,11 @@ said outright where the paper omits it.
 
 The backend re-checks, before marking the run done: every snippet's `source_key` resolves; every
 `start`/`end` is within the decoded file's line count; every diagram box has a components entry and vice
-versa; the wire count matches the arrowhead count. If any check fails the run ends `agent_failure` with
-the detail — so verify your line ranges by reading the exact lines before finalizing.
+versa; the wire count matches the arrowhead count; AND, when a paper is attached and was not reported as
+a mismatch, at least one `paper_citation` carries a non-empty verbatim `paper_quote` (§6). The paper
+check is retryable (correct and call finalize again, up to the finalize budget); the others are too. If
+the budget is exhausted the run ends `agent_failure` with the detail — so verify your line ranges by
+reading the exact lines, and collect the paper quotes, before finalizing.
 
 ### 7.2 / 7.3 Geometry & visual gates — documented fast-follow
 
@@ -151,7 +157,10 @@ in order (skip the two paper stages when no paper is attached):
 - `verifying_lines` — read the exact lines to confirm every range is correct.
 - `reading_paper` — (paper only) read the injected paper.
 - `cross_checking_paper` — (paper only) confirm the paper describes THIS model; if not,
-  `report_paper_mismatch` and continue code-only.
+  `report_paper_mismatch` and continue code-only. If it DOES match, this stage ends with the paper's
+  hyperparameters and the VERBATIM quote sentence backing each one collected, ready to attach as
+  `hp_row` components + `paper_citations` (§6). Do not leave this stage until every paper-stated value
+  has its exact quote in hand — finalizing a matched paper with no quoted citations is rejected (§7.1).
 - `laying_out` — assign box positions, wire paths, and any per-line facts (§10.2).
 - `finalizing` — assemble the structured result and call `finalize_diagram` (name the source files;
   the backend fetches their bytes and runs the §7.1 checks). Emit this stage BEFORE the tool call so the
@@ -219,11 +228,13 @@ component (a diagram box or an `hp_row`) whose citation carries a `paper_quote` 
 cross-highlights that sentence (multi-text-node matching handled by the backend JS).
 
 Your ONLY job for the panel: on each `paper_citations[]` entry, supply `paper_quote` = the exact, full
-sentence or table-cell text you read in the injected paper that states the value (§3). One quoted
-sentence per component drives its highlight; the first non-empty quote per component wins. A citation
-with an empty `paper_quote` produces no ref and the pane stays hidden for that component. `paper_anchor`
-is optional — leave it empty unless you can name a real DOM id; the matcher searches the whole doc when
-it is empty. Never fabricate a quote: if the sentence is not in the paper, leave `paper_quote` empty.
+sentence or table-cell text you read in the injected paper that states the value (§3). The first
+citation on a component drives its ref; its `paper_quote` (when present and locatable in the doc) drives
+the sentence highlight. Any component that carries a citation OPENS the pane when clicked; if the quote
+is empty or can't be found, the pane still opens, just unhighlighted (the pane is hidden only for
+components with no citation at all). `paper_anchor` is optional — leave it empty unless you can name a
+real DOM id; the matcher searches the whole doc when it is empty. Never fabricate a quote: if the
+sentence is not in the paper, leave `paper_quote` empty (the pane will open unhighlighted).
 
 ### 10.4 Wire generation & geometry gates *(measure pass active; §7.3 screenshot fast-follow)*
 

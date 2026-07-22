@@ -57,6 +57,15 @@ async def try_finalize(
             if snip.source_key not in source_keys:
                 return False, f"component {comp.component_key!r} snippet references unknown source {snip.source_key!r}"
 
+    # Paper coverage: when a paper is attached AND was NOT reported as a mismatch,
+    # the finalize MUST carry paper_citations with verbatim quotes — otherwise the
+    # §6 hyperparameter section and the paper panel have nothing to show (observed:
+    # codex runs finishing with zero citations). Retryable, same budget as other
+    # integrity errors; report_paper_mismatch is the escape hatch.
+    err = _paper_coverage_error(run_id, payload)
+    if err:
+        return False, err
+
     reuse = reuse_sources or {}
     source_b64: dict[str, str] = {}
     for src in payload.sources:
@@ -87,6 +96,31 @@ async def try_finalize(
     # Best-effort — a failure here (no browser, protocol error) never fails the run.
     await _apply_geometry_pass(run_id, html)
     return True, None
+
+
+def _paper_coverage_error(run_id: int, payload: FinalizePayload) -> Optional[str]:
+    """Retryable message when a matched paper carries no cited quotes, else None.
+
+    A run has a matched paper when a paper row exists and the run's paper_status is
+    not ``mismatch`` (the agent can clear the requirement with report_paper_mismatch).
+    """
+    if not db.get_paper(run_id):
+        return None
+    run = db.get_run(run_id) or {}
+    if run.get("paper_status") == "mismatch":
+        return None
+    has_quote = any(
+        (cite.paper_quote or "").strip()
+        for comp in payload.components
+        for cite in comp.paper_citations
+    )
+    if has_quote:
+        return None
+    return (
+        "a paper is attached and matched: supply paper_citations with verbatim paper_quote "
+        "sentences for every value the paper states (spec §6) — the hyperparameter section and the "
+        "paper panel need them — or call report_paper_mismatch if the paper does not describe this model."
+    )
 
 
 def _geom_log(run_id: int, line: str) -> None:

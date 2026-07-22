@@ -7,7 +7,7 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
-from app import chat, db, main, runs
+from app import chat, chat_worker, db, main, runs, settings
 from app.pathcheck import PathCheck
 from tests.test_db import _SRC, _payload, _source_b64, fake_fs  # known-good payload + fs stub
 
@@ -24,12 +24,134 @@ def _done_diagram() -> tuple[int, int]:
     return diagram_id, run_id
 
 
+def _attach_text_paper(tmp_path, run_id: int, text: str = "PAPER: the head hidden dim is 4.") -> str:
+    """Attach an HTML/text paper (stored on disk) to a run, as inheritance would."""
+    stored = tmp_path / f"paper-{run_id}.txt"
+    stored.write_text(text, encoding="utf-8")
+    db.add_paper(
+        run_id, kind="url", source_url="http://example.com/paper", stored_path=str(stored),
+        content_type="text/html", sha256=f"sha-{run_id}", page_count=None,
+        parsed_title="A Paper", panel_path=None,
+    )
+    return text
+
+
+def _async_return(value):
+    async def _fn(*_args, **_kwargs):
+        return value
+    return _fn
+
+
 # ── chat tool set + summary ─────────────────────────────────────────────────
 
 
 def test_chat_tools_are_fs_plus_revise():
     names = {s["name"] for s in chat.chat_tool_specs()}
     assert names == {"list_dir", "read_file", "revise_diagram"}
+
+
+# ── paper injection into the chat context ───────────────────────────────────
+
+
+def test_chat_system_prompt_advertises_paper_and_citation_rule():
+    via_tool = chat.build_chat_system_prompt("local", "/r", has_paper=True, paper_via_tool=True)
+    assert "__paper__" in via_tool  # CLI reads it through the virtual read_file path
+    # The revise-must-cite-verbatim rule is guard-specific (the base spec also mentions
+    # paper_citations, so key on the unique guard phrase).
+    assert "VERBATIM quote from the paper" in via_tool
+    injected = chat.build_chat_system_prompt("local", "/r", has_paper=True, paper_via_tool=False)
+    assert "attached in your first message" in injected and "__paper__" not in injected
+    none = chat.build_chat_system_prompt("local", "/r", has_paper=False)
+    assert "No paper is attached" in none and "VERBATIM quote from the paper" not in none
+
+
+def test_chat_initial_user_notes_paper_presence():
+    via_tool = chat.build_chat_initial_user("SUM", [], "hi", has_paper=True, paper_via_tool=True)
+    assert "__paper__" in via_tool
+    injected = chat.build_chat_initial_user("SUM", [], "hi", has_paper=True, paper_via_tool=False)
+    assert "attached below" in injected
+    plain = chat.build_chat_initial_user("SUM", [], "hi")
+    assert "SOURCE PAPER" not in plain
+
+
+async def test_worker_injects_paper_block_on_sdk(tmp_env, tmp_path, monkeypatch):
+    db.init_db()
+    diagram_id, run_id = _done_diagram()
+    text = _attach_text_paper(tmp_path, run_id)
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
+    db.add_chat_message(thread_id, role="user", content="does it match the paper?",
+                        status="done", anchor_run_id=run_id)
+    msg = db.add_chat_message(thread_id, role="assistant", status="pending", anchor_run_id=run_id)
+
+    monkeypatch.setattr(chat_worker, "precheck_path",
+                        _async_return(PathCheck(ok=True, resolved_root=str(tmp_path))))
+    monkeypatch.setattr(chat_worker, "resolve_access", _async_return({"kind": "local"}))
+    monkeypatch.setattr(settings, "runtime_for_model", lambda _m: "sdk")
+
+    captured: dict = {}
+
+    async def fake_sdk(**kwargs):
+        captured.update(kwargs)
+        kwargs["outcome"].status = "done"
+        kwargs["outcome"].answer_text = "ok"
+
+    monkeypatch.setattr(chat, "run_chat_sdk", fake_sdk)
+    await chat_worker.execute_chat(msg["id"])
+
+    assert captured["paper_block"]  # non-empty — the anchor run's paper rode along
+    assert text in json.dumps(captured["paper_block"])
+    assert captured["user_message"] == "does it match the paper?"
+
+
+async def test_worker_injects_paper_ref_on_cli(tmp_env, tmp_path, monkeypatch):
+    db.init_db()
+    diagram_id, run_id = _done_diagram()
+    text = _attach_text_paper(tmp_path, run_id)
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
+    db.add_chat_message(thread_id, role="user", content="map the paper", status="done", anchor_run_id=run_id)
+    msg = db.add_chat_message(thread_id, role="assistant", status="pending", anchor_run_id=run_id)
+
+    monkeypatch.setattr(chat_worker, "precheck_path",
+                        _async_return(PathCheck(ok=True, resolved_root=str(tmp_path))))
+    monkeypatch.setattr(chat_worker, "resolve_access", _async_return({"kind": "local"}))
+    monkeypatch.setattr(settings, "runtime_for_model", lambda _m: "claude-cli")
+
+    captured: dict = {}
+
+    async def fake_cli(**kwargs):
+        captured.update(kwargs)
+        kwargs["outcome"].status = "done"
+        kwargs["outcome"].answer_text = "ok"
+
+    monkeypatch.setattr(chat, "run_chat_cli", fake_cli)
+    await chat_worker.execute_chat(msg["id"])
+
+    assert captured["has_paper"] is True
+    assert captured["paper_text"] == text
+
+
+async def test_worker_no_paper_passes_empty(tmp_env, tmp_path, monkeypatch):
+    db.init_db()
+    diagram_id, run_id = _done_diagram()  # no paper attached
+    thread_id = db.get_or_create_thread(run_id, diagram_id, "u@example.com")
+    db.add_chat_message(thread_id, role="user", content="hi", status="done", anchor_run_id=run_id)
+    msg = db.add_chat_message(thread_id, role="assistant", status="pending", anchor_run_id=run_id)
+
+    monkeypatch.setattr(chat_worker, "precheck_path",
+                        _async_return(PathCheck(ok=True, resolved_root=str(tmp_path))))
+    monkeypatch.setattr(chat_worker, "resolve_access", _async_return({"kind": "local"}))
+    monkeypatch.setattr(settings, "runtime_for_model", lambda _m: "sdk")
+
+    captured: dict = {}
+
+    async def fake_sdk(**kwargs):
+        captured.update(kwargs)
+        kwargs["outcome"].status = "done"
+        kwargs["outcome"].answer_text = "ok"
+
+    monkeypatch.setattr(chat, "run_chat_sdk", fake_sdk)
+    await chat_worker.execute_chat(msg["id"])
+    assert captured["paper_block"] == []
 
 
 def test_build_diagram_summary(tmp_env):
@@ -64,6 +186,26 @@ async def test_handle_revise_persists_new_run(tmp_env):
     assert new_run["rendered_html"] and new_run["title"] == "TinyNet — GAM (abc1234)"
     # The revision is a sibling run under the same diagram.
     assert {r["id"] for r in db.list_runs(diagram_id)} >= {run_id, new_run_id}
+
+
+async def test_revise_retains_paper_on_new_run(tmp_env, tmp_path):
+    """A chat revision copies the anchor run's paper to the new run, so its finalize
+    can validate paper_citations (a revision that dropped the paper couldn't)."""
+    db.init_db()
+    diagram_id, run_id = _done_diagram()
+    _attach_text_paper(tmp_path, run_id)
+    anchor = db.get_run(run_id)
+    outcome = chat.ChatOutcome()
+    revise_cb = chat.make_revise_cb(
+        anchor_run=anchor, diagram_id=diagram_id, user_email="u@example.com", outcome=outcome, fs=fake_fs()
+    )
+    # The copied paper is matched, so the revise finalize must carry a quoted
+    # citation (same §7.1 coverage rule as a fresh run).
+    raw = _payload().model_dump()
+    raw["components"][1]["paper_citations"][0]["paper_quote"] = "The hidden dim is 512."
+    result, is_error = await chat.handle_revise(outcome, revise_cb, raw)
+    assert not is_error and result["ok"] is True
+    assert db.get_paper(outcome.revise_run_id) is not None
 
 
 async def test_handle_revise_rejects_bad_payload_then_gives_up(tmp_env, monkeypatch):
