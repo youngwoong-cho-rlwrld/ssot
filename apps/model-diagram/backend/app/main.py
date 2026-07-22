@@ -237,13 +237,29 @@ async def reprovision(diagram_id: int, body: ReprovisionRequest) -> JSONResponse
     cluster = body.cluster or (latest[0]["cluster"] if latest else "local")
     path = body.path or (latest[0]["path"] if latest else diagram["path"])
 
+    # The run whose paper we inherit when the request doesn't change it: the run
+    # this re-provision was launched from (anchor), else the diagram's latest run.
+    inherit_source_id: int | None = None
+    if body.anchor_run_id is not None:
+        anchor = db.get_run(body.anchor_run_id)
+        if anchor is not None and anchor["diagram_id"] == diagram_id:
+            inherit_source_id = anchor["id"]
+    if inherit_source_id is None and latest:
+        inherit_source_id = latest[0]["id"]
+
     check = await precheck_path(cluster, path)
     if not check.ok:
         return JSONResponse(status_code=400, content={"error": "broken_path", "detail": check.detail})
-    paper_result = await _resolve_paper(body.paper)
-    if body.paper is not None and (paper_result is None or not paper_result.ok):
-        detail = paper_result.error if paper_result else "paper missing"
-        return JSONResponse(status_code=400, content={"error": "broken_paper", "detail": detail})
+
+    # Paper intent is by PRESENCE: field absent → inherit; explicit null → remove;
+    # a PaperRef → replace. Only validate when a replacement is actually supplied.
+    paper_changed = "paper" in body.model_fields_set
+    paper_result = None
+    if paper_changed and body.paper is not None:
+        paper_result = await _resolve_paper(body.paper)
+        if paper_result is None or not paper_result.ok:
+            detail = paper_result.error if paper_result else "paper missing"
+            return JSONResponse(status_code=400, content={"error": "broken_paper", "detail": detail})
 
     try:
         model = settings.resolve_model(body.model)
@@ -253,7 +269,13 @@ async def reprovision(diagram_id: int, body: ReprovisionRequest) -> JSONResponse
     run_id = db.create_run(
         diagram_id=diagram_id, user_email=email, cluster=cluster, path=path, model=model
     )
-    _attach_paper(run_id, paper_result)
+    if not paper_changed:
+        # Inherit the anchor/latest run's paper (copy_paper is a no-op if it had none).
+        if inherit_source_id is not None:
+            db.copy_paper(inherit_source_id, run_id)
+    elif body.paper is not None:
+        _attach_paper(run_id, paper_result)
+    # else: explicit null → leave the new run paperless (removed).
     runs.start_run(run_id, user_email=email)
     return JSONResponse(status_code=201, content={"run_id": run_id})
 

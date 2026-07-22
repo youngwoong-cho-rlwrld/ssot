@@ -111,8 +111,14 @@ export async function createDiagram(
 export interface ReprovisionInput {
   cluster?: string;
   path?: string;
+  // Omit the key entirely (not null) to inherit the anchor run's paper; null to
+  // remove it; a PaperInput to replace it. JSON.stringify drops `undefined` keys,
+  // so `paper: undefined` sends the field absent → inherit.
   paper?: PaperInput | null;
   model?: string;
+  // The run this re-provision is based on; its paper is inherited when `paper` is
+  // omitted.
+  anchor_run_id?: number;
 }
 
 /** New run under an existing diagram; omitted fields inherit the latest run. */

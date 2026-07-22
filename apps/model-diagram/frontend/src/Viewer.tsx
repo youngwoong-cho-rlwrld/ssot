@@ -11,8 +11,9 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { SsotSelect } from "@ssot/ui/SsotSelect";
+import { PanelResizeHandle } from "@ssot/ui/PanelResizeHandle";
 import { ChatPanel } from "./ChatPanel";
 import { requestCancelConfirm } from "./lib/cancel-bus";
 import {
@@ -41,6 +42,27 @@ const STATUS_LABEL: Record<Status, string> = {
   done: "ready",
   error: "error",
 };
+
+// Left chat/memo panel width — drag-resizable (mirrors results-sheet's agent
+// panel) and persisted so it survives reloads. The diagram keeps at least
+// LEFT_DIAGRAM_MIN so the panel can never swallow the whole viewport.
+const LEFT_MIN_WIDTH = 280;
+const LEFT_MAX_WIDTH = 640;
+const LEFT_DEFAULT_WIDTH = 340;
+const LEFT_DIAGRAM_MIN = 360;
+const LEFT_WIDTH_KEY = "md.viewer.leftWidth";
+
+function clampWidth(width: number, max: number): number {
+  return Math.round(Math.min(Math.max(width, LEFT_MIN_WIDTH), max));
+}
+
+function loadLeftWidth(): number {
+  if (typeof window === "undefined") return LEFT_DEFAULT_WIDTH;
+  const raw = Number(window.localStorage.getItem(LEFT_WIDTH_KEY));
+  return Number.isFinite(raw) && raw > 0
+    ? clampWidth(raw, LEFT_MAX_WIDTH)
+    : LEFT_DEFAULT_WIDTH;
+}
 
 function runLabel(run: RunSummary, index: number, total: number): string {
   const when = new Date(run.created_at).toLocaleString();
@@ -77,6 +99,66 @@ export function Viewer({
   // Bumped when an in-viewer running run completes, to re-fetch the diagram so
   // the run flips to "done" and the rendered page replaces the progress view.
   const [reloadNonce, setReloadNonce] = useState(0);
+  // Resizable left-panel width (persisted). resizing keeps the drag handle lit.
+  const [leftWidth, setLeftWidth] = useState<number>(loadLeftWidth);
+  const [resizing, setResizing] = useState(false);
+  const splitRef = useRef<HTMLDivElement>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    window.localStorage.setItem(LEFT_WIDTH_KEY, String(leftWidth));
+  }, [leftWidth]);
+
+  // Largest the panel may grow to right now: capped by LEFT_MAX_WIDTH and by
+  // leaving the diagram at least LEFT_DIAGRAM_MIN of the split's measured width.
+  const maxLeftWidth = useCallback(() => {
+    const total = splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+    return Math.max(LEFT_MIN_WIDTH, Math.min(LEFT_MAX_WIDTH, total - LEFT_DIAGRAM_MIN));
+  }, []);
+
+  const resizeLeftBy = useCallback(
+    (delta: number) => {
+      const max = maxLeftWidth();
+      setLeftWidth((w) => clampWidth(w + delta, max));
+    },
+    [maxLeftWidth],
+  );
+
+  const startLeftResize = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      resizeCleanupRef.current?.();
+      const target = event.currentTarget;
+      const pointerId = event.pointerId;
+      const startX = event.clientX;
+      const startWidth = leftWidth;
+      const max = maxLeftWidth();
+      target.setPointerCapture?.(pointerId);
+      setResizing(true);
+      document.body.classList.add("panelResizing");
+
+      // Panel is on the left with the handle on its right edge: drag right grows it.
+      const handleMove = (moveEvent: globalThis.PointerEvent) => {
+        setLeftWidth(clampWidth(startWidth + (moveEvent.clientX - startX), max));
+      };
+      const cleanup = () => {
+        if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", cleanup);
+        window.removeEventListener("pointercancel", cleanup);
+        document.body.classList.remove("panelResizing");
+        setResizing(false);
+        resizeCleanupRef.current = null;
+      };
+      resizeCleanupRef.current = cleanup;
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", cleanup, { once: true });
+      window.addEventListener("pointercancel", cleanup, { once: true });
+    },
+    [leftWidth, maxLeftWidth],
+  );
+
+  useEffect(() => () => resizeCleanupRef.current?.(), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -194,6 +276,8 @@ export function Viewer({
           diagramId={diagramId}
           cluster={current.cluster}
           initialPath={current.path}
+          anchorRunId={current.run_id}
+          paperAttached={current.has_paper}
           onClose={() => setReprovisioning(false)}
           onStarted={(newRunId) => {
             setReprovisioning(false);
@@ -227,8 +311,21 @@ export function Viewer({
           // Done: an always-present LEFT panel of collapsible sections
           // (chat + memo, OpenClaw LIVE LOG grammar) | the diagram fills the rest.
           // Stacks on narrow widths.
-          <div className="viewer__split">
-            <div className="viewer__left">
+          <div className="viewer__split" ref={splitRef}>
+            <div
+              className="viewer__left"
+              style={{ "--viewer-left-width": `${leftWidth}px` } as CSSProperties}
+            >
+              <PanelResizeHandle
+                side="right"
+                label="Resize chat and memo panel"
+                value={leftWidth}
+                min={LEFT_MIN_WIDTH}
+                max={LEFT_MAX_WIDTH}
+                active={resizing}
+                onPointerDown={startLeftResize}
+                onResizeBy={resizeLeftBy}
+              />
               <ChatPanel
                 key={`chat-${runId}`}
                 runId={runId}
@@ -307,6 +404,8 @@ interface ReprovisionProps {
   diagramId: number;
   cluster: string;
   initialPath: string;
+  anchorRunId: number;
+  paperAttached: boolean;
   onClose: () => void;
   onStarted: (runId: number) => void;
 }
@@ -315,10 +414,14 @@ function ReprovisionForm({
   diagramId,
   cluster,
   initialPath,
+  anchorRunId,
+  paperAttached,
   onClose,
   onStarted,
 }: ReprovisionProps) {
   const [path, setPath] = useState(initialPath);
+  // Default "keep" → the request omits `paper`, so the backend inherits the anchor
+  // run's paper (attached or none). "none" removes it; url/pdf replaces it.
   const [paperMode, setPaperMode] = useState<PaperMode>("keep");
   const [paperUrl, setPaperUrl] = useState("");
   const [pdf, setPdf] = useState<{ ref: string; name: string } | null>(null);
@@ -411,6 +514,7 @@ function ReprovisionForm({
         path: path.trim() || undefined,
         paper,
         model: model || undefined,
+        anchor_run_id: anchorRunId,
       });
       onStarted(run_id);
     } catch (e) {
@@ -424,7 +528,7 @@ function ReprovisionForm({
     } finally {
       setBusy(false);
     }
-  }, [paperMode, paperUrl, pdf, path, initialPath, cluster, model, diagramId, onStarted]);
+  }, [paperMode, paperUrl, pdf, path, initialPath, cluster, model, diagramId, anchorRunId, onStarted]);
 
   return (
     <form
@@ -456,6 +560,9 @@ function ReprovisionForm({
       </div>
 
       <div className="reprovision__row">
+        <span className="reprovision__paper-state">
+          Paper: {paperAttached ? "attached" : "none"}
+        </span>
         <div className="segmented" role="tablist" aria-label="Paper source">
           {(["keep", "none", "url", "pdf"] as PaperMode[]).map((mode) => (
             <button
@@ -469,12 +576,14 @@ function ReprovisionForm({
               onClick={() => selectMode(mode)}
             >
               {mode === "keep"
-                ? "Keep paper"
+                ? paperAttached
+                  ? "Keep"
+                  : "Keep (none)"
                 : mode === "none"
-                  ? "Drop paper"
+                  ? "Remove"
                   : mode === "url"
-                    ? "URL"
-                    : "PDF"}
+                    ? "Replace: URL"
+                    : "Replace: PDF"}
             </button>
           ))}
         </div>

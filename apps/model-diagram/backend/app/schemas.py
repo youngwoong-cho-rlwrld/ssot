@@ -47,8 +47,14 @@ class CreateDiagramRequest(BaseModel):
 class ReprovisionRequest(BaseModel):
     cluster: Optional[Cluster] = None
     path: Optional[str] = None
+    # Paper intent is by PRESENCE, not value (checked via model_fields_set in the
+    # endpoint): field ABSENT → inherit the anchor/latest run's paper; explicit
+    # null → remove; a PaperRef → replace (re-validated).
     paper: Optional[PaperRef] = None
     model: Optional[str] = None
+    # The run this re-provision was launched from; its paper is inherited when the
+    # request omits ``paper``. Falls back to the diagram's latest run when absent.
+    anchor_run_id: Optional[int] = None
 
 
 class MemoRequest(BaseModel):
