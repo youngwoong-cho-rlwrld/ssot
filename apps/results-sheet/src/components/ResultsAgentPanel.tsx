@@ -13,7 +13,6 @@ import {
   type CSSProperties,
   type FormEvent,
   type PointerEvent,
-  type ReactNode,
 } from "react";
 import type {
   AgentConnectionStatus,
@@ -21,6 +20,7 @@ import type {
   AgentModel,
 } from "@/lib/agentTypes";
 import { PanelResizeHandle } from "@/components/PanelResizeHandle";
+import { Markdown } from "@ssot/ui/Markdown";
 import { SsotSelect, type SsotSelectOption } from "@ssot/ui/SsotSelect";
 
 type ResultsAgentPanelProps = {
@@ -229,146 +229,9 @@ const EXAMPLE_PROMPTS = [
   "Sort by Total average, descending. Then open the chart",
 ];
 
-type MarkdownBlock =
-  | { type: "paragraph"; text: string }
-  | { type: "unordered-list"; items: string[] }
-  | { type: "ordered-list"; items: string[] }
-  | { type: "code"; text: string };
-
+// Thin wrapper over the shared @ssot/ui <Markdown> (react-markdown + remark-gfm),
+// which replaced the hand-rolled block/inline parser flagged for dedup. Same `.md`
+// scope, so the visual result is unchanged (now with full GFM support).
 function MarkdownMessage({ text }: { text: string }) {
-  const blocks = parseMarkdownBlocks(text);
-
-  return (
-    <div className="md">
-      {blocks.map((block, index) => {
-        if (block.type === "code") {
-          return (
-            <pre key={index}>
-              <code>{block.text}</code>
-            </pre>
-          );
-        }
-        if (block.type === "unordered-list") {
-          return (
-            <ul key={index}>
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
-              ))}
-            </ul>
-          );
-        }
-        if (block.type === "ordered-list") {
-          return (
-            <ol key={index}>
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
-              ))}
-            </ol>
-          );
-        }
-        return <p key={index}>{renderInlineMarkdown(block.text)}</p>;
-      })}
-    </div>
-  );
-}
-
-function parseMarkdownBlocks(text: string) {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let paragraph: string[] = [];
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
-    paragraph = [];
-  };
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      flushParagraph();
-      continue;
-    }
-
-    if (trimmed.startsWith("```")) {
-      flushParagraph();
-      const codeLines: string[] = [];
-      index += 1;
-      while (index < lines.length && !(lines[index] ?? "").trim().startsWith("```")) {
-        codeLines.push(lines[index] ?? "");
-        index += 1;
-      }
-      blocks.push({ type: "code", text: codeLines.join("\n") });
-      continue;
-    }
-
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    if (bullet) {
-      flushParagraph();
-      const items = [bullet[1] ?? ""];
-      while (index + 1 < lines.length) {
-        const next = (lines[index + 1] ?? "").match(/^\s*[-*]\s+(.+)$/);
-        if (!next) break;
-        items.push(next[1] ?? "");
-        index += 1;
-      }
-      blocks.push({ type: "unordered-list", items });
-      continue;
-    }
-
-    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
-    if (ordered) {
-      flushParagraph();
-      const items = [ordered[1] ?? ""];
-      while (index + 1 < lines.length) {
-        const next = (lines[index + 1] ?? "").match(/^\s*\d+[.)]\s+(.+)$/);
-        if (!next) break;
-        items.push(next[1] ?? "");
-        index += 1;
-      }
-      blocks.push({ type: "ordered-list", items });
-      continue;
-    }
-
-    paragraph.push(trimmed);
-  }
-
-  flushParagraph();
-  return blocks;
-}
-
-function renderInlineMarkdown(text: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const tokenPattern = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = tokenPattern.exec(text))) {
-    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
-    const token = match[0];
-
-    if (token.startsWith("`")) {
-      nodes.push(<code key={nodes.length}>{token.slice(1, -1)}</code>);
-    } else if (token.startsWith("**")) {
-      nodes.push(<strong key={nodes.length}>{token.slice(2, -2)}</strong>);
-    } else {
-      const link = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
-      if (link) {
-        nodes.push(
-          <a key={nodes.length} href={link[2]} target="_blank" rel="noreferrer">
-            {link[1]}
-          </a>,
-        );
-      } else {
-        nodes.push(token);
-      }
-    }
-
-    lastIndex = match.index + token.length;
-  }
-
-  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
-  return nodes;
+  return <Markdown>{text}</Markdown>;
 }

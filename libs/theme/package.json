@@ -10,6 +10,7 @@
     "./tokens.css": "./tokens.css",
     "./base.css": "./base.css",
     "./chat.css": "./chat.css",
+    "./modal.css": "./modal.css",
     "./header.css": "./header.css",
     "./controls.css": "./controls.css",
     "./runtime.js": "./runtime.js",

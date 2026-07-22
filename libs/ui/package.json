@@ -6,9 +6,17 @@
   "type": "module",
   "peerDependencies": {
     "react": "^18.3.1 || ^19.0.0",
-    "react-dom": "^18.3.1 || ^19.0.0"
+    "react-dom": "^18.3.1 || ^19.0.0",
+    "react-markdown": "^10.0.0",
+    "remark-gfm": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react-markdown": { "optional": true },
+    "remark-gfm": { "optional": true }
   },
   "exports": {
+    "./Markdown": "./src/Markdown.tsx",
+    "./Modal": "./src/Modal.tsx",
     "./SsotSelect": "./src/SsotSelect.tsx",
     "./ToolCallView": "./src/ToolCallView.tsx",
     "./transcript-types": "./src/transcript-types.ts",

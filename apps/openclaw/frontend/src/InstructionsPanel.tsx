@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Save, X } from "lucide-react";
+import { Save } from "lucide-react";
+import { Modal } from "@ssot/ui/Modal";
 import { getInstructions, getInstruction, putInstruction } from "./api";
 import type { InstructionFile } from "./types";
 
@@ -107,36 +108,13 @@ export function InstructionsPanel({ onClose }: { onClose: () => void }) {
     onClose();
   }, [onClose]);
 
-  // Escape closes the modal.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") requestClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [requestClose]);
-
   return (
-    <div className="modal-overlay" onMouseDown={requestClose}>
-      <div
-        className="modal instructions"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Global instructions"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="modal__head">
-          <h2 className="modal__title">Global instructions</h2>
-          <button
-            type="button"
-            className="ssot-icon-btn"
-            onClick={requestClose}
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
+    <Modal
+      title="Global instructions"
+      ariaLabel="Global instructions"
+      className="instructions"
+      onClose={requestClose}
+    >
         <div className="instructions__tabs" role="tablist">
           {files.map((f) => (
             <button
@@ -189,7 +167,6 @@ export function InstructionsPanel({ onClose }: { onClose: () => void }) {
             {saving ? "Saving..." : "Save"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
