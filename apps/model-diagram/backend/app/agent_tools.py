@@ -24,6 +24,7 @@ from typing import Awaitable, Callable, Optional
 
 from . import settings
 from .fsaccess import FsAccess, FsError, PathEscape
+from .linecount import source_lines
 from .schemas import finalize_tool_schema
 from .spec import load_spec
 
@@ -254,7 +255,11 @@ def build_initial_user(cluster: str, root: str, has_paper: bool, *, paper_via_to
 
 
 def read_result(path: str, text: str, start, end) -> dict:
-    lines = text.replace("\r\n", "\n").split("\n")
+    # Canonical splitlines-based numbering: the total (and every line the agent can
+    # read) must match the finalize integrity count exactly, so a range the agent
+    # reads here is never rejected as out of range at finalize (the run-7 off-by-one
+    # came from split("\n") adding a phantom line after a trailing newline).
+    lines = source_lines(text)
     total = len(lines)
     if start is not None or end is not None:
         s = max(1, int(start) if start is not None else 1)
@@ -333,4 +338,9 @@ async def handle_finalize(outcome: AgentOutcome, finalize_cb: FinalizeCallback, 
         outcome.error_detail = f"finalize_diagram failed integrity {outcome._finalize_attempts}x: {error}"
         outcome._terminal = True
         return {"ok": False, "errors": error}, True
-    return {"ok": False, "errors": error, "instruction": "Fix these and call finalize_diagram again."}, True
+    # Retryable integrity failure: NOT a tool error. Return is_error=False so the
+    # Claude CLI delivers this as a normal result the model corrects and re-submits
+    # (an isError=true result makes the CLI treat the tool call as failed and end
+    # the turn, so the agent never gets its up-to-MAX_FINALIZE_ATTEMPTS retries).
+    # The run is left 'running'; only the exhausted branch above ends it.
+    return {"ok": False, "errors": error, "instruction": "Fix these and call finalize_diagram again."}, False

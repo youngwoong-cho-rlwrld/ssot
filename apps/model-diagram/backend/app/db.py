@@ -1219,6 +1219,9 @@ def load_diagram_model(run_id: int) -> dict:
 def _b64_line_count(content_b64: str) -> int:
     import base64
 
-    text = base64.b64decode(content_b64).decode("utf-8", errors="replace").replace("\r\n", "\n")
-    # splitlines() count of the decoded file (matches the §7.1 integrity check).
-    return len(text.splitlines())
+    from .linecount import line_count
+
+    text = base64.b64decode(content_b64).decode("utf-8", errors="replace")
+    # Canonical count — identical to the read_file tool's numbering, so the agent
+    # can never read a line integrity then rejects as out of range.
+    return line_count(text)

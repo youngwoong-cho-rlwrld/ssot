@@ -200,7 +200,9 @@ async def handle_revise(outcome: ChatOutcome, revise_cb: ReviseCallback, args: d
         outcome.error_detail = f"revise_diagram failed integrity {outcome._revise_attempts}x: {error}"
         outcome._terminal = True
         return {"ok": False, "errors": error}, True
-    return {"ok": False, "errors": error, "instruction": "Fix these and call revise_diagram again."}, True
+    # Retryable failure is NOT a tool error (see handle_finalize): is_error=False so
+    # the CLI delivers it as feedback the model corrects, not a turn-ending failure.
+    return {"ok": False, "errors": error, "instruction": "Fix these and call revise_diagram again."}, False
 
 
 # ── SDK driver ─────────────────────────────────────────────────────────────

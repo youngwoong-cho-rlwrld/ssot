@@ -4,6 +4,7 @@ One implementation serves every runtime (SDK/codex in the worker, Claude-CLI in
 the MCP subprocess), so this covers the success path and the two pre-DB rejections.
 """
 from app import db, finalize
+from app.agent_tools import AgentOutcome, handle_finalize
 from tests.test_db import _payload, fake_fs  # a known-good FinalizePayload + fs stub
 
 
@@ -65,3 +66,52 @@ async def test_try_finalize_reuses_named_sources(tmp_env):
     reuse = {"model.py": _source_b64()["s1"]}
     ok, err = await finalize.try_finalize(run_id, _payload().model_dump(), fake_fs(files={}), reuse_sources=reuse)
     assert ok and err is None
+
+
+async def test_finalize_integrity_failure_is_retryable_then_done(tmp_env):
+    # An integrity failure must be RETRYABLE: the run stays 'running', the tool
+    # result carries the errors as feedback (is_error False, so the CLI does not
+    # end the turn), and a corrected finalize then completes the run.
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    outcome = AgentOutcome()
+
+    async def cb(raw):
+        return await finalize.try_finalize(run_id, raw, fake_fs())
+
+    bad = _payload().model_dump()
+    bad["components"][0]["snippets"][0]["end"] = 999  # past the 3-line model.py
+    result, is_error = await handle_finalize(outcome, cb, bad)
+    assert is_error is False  # retryable feedback, NOT a tool error
+    assert result["ok"] is False and result.get("errors") and "instruction" in result
+    assert outcome._terminal is False
+    assert db.get_run(run_id)["status"] == "running"  # not marked terminal
+
+    result2, is_error2 = await handle_finalize(outcome, cb, _payload().model_dump())
+    assert is_error2 is False and result2["ok"] is True
+    assert outcome._terminal is True and outcome.status == "done"
+    run = db.get_run(run_id)
+    assert run["rendered_html"] and "<html" in run["rendered_html"].lower()
+
+
+async def test_finalize_exhausted_attempts_end_run(tmp_env, monkeypatch):
+    # After MAX_FINALIZE_ATTEMPTS integrity failures the run gives up (terminal).
+    monkeypatch.setattr("app.settings.MAX_FINALIZE_ATTEMPTS", 2)
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    outcome = AgentOutcome()
+
+    async def cb(raw):
+        return await finalize.try_finalize(run_id, raw, fake_fs())
+
+    bad = _payload().model_dump()
+    bad["components"][0]["snippets"][0]["end"] = 999
+    _, e1 = await handle_finalize(outcome, cb, bad)
+    assert e1 is False and outcome._terminal is False  # first: retryable
+    _, e2 = await handle_finalize(outcome, cb, bad)
+    assert e2 is True and outcome._terminal is True  # second: exhausted → terminal
+    assert outcome.status == "error" and outcome.error_kind == "agent_failure"

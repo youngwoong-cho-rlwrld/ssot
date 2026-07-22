@@ -391,8 +391,10 @@ def _hp_css() -> str:
 
 
 def source_line_count(content_b64: str) -> int:
-    text = base64.b64decode(content_b64).decode("utf-8", errors="replace").replace("\r\n", "\n")
-    return len(text.splitlines())
+    from .linecount import line_count
+
+    text = base64.b64decode(content_b64).decode("utf-8", errors="replace")
+    return line_count(text)
 
 
 _PAGE_TEMPLATE = """<!doctype html>

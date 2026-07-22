@@ -116,7 +116,9 @@ def test_read_file_ok(server):
     payload, is_error = server.call_tool("read_file", {"path": "model.py", "start": None, "end": None})
     assert not is_error
     assert "class Net" in payload["text"]
-    assert payload["line_count"] == 3
+    # "import torch\nclass Net: ...\n" is 2 lines; the trailing newline must NOT add
+    # a phantom third line (it would exceed the finalize integrity count).
+    assert payload["line_count"] == 2
 
 
 def test_read_file_range(server):
