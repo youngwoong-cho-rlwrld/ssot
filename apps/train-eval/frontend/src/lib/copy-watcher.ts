@@ -122,10 +122,12 @@ async function watch({ copyId, destCluster, jobName }: ActiveCopy) {
         continue;
       }
       if (s.status === "done") {
+        // Completion is terminal and worth acknowledging: keep it up until the
+        // user dismisses it rather than letting it auto-close.
         toast.success(
           `Copied ${s.copies_done} checkpoint${s.copies_done === 1 ? "" : "s"} to ${destCluster}` +
             (jobName ? ` — ${jobName}` : ""),
-          { id: toastId, duration: 6000 },
+          { id: toastId, duration: Infinity, closeButton: true },
         );
         removeActive(copyId);
         return;
@@ -138,8 +140,10 @@ async function watch({ copyId, destCluster, jobName }: ActiveCopy) {
         if (cancelled || s.error === "cancelled") {
           toast("Copy cancelled", { duration: 4000 });
         } else {
+          // Mirror the completion toast: a genuine failure is terminal, so it
+          // persists until the user explicitly closes it.
           const msg = (s.error && s.error.trim()) || "Copy failed";
-          toast.error(msg, { duration: 10_000 });
+          toast.error(msg, { duration: Infinity, closeButton: true });
         }
         removeActive(copyId);
         return;
