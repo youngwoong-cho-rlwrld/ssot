@@ -9,7 +9,7 @@ import {
 import { getRun, openRunEvents } from "./api";
 import type { Stage } from "./types";
 
-const STAGE_LABEL: Record<Stage, string> = {
+export const STAGE_LABEL: Record<Stage, string> = {
   inspecting_root: "Inspecting model root",
   pinning_commit: "Pinning commit",
   mapping_pipeline: "Mapping the pipeline",
@@ -35,7 +35,7 @@ const BASE_ORDER: Stage[] = [
 
 const PAPER_STAGES = new Set<Stage>(["reading_paper", "cross_checking_paper"]);
 
-const ERROR_TITLE: Record<string, string> = {
+export const ERROR_TITLE: Record<string, string> = {
   broken_path: "Path unreachable",
   broken_paper: "Paper unreadable",
   not_a_model_root: "Not a model root",
@@ -55,6 +55,10 @@ interface Props {
   runId: number;
   onDone: () => void;
   onBack: () => void;
+  // When embedded (e.g. inside the Viewer for a still-running run), the outer
+  // panel header is dropped — the host supplies its own chrome — and the stage
+  // checklist fills the available space.
+  embedded?: boolean;
 }
 
 interface TerminalError {
@@ -62,7 +66,7 @@ interface TerminalError {
   detail: string;
 }
 
-export function RunProgress({ runId, onDone, onBack }: Props) {
+export function RunProgress({ runId, onDone, onBack, embedded = false }: Props) {
   // null until we learn from the run record whether a paper is attached; that
   // decides whether the paper stages appear in the checklist.
   const [hasPaper, setHasPaper] = useState<boolean | null>(null);
@@ -80,7 +84,7 @@ export function RunProgress({ runId, onDone, onBack }: Props) {
     getRun(runId)
       .then((run) => {
         if (!alive) return;
-        setHasPaper(run.paper_status !== "none");
+        setHasPaper(run.has_paper);
         if (run.paper_status === "mismatch") setMismatch(run.paper_warning ?? "");
         if (run.status === "done") {
           onDoneRef.current();
@@ -104,6 +108,9 @@ export function RunProgress({ runId, onDone, onBack }: Props) {
   useEffect(() => {
     const close = openRunEvents(runId, {
       onStage: (stage, stageDetail) => {
+        // A paper stage arriving is proof a paper is attached, whatever the
+        // run record said — never filter out the stage we're currently in.
+        if (PAPER_STAGES.has(stage as Stage)) setHasPaper(true);
         setCurrentStage(stage);
         setDetail(stageDetail || null);
       },
@@ -125,24 +132,8 @@ export function RunProgress({ runId, onDone, onBack }: Props) {
     ? stages.indexOf(currentStage as Stage)
     : -1;
 
-  return (
-    <section className="panel runprog">
-      <div className="panel__head">
-        <button
-          type="button"
-          className="ssot-icon-btn"
-          onClick={onBack}
-          title="Back"
-          aria-label="Back to diagrams"
-        >
-          <ArrowLeft size={15} />
-        </button>
-        <h2 className="panel__title">
-          {failed ? "Analysis stopped" : "Generating diagram"}
-        </h2>
-      </div>
-
-      <div className="panel__body runprog__body">
+  const body = (
+    <div className="panel__body runprog__body">
         {mismatch !== null && (
           <div className="notice notice--warn">
             <AlertTriangle size={15} />
@@ -197,10 +188,34 @@ export function RunProgress({ runId, onDone, onBack }: Props) {
           </ol>
         )}
 
-        {!failed && currentIndex < 0 && (
+        {!failed && currentStage === null && (
           <p className="runprog__waiting">Starting analysis…</p>
         )}
       </div>
+  );
+
+  if (embedded) {
+    return <div className="runprog runprog--embedded">{body}</div>;
+  }
+
+  return (
+    <section className="panel runprog">
+      <div className="panel__head">
+        <button
+          type="button"
+          className="ssot-icon-btn"
+          onClick={onBack}
+          title="Back"
+          aria-label="Back to diagrams"
+        >
+          <ArrowLeft size={15} />
+        </button>
+        <h2 className="panel__title">
+          {failed ? "Analysis stopped" : "Generating diagram"}
+        </h2>
+      </div>
+
+      {body}
     </section>
   );
 }

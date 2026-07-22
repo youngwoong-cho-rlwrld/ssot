@@ -13,9 +13,10 @@ import asyncio
 import json
 from typing import AsyncIterator, Optional
 
-from . import agent, agent_cli, db, paper as paper_mod, settings
+from . import agent, agent_cli, agent_codex, db, paper as paper_mod, settings
 from .agent import CredentialsMissing
 from .agent_cli import CliUnavailable
+from .agent_codex import CodexUnavailable
 from .fsaccess import FsAccess, FsError, resolve_access
 from .pathcheck import precheck_path
 from .render import IntegrityError, render_page
@@ -26,6 +27,10 @@ _TERMINAL_STATUSES = {"done", "error"}
 _NO_RUNTIME_DETAIL = (
     "No agent runtime is configured. Set ANTHROPIC_API_KEY in the repo-root .env, "
     "or log in to the Claude Code CLI (run `claude` and sign in), then restart the backend."
+)
+_NO_CODEX_RUNTIME_DETAIL = (
+    "The codex CLI is not available for this model. Install it and sign in "
+    "(run `codex login`), then restart the backend — or pick a Claude model."
 )
 
 
@@ -71,6 +76,8 @@ async def _execute_run(run_id: int, user_email: str) -> None:
             await asyncio.wait_for(_run_body(run_id), timeout=settings.RUN_TIMEOUT_S)
         except asyncio.TimeoutError:
             _fail(run_id, "agent_failure", f"run timed out after {settings.RUN_TIMEOUT_S:.0f}s")
+        except CodexUnavailable:
+            _fail(run_id, "credentials_not_configured", _NO_CODEX_RUNTIME_DETAIL)
         except (CredentialsMissing, CliUnavailable):
             _fail(run_id, "credentials_not_configured", _NO_RUNTIME_DETAIL)
         except Exception as exc:  # never let a run task die silently
@@ -88,14 +95,19 @@ async def _run_body(run_id: int) -> None:
         _fail(run_id, "broken_path", check.detail or "path precheck failed")
         return
 
-    runtime = settings.active_runtime()
+    # The run's model was chosen at create time and stored on the row; older rows
+    # (pre-model-select) fall back to the backend default. Runtime is selected by
+    # the model's family: codex ids → codex CLI, claude ids → SDK/Claude CLI.
+    model = run.get("model") or settings.model_name()
+    runtime = settings.runtime_for_model(model)
     if runtime == "none":
-        _fail(run_id, "credentials_not_configured", _NO_RUNTIME_DETAIL)
+        detail = _NO_CODEX_RUNTIME_DETAIL if settings.model_family(model) == "codex" else _NO_RUNTIME_DETAIL
+        _fail(run_id, "credentials_not_configured", detail)
         return
 
     # Resolve cluster access ONCE, here in the backend where the user's identity
     # and settings are available. The resolved config is handed to the fs helpers
-    # and, on the CLI runtime, to the out-of-process MCP worker (which has no
+    # and, on the CLI/codex runtimes, to the out-of-process MCP worker (which has no
     # identity of its own) — so no subprocess ever reads ssot.db.
     try:
         access = await resolve_access(run["cluster"])
@@ -123,7 +135,22 @@ async def _run_body(run_id: int) -> None:
             fs=fs,
             cluster=run["cluster"],
             root=check.resolved_root,
+            model=model,
             paper_block=paper_block,
+            on_stage=on_stage,
+            finalize_cb=finalize_cb,
+            on_paper_mismatch=on_paper_mismatch,
+        )
+    elif runtime == "codex":  # the codex CLI serves the same tools over the same MCP server
+        paper_text = paper_mod.load_paper_text(paper_row) if paper_row else None
+        outcome = await agent_codex.run_agent_codex(
+            run_id=run_id,
+            cluster=run["cluster"],
+            root=check.resolved_root,
+            model=model,
+            access=access,
+            paper_text=paper_text,
+            has_paper=paper_row is not None,
             on_stage=on_stage,
             finalize_cb=finalize_cb,
             on_paper_mismatch=on_paper_mismatch,
@@ -134,6 +161,7 @@ async def _run_body(run_id: int) -> None:
             run_id=run_id,
             cluster=run["cluster"],
             root=check.resolved_root,
+            model=model,
             access=access,
             paper_text=paper_text,
             has_paper=paper_row is not None,

@@ -38,12 +38,16 @@ class CreateDiagramRequest(BaseModel):
     cluster: Cluster
     path: str
     paper: Optional[PaperRef] = None
+    # Optional generation model id; validated against the backend allowlist in the
+    # endpoint (settings.resolve_model). Omitted → the backend default.
+    model: Optional[str] = None
 
 
 class ReprovisionRequest(BaseModel):
     cluster: Optional[Cluster] = None
     path: Optional[str] = None
     paper: Optional[PaperRef] = None
+    model: Optional[str] = None
 
 
 # ── finalize_diagram payload (validated server-side) ──────────────────────

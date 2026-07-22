@@ -121,3 +121,14 @@ export interface HealthResult {
   anthropic_configured: boolean;
   runtime: Runtime;
 }
+
+// GET /api/models — the generation-model allowlist and the backend default.
+export interface ModelOption {
+  id: string;
+  label: string;
+}
+
+export interface ModelsResult {
+  models: ModelOption[];
+  default: string;
+}

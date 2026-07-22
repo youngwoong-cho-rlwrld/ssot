@@ -67,8 +67,81 @@ def papers_dir() -> Path:
     return path
 
 
+# Ordered allowlist of models a run may use; the first entry is the UI default.
+# Each entry is ``(id, label, family)`` where family is the generation runtime:
+# ``claude`` (Anthropic SDK or the Claude Code CLI) or ``codex`` (the OpenAI
+# ``codex`` CLI). The claude ids are accepted by the CLI's ``--model`` flag and the
+# SDK; the codex ids mirror what OpenClaw exposes (``~/.openclaw/openclaw.json``).
+# The frontend never hard-codes this list — it reads GET /api/models — so adding a
+# model here is the single source of truth. GET /api/models filters this to the
+# models whose runtime is actually available (see :func:`available_model_catalog`).
+MODEL_ALLOWLIST: list[tuple[str, str, str]] = [
+    ("claude-fable-5", "Claude Fable", "claude"),
+    ("claude-opus-4-8", "Claude Opus 4.8", "claude"),
+    ("claude-sonnet-5", "Claude Sonnet", "claude"),
+    ("claude-haiku-4-5", "Claude Haiku", "claude"),
+    ("gpt-5.6-sol", "GPT-5.6 Sol", "codex"),
+]
+
+
 def model_name() -> str:
-    return os.environ.get("MODEL_DIAGRAM_MODEL", "claude-opus-4-8")
+    return os.environ.get("MODEL_DIAGRAM_MODEL", "claude-fable-5")
+
+
+def model_catalog() -> list[dict[str, str]]:
+    """The full allowlist as ``[{"id", "label"}, ...]`` (unfiltered).
+
+    GET /api/models serves the availability-filtered subset instead
+    (:func:`available_model_catalog`); this remains the complete registry.
+    """
+    return [{"id": mid, "label": label} for mid, label, _ in MODEL_ALLOWLIST]
+
+
+def allowed_model_ids() -> set[str]:
+    return {mid for mid, _, _ in MODEL_ALLOWLIST}
+
+
+def model_family(model_id: str) -> str | None:
+    """``claude`` | ``codex`` for a known id, else ``None``."""
+    for mid, _, fam in MODEL_ALLOWLIST:
+        if mid == model_id:
+            return fam
+    return None
+
+
+def default_model() -> str:
+    """The model the UI preselects: the configured default when it's allow-listed,
+    otherwise the first allow-listed id (so the select's value is always an option).
+    """
+    configured = model_name()
+    return configured if configured in allowed_model_ids() else MODEL_ALLOWLIST[0][0]
+
+
+def available_model_catalog() -> list[dict[str, str]]:
+    """The allowlist filtered to models whose generation runtime is available now.
+
+    Claude models appear when the SDK key or the Claude CLI is present; codex
+    models appear when the ``codex`` CLI is present. Served by GET /api/models so
+    the UI only ever offers a model it can actually run.
+    """
+    return [
+        {"id": mid, "label": label}
+        for mid, label, _ in MODEL_ALLOWLIST
+        if runtime_for_model(mid) != "none"
+    ]
+
+
+def resolve_model(requested: str | None) -> str:
+    """Validate a caller-supplied model id for a new run.
+
+    ``None`` falls back to :func:`default_model`. A non-null value must be in the
+    allowlist, else ``ValueError`` (the API maps it to HTTP 422).
+    """
+    if requested is None:
+        return default_model()
+    if requested not in allowed_model_ids():
+        raise ValueError(f"unknown model: {requested!r}")
+    return requested
 
 
 def anthropic_api_key() -> str | None:
@@ -89,12 +162,65 @@ def claude_cli_path() -> str | None:
     return shutil.which("claude")
 
 
+def codex_cli_path() -> str | None:
+    """Path to a usable ``codex`` CLI, or None.
+
+    ``CODEX_CLI_PATH`` overrides discovery; otherwise ``codex`` is looked up on
+    PATH. The codex runtime drives it headlessly (``codex exec``) against the
+    user's logged-in codex credentials (``$CODEX_HOME/auth.json``). Presence of the
+    CLI is what gates the codex models here; an unauthenticated CLI still surfaces
+    as a clear per-run ``agent_failure`` ("codex is not logged in") at run time.
+    """
+    override = os.environ.get("CODEX_CLI_PATH", "").strip()
+    if override:
+        return override if os.path.isfile(override) and os.access(override, os.X_OK) else None
+    return shutil.which("codex")
+
+
 def active_runtime() -> str:
-    """Which generation runtime a new run will use: ``sdk`` | ``claude-cli`` | ``none``.
+    """Which generation runtime a *claude* run will use: ``sdk`` | ``claude-cli`` | ``none``.
 
     ANTHROPIC_API_KEY wins (the SDK loop, unchanged); else a logged-in Claude
     Code CLI; else no runtime is configured and runs end ``credentials_not_configured``.
+    Kept for backward compatibility (GET /api/health's ``runtime`` field);
+    per-run selection goes through :func:`runtime_for_model`.
     """
+    if anthropic_api_key():
+        return "sdk"
+    if claude_cli_path():
+        return "claude-cli"
+    return "none"
+
+
+def codex_runtime() -> str | None:
+    """``cli`` when a codex CLI is present, else ``None``."""
+    return "cli" if codex_cli_path() else None
+
+
+def available_runtimes() -> dict[str, str | None]:
+    """Per-family runtime availability for GET /api/health.
+
+    ``claude`` is ``sdk`` (API key), ``cli`` (Claude Code CLI), or ``None``;
+    ``codex`` is ``cli`` or ``None``.
+    """
+    if anthropic_api_key():
+        claude: str | None = "sdk"
+    elif claude_cli_path():
+        claude = "cli"
+    else:
+        claude = None
+    return {"claude": claude, "codex": codex_runtime()}
+
+
+def runtime_for_model(model_id: str) -> str:
+    """The runtime a run of ``model_id`` will use: ``sdk`` | ``claude-cli`` | ``codex`` | ``none``.
+
+    Codex-family ids route to the codex CLI when present. Everything else (the
+    claude family, and any unknown id for backward compatibility) routes to the
+    SDK when a key is set, else the Claude CLI, else ``none``.
+    """
+    if model_family(model_id) == "codex":
+        return "codex" if codex_cli_path() else "none"
     if anthropic_api_key():
         return "sdk"
     if claude_cli_path():

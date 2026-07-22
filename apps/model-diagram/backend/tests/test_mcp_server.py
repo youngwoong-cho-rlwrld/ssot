@@ -144,6 +144,51 @@ def test_read_paper_virtual_file(server):
     assert "hidden_dim = 512" in payload["text"]
 
 
+def test_runstate_tools_ack_locally_without_callback_base():
+    """Codex stream-dispatch mode: with no MD_CALLBACK_BASE the four run-state
+    tools must ack locally (no network POST) so the model proceeds; the backend
+    reads the real run-state from the CLI event stream instead.
+    """
+    import os
+    import subprocess
+    import sys as _sys
+
+    env = dict(os.environ)
+    env.update({"MD_CLUSTER": "local", "MD_ROOT": "/tmp", "MD_RUN_ID": "1", "MD_ACCESS_JSON": '{"kind":"local"}'})
+    env.pop("MD_CALLBACK_BASE", None)
+    env.pop("MD_CALLBACK_TOKEN", None)
+    proc = subprocess.Popen(
+        [_sys.executable, _SERVER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+    )
+    try:
+        def rpc(rid, method, params=None):
+            msg = {"jsonrpc": "2.0", "id": rid, "method": method}
+            if params is not None:
+                msg["params"] = params
+            proc.stdin.write(json.dumps(msg) + "\n")
+            proc.stdin.flush()
+            return json.loads(proc.stdout.readline())
+
+        rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}})
+        r = rpc(2, "tools/call", {"name": "report_stage", "arguments": {"stage": "inspecting_root", "detail": "x"}})
+        payload = json.loads(r["result"]["content"][0]["text"])
+        assert payload == {"ok": True}
+        assert not r["result"].get("isError")
+        r = rpc(3, "tools/call", {"name": "report_paper_mismatch", "arguments": {"reason": "nope"}})
+        payload = json.loads(r["result"]["content"][0]["text"])
+        assert payload["ok"] is True and "instruction" in payload
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
 def test_ssh_access_from_env_no_config_lookup():
     """Regression: the worker must consume the pre-resolved MD_ACCESS_JSON and
     take the ssh path — never fail with 'cluster ... is not configured' (which

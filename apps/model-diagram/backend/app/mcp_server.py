@@ -69,8 +69,25 @@ async def _call_local(fs: FsAccess, name: str, args: dict) -> tuple[dict, bool]:
     return await agent_tools.fs_read_file(fs, args, paper_text=_paper_text())
 
 
+def _stream_ack(name: str, args: dict) -> tuple[dict, bool]:
+    """Ack a run-state tool without a callback (codex stream-dispatch mode).
+
+    When ``MD_CALLBACK_BASE`` is unset the four run-state tools cannot POST back
+    (the codex runtime sandboxes this server's network). The backend instead reads
+    the run-state from the CLI's event stream, so here we just acknowledge so the
+    model proceeds. Mirrors the successful-path shapes ``callback.dispatch_tool``
+    returns for each tool.
+    """
+    if name == "report_paper_mismatch":
+        return {"ok": True, "instruction": "Continue using code-derived values only."}, False
+    return {"ok": True}, False
+
+
 def _call_callback(name: str, args: dict) -> tuple[dict, bool]:
-    base = os.environ["MD_CALLBACK_BASE"].rstrip("/")
+    base = os.environ.get("MD_CALLBACK_BASE", "").strip()
+    if not base:
+        return _stream_ack(name, args)
+    base = base.rstrip("/")
     body = {
         "run_id": int(os.environ["MD_RUN_ID"]),
         "token": os.environ["MD_CALLBACK_TOKEN"],

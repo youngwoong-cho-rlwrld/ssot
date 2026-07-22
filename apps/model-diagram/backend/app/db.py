@@ -6,7 +6,7 @@ a cache in ``runs.rendered_html``. Schema follows the plan §10.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -15,6 +15,11 @@ from .schemas import FinalizePayload
 
 VALID_STATUSES = {"running", "done", "error"}
 VALID_PAPER_STATUS = {"none", "attached", "mismatch"}
+
+_STALE_RUN_DETAIL = (
+    "the backend restarted while this run was in progress, so its generation task "
+    "was lost; start a new run"
+)
 
 
 def _now() -> str:
@@ -327,6 +332,39 @@ def update_run_status(
         conn.close()
 
 
+def reconcile_stale_runs(older_than_seconds: float = 5.0) -> list[int]:
+    """Fail runs left ``running`` by a crashed/restarted backend (returns their ids).
+
+    A run executes as a detached asyncio task owned by the worker process; when the
+    process dies (dev mode's ``uvicorn --reload`` restarts on every file edit) the
+    task vanishes but the row stays ``running`` forever. On startup no run task can
+    still be alive, so every such row is orphaned — mark it ``error`` /
+    ``agent_failure``. The DB is the SSE source of truth (``event_stream`` replays a
+    terminal frame from the row), so a reconnecting client sees the failure.
+
+    ``older_than_seconds`` skips very fresh rows so this can never race a run being
+    created concurrently (created_at is an ISO-8601 UTC string, so lexical order is
+    chronological).
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)).isoformat()
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT id FROM runs WHERE status = 'running' AND created_at < ?", (cutoff,)
+        ).fetchall()
+        ids = [int(r["id"]) for r in rows]
+        if ids:
+            conn.execute(
+                "UPDATE runs SET status = 'error', error_kind = 'agent_failure', "
+                "error_detail = ?, updated_at = ? WHERE status = 'running' AND created_at < ?",
+                (_STALE_RUN_DETAIL, _now(), cutoff),
+            )
+            conn.commit()
+        return ids
+    finally:
+        conn.close()
+
+
 def set_paper_status(run_id: int, paper_status: str, paper_warning: str = "") -> None:
     conn = _connect()
     try:
@@ -403,6 +441,14 @@ def add_paper(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (run_id, kind, source_url, stored_path, content_type, sha256, page_count, parsed_title, _now()),
+        )
+        # Reflect the attachment on the run so the API/viewer see paper_status
+        # 'attached' immediately (it only becomes 'mismatch' if the agent later
+        # calls report_paper_mismatch). Guard on 'none' so a re-attach can't clobber
+        # a mismatch already recorded for the run.
+        conn.execute(
+            "UPDATE runs SET paper_status = 'attached', updated_at = ? WHERE id = ? AND paper_status = 'none'",
+            (_now(), run_id),
         )
         conn.commit()
         return int(cur.lastrowid)

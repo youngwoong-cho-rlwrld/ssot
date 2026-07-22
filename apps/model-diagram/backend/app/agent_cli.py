@@ -87,6 +87,7 @@ async def run_agent_cli(
     run_id: int,
     cluster: str,
     root: str,
+    model: str,
     access: dict,
     paper_text: Optional[str],
     has_paper: bool,
@@ -163,7 +164,7 @@ async def run_agent_cli(
             "--effort",
             _effort(),  # default high (SDK parity); MODEL_DIAGRAM_CLI_EFFORT tunes it
             "--model",
-            settings.model_name(),
+            model,
             "--no-session-persistence",
             "--setting-sources",
             "",  # no hooks / user CLAUDE.md / output styles — a clean run

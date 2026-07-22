@@ -25,6 +25,10 @@ from .schemas import CreateDiagramRequest, PaperRef, ReprovisionRequest, Validat
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     db.init_db()
+    # A run's generation task does not survive a process restart (dev mode reloads
+    # on every edit), so any run still 'running' at startup is orphaned — fail it in
+    # the DB, which is the SSE source of truth, so reconnecting clients see the error.
+    db.reconcile_stale_runs()
     yield
 
 
@@ -95,12 +99,14 @@ def _run_detail(run: dict) -> dict:
 
 @app.get("/api/health")
 async def health() -> dict:
-    # `runtime` reports which generation path a new run would take; `anthropic_configured`
-    # is kept for backward compatibility.
+    # `runtime` reports the claude generation path (backward compatible);
+    # `runtimes` reports per-family availability (claude: sdk|cli|null, codex: cli|null);
+    # `anthropic_configured` is kept for backward compatibility.
     return {
         "status": "ok",
         "anthropic_configured": settings.anthropic_api_key() is not None,
         "runtime": settings.active_runtime(),
+        "runtimes": settings.available_runtimes(),
     }
 
 
@@ -124,6 +130,21 @@ async def internal_mcp_tool(request: Request) -> JSONResponse:
     except BridgeAuthError:
         raise HTTPException(403, "invalid callback token")
     return JSONResponse({"result": result, "is_error": is_error})
+
+
+@app.get("/api/models")
+async def models() -> dict:
+    _require_user()
+    # Only offer models whose generation runtime is available right now (claude
+    # models when the SDK key or Claude CLI is present; codex models when the codex
+    # CLI is present). If the configured default is not currently available, fall
+    # back to the first available id so the select's value is always an option.
+    catalog = settings.available_model_catalog()
+    default = settings.default_model()
+    available_ids = {m["id"] for m in catalog}
+    if default not in available_ids and catalog:
+        default = catalog[0]["id"]
+    return {"models": catalog, "default": default}
 
 
 @app.get("/api/clusters")
@@ -198,8 +219,13 @@ async def create_diagram(body: CreateDiagramRequest) -> JSONResponse:
         detail = paper_result.error if paper_result else "paper missing"
         return JSONResponse(status_code=400, content={"error": "broken_paper", "detail": detail})
 
+    try:
+        model = settings.resolve_model(body.model)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
     diagram_id, run_id = db.create_diagram_with_run(
-        user_email=email, cluster=body.cluster, path=body.path, model=settings.model_name()
+        user_email=email, cluster=body.cluster, path=body.path, model=model
     )
     _attach_paper(run_id, paper_result)
     runs.start_run(run_id, user_email=email)
@@ -225,8 +251,13 @@ async def reprovision(diagram_id: int, body: ReprovisionRequest) -> JSONResponse
         detail = paper_result.error if paper_result else "paper missing"
         return JSONResponse(status_code=400, content={"error": "broken_paper", "detail": detail})
 
+    try:
+        model = settings.resolve_model(body.model)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
     run_id = db.create_run(
-        diagram_id=diagram_id, user_email=email, cluster=cluster, path=path, model=settings.model_name()
+        diagram_id=diagram_id, user_email=email, cluster=cluster, path=path, model=model
     )
     _attach_paper(run_id, paper_result)
     runs.start_run(run_id, user_email=email)

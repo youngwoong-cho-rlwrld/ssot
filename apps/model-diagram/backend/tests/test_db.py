@@ -104,6 +104,84 @@ def test_paper_status_update(tmp_env):
     assert run["paper_warning"] == "paper is for a different model"
 
 
+def test_add_paper_marks_run_attached(tmp_env):
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    assert db.get_run(run_id)["paper_status"] == "none"
+    db.add_paper(
+        run_id,
+        kind="url",
+        source_url="https://arxiv.org/pdf/1234.5678",
+        stored_path="/papers/x.pdf",
+        content_type="application/pdf",
+        sha256="deadbeef",
+        page_count=8,
+        parsed_title="A Paper",
+    )
+    assert db.get_run(run_id)["paper_status"] == "attached"
+
+
+def test_add_paper_does_not_clobber_mismatch(tmp_env):
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    db.set_paper_status(run_id, "mismatch", "wrong model")
+    db.add_paper(
+        run_id, kind="pdf", source_url=None, stored_path="/papers/y.pdf",
+        content_type="application/pdf", sha256="beef", page_count=3, parsed_title=None,
+    )
+    assert db.get_run(run_id)["paper_status"] == "mismatch"
+
+
+def _backdate_run(run_id: int, seconds: float) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    ts = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+    conn = db._connect()
+    try:
+        conn.execute("UPDATE runs SET created_at = ? WHERE id = ?", (ts, run_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_reconcile_stale_runs_fails_orphaned_running(tmp_env):
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    _backdate_run(run_id, 60)  # older than the guard window
+
+    ids = db.reconcile_stale_runs()
+    assert ids == [run_id]
+    run = db.get_run(run_id)
+    assert run["status"] == "error"
+    assert run["error_kind"] == "agent_failure"
+    assert "restarted" in run["error_detail"]
+
+
+def test_reconcile_stale_runs_skips_fresh_and_terminal(tmp_env):
+    db.init_db()
+    # A run created just now must not be reconciled (guard window).
+    _, fresh = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    # An already-terminal run must be left untouched.
+    _, done = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    _backdate_run(done, 60)
+    db.update_run_status(done, "done")
+
+    ids = db.reconcile_stale_runs()
+    assert fresh not in ids and done not in ids
+    assert db.get_run(fresh)["status"] == "running"
+    assert db.get_run(done)["status"] == "done"
+
+
 def test_list_and_delete(tmp_env):
     db.init_db()
     diagram_id, _ = db.create_diagram_with_run(

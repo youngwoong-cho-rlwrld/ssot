@@ -4,6 +4,7 @@ import type {
   DiagramDetail,
   DiagramListItem,
   HealthResult,
+  ModelsResult,
   PaperInput,
   RunDetail,
   RunEvent,
@@ -69,10 +70,16 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResult> {
   return requestJson<HealthResult>(`${BASE}/health`, { signal });
 }
 
+/** The generation-model allowlist and the backend default. */
+export async function getModels(signal?: AbortSignal): Promise<ModelsResult> {
+  return requestJson<ModelsResult>(`${BASE}/models`, { signal });
+}
+
 export interface NewDiagramInput {
   cluster: string;
   path: string;
   paper?: PaperInput | null;
+  model?: string;
 }
 
 /** Synchronous broken_path + broken_paper prechecks. Always resolves (HTTP 200). */
@@ -101,6 +108,7 @@ export interface ReprovisionInput {
   cluster?: string;
   path?: string;
   paper?: PaperInput | null;
+  model?: string;
 }
 
 /** New run under an existing diagram; omitted fields inherit the latest run. */
@@ -161,7 +169,22 @@ export function openRunEvents(
   runId: number,
   handlers: RunEventHandlers,
 ): () => void {
-  const es = new EventSource(`${BASE}/runs/${runId}/events`);
+  // EventSource stops retrying for good when a reconnect hits a hard HTTP
+  // failure (e.g. 502 while the backend restarts), so recreate it ourselves.
+  // The backend replays persisted stage events on every connect, and the
+  // handlers are idempotent, so a fresh connection restores full state.
+  let es: EventSource;
+  let closed = false;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  const connect = () => {
+    es = new EventSource(`${BASE}/runs/${runId}/events`);
+    es.onerror = () => {
+      if (closed || es.readyState !== EventSource.CLOSED) return;
+      retry = setTimeout(connect, 3000);
+    };
+    attach(es);
+  };
+  const attach = (es: EventSource) => {
   es.onmessage = (ev) => {
     let event: RunEvent | null = null;
     try {
@@ -178,14 +201,22 @@ export function openRunEvents(
         handlers.onWarning?.(event.kind, event.detail);
         break;
       case "done":
+        closed = true;
         es.close();
         handlers.onDone?.(event.run_id);
         break;
       case "error":
+        closed = true;
         es.close();
         handlers.onError?.(event.kind, event.detail);
         break;
     }
   };
-  return () => es.close();
+  };
+  connect();
+  return () => {
+    closed = true;
+    if (retry !== null) clearTimeout(retry);
+    es.close();
+  };
 }

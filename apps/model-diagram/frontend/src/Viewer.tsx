@@ -12,12 +12,21 @@ import {
   ApiError,
   createRun,
   getDiagram,
+  getModels,
   getRun,
   runPageUrl,
   uploadPaper,
   validate,
 } from "./api";
-import type { DiagramDetail, PaperInput, RunSummary, Status } from "./types";
+import { ModelSelect } from "./ModelSelect";
+import { RunProgress } from "./RunProgress";
+import type {
+  DiagramDetail,
+  ModelOption,
+  PaperInput,
+  RunSummary,
+  Status,
+} from "./types";
 
 const STATUS_LABEL: Record<Status, string> = {
   running: "running",
@@ -50,6 +59,9 @@ export function Viewer({
   const [error, setError] = useState<string | null>(null);
   const [paperWarning, setPaperWarning] = useState<string | null>(null);
   const [reprovisioning, setReprovisioning] = useState(false);
+  // Bumped when an in-viewer running run completes, to re-fetch the diagram so
+  // the run flips to "done" and the rendered page replaces the progress view.
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -63,7 +75,7 @@ export function Viewer({
         setError(err instanceof Error ? err.message : String(err));
       });
     return () => controller.abort();
-  }, [diagramId]);
+  }, [diagramId, reloadNonce]);
 
   const runs = detail?.runs ?? [];
   const current = useMemo(
@@ -150,6 +162,17 @@ export function Viewer({
       <div className="viewer__frame">
         {error ? (
           <div className="panel__status panel__status--err">{error}</div>
+        ) : current && current.status === "running" ? (
+          // Reconnect to the live stage stream (the backend replays past stage
+          // events on connect, so the checklist restores) and swap in the
+          // rendered diagram once the run completes.
+          <RunProgress
+            key={runId}
+            embedded
+            runId={runId}
+            onDone={() => setReloadNonce((n) => n + 1)}
+            onBack={onBack}
+          />
         ) : current && current.status !== "done" ? (
           <div className="panel__status">
             This run is {STATUS_LABEL[current.status]}. Select a completed run to
@@ -192,7 +215,22 @@ function ReprovisionForm({
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [model, setModel] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getModels(controller.signal)
+      .then((m) => {
+        setModels(m.models);
+        setModel((prev) => prev || m.default);
+      })
+      .catch(() => {
+        // keep the select empty; the backend default still applies
+      });
+    return () => controller.abort();
+  }, []);
 
   const selectMode = useCallback((mode: PaperMode) => {
     setPaperMode(mode);
@@ -262,6 +300,7 @@ function ReprovisionForm({
         cluster,
         path: path.trim() || undefined,
         paper,
+        model: model || undefined,
       });
       onStarted(run_id);
     } catch (e) {
@@ -275,7 +314,7 @@ function ReprovisionForm({
     } finally {
       setBusy(false);
     }
-  }, [paperMode, paperUrl, pdf, path, initialPath, cluster, diagramId, onStarted]);
+  }, [paperMode, paperUrl, pdf, path, initialPath, cluster, model, diagramId, onStarted]);
 
   return (
     <form
@@ -298,6 +337,12 @@ function ReprovisionForm({
             autoCorrect="off"
           />
         </label>
+        {models.length > 0 && (
+          <div className="field">
+            <span className="field__label">Model</span>
+            <ModelSelect value={model} options={models} onChange={setModel} />
+          </div>
+        )}
       </div>
 
       <div className="reprovision__row">

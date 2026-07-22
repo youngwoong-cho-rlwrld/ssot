@@ -1,0 +1,140 @@
+"""Model allowlist + the chosen model plumbed onto the run row.
+
+Unit-covers the settings allowlist helpers, then drives the create/reprovision
+endpoints (with the path precheck and the detached run task stubbed out) to prove
+a request's model reaches the ``runs.model`` column and that an off-allowlist id
+is rejected with HTTP 422.
+"""
+import pytest
+from fastapi.testclient import TestClient
+
+from app import db, main, runs, settings
+from app.pathcheck import PathCheck
+
+_USER = {"x-ssot-user": "u@example.com"}
+
+
+# ── settings allowlist ─────────────────────────────────────────────────────
+
+
+def test_default_model_is_claude_fable(monkeypatch):
+    monkeypatch.delenv("MODEL_DIAGRAM_MODEL", raising=False)
+    assert settings.model_name() == "claude-fable-5"
+    assert settings.default_model() == "claude-fable-5"
+
+
+def test_model_catalog_shape_and_default_present():
+    catalog = settings.model_catalog()
+    assert catalog[0] == {"id": "claude-fable-5", "label": "Claude Fable"}
+    ids = {m["id"] for m in catalog}
+    assert {"claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"} <= ids
+    assert settings.default_model() in ids
+
+
+def test_resolve_model_defaults_and_validates(monkeypatch):
+    monkeypatch.delenv("MODEL_DIAGRAM_MODEL", raising=False)
+    assert settings.resolve_model(None) == "claude-fable-5"
+    assert settings.resolve_model("claude-opus-4-8") == "claude-opus-4-8"
+    with pytest.raises(ValueError):
+        settings.resolve_model("claude-bogus-9")
+
+
+def test_default_model_clamps_off_allowlist_override(monkeypatch):
+    # An env override outside the allowlist must not become the UI default, or the
+    # select would carry a value that isn't one of its options.
+    monkeypatch.setenv("MODEL_DIAGRAM_MODEL", "some-private-model")
+    assert settings.default_model() == "claude-fable-5"
+
+
+# ── endpoint plumbing ──────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def client(tmp_env, monkeypatch):
+    db.init_db()
+    # Keep the path precheck and the detached agent task out of these tests: we
+    # only care that the endpoint stores the right model on the run row.
+    async def _ok_path(cluster, path):
+        return PathCheck(ok=True, resolved_root="/models/tiny")
+
+    monkeypatch.setattr(main, "precheck_path", _ok_path)
+    monkeypatch.setattr(runs, "start_run", lambda *a, **k: None)
+    return TestClient(main.app)
+
+
+def test_models_endpoint(client, monkeypatch):
+    # Force a known runtime state: claude available (SDK key), codex CLI absent.
+    monkeypatch.setattr(settings, "anthropic_api_key", lambda: "sk-test")
+    monkeypatch.setattr(settings, "codex_cli_path", lambda: None)
+    res = client.get("/api/models", headers=_USER)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["default"] == "claude-fable-5"
+    # Only the four claude models; the codex model is filtered out (CLI absent).
+    ids = [m["id"] for m in body["models"]]
+    assert ids == ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]
+
+
+def test_models_endpoint_includes_codex_when_cli_present(client, monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", lambda: "sk-test")
+    monkeypatch.setattr(settings, "codex_cli_path", lambda: "/usr/local/bin/codex")
+    body = client.get("/api/models", headers=_USER).json()
+    ids = {m["id"] for m in body["models"]}
+    assert "gpt-5.6-sol" in ids
+    assert {m["id"]: m["label"] for m in body["models"]}["gpt-5.6-sol"] == "GPT-5.6 Sol"
+
+
+def test_models_endpoint_excludes_claude_when_no_runtime(client, monkeypatch):
+    # No claude runtime, codex CLI present: only codex models are offered and the
+    # default falls back to an available (codex) id rather than an absent claude one.
+    monkeypatch.setattr(settings, "anthropic_api_key", lambda: None)
+    monkeypatch.setattr(settings, "claude_cli_path", lambda: None)
+    monkeypatch.setattr(settings, "codex_cli_path", lambda: "/usr/local/bin/codex")
+    body = client.get("/api/models", headers=_USER).json()
+    ids = [m["id"] for m in body["models"]]
+    assert ids == ["gpt-5.6-sol"]
+    assert body["default"] == "gpt-5.6-sol"
+
+
+def test_create_diagram_stores_default_model_when_omitted(client, monkeypatch):
+    monkeypatch.delenv("MODEL_DIAGRAM_MODEL", raising=False)
+    res = client.post("/api/diagrams", headers=_USER, json={"cluster": "local", "path": "/models/tiny"})
+    assert res.status_code == 201
+    run = db.get_run(res.json()["run_id"])
+    assert run["model"] == "claude-fable-5"
+
+
+def test_create_diagram_stores_chosen_model(client):
+    res = client.post(
+        "/api/diagrams",
+        headers=_USER,
+        json={"cluster": "local", "path": "/models/tiny", "model": "claude-haiku-4-5"},
+    )
+    assert res.status_code == 201
+    run = db.get_run(res.json()["run_id"])
+    assert run["model"] == "claude-haiku-4-5"
+
+
+def test_create_diagram_rejects_off_allowlist_model(client):
+    res = client.post(
+        "/api/diagrams",
+        headers=_USER,
+        json={"cluster": "local", "path": "/models/tiny", "model": "claude-bogus-9"},
+    )
+    assert res.status_code == 422
+
+
+def test_reprovision_stores_chosen_model(client):
+    created = client.post(
+        "/api/diagrams",
+        headers=_USER,
+        json={"cluster": "local", "path": "/models/tiny", "model": "claude-fable-5"},
+    ).json()
+    res = client.post(
+        f"/api/diagrams/{created['diagram_id']}/runs",
+        headers=_USER,
+        json={"model": "claude-sonnet-5"},
+    )
+    assert res.status_code == 201
+    run = db.get_run(res.json()["run_id"])
+    assert run["model"] == "claude-sonnet-5"

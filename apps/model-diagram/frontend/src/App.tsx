@@ -1,8 +1,10 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Toaster } from "sonner";
 import { DiagramList } from "./DiagramList";
 import { NewDiagram } from "./NewDiagram";
 import { RunProgress } from "./RunProgress";
 import { Viewer } from "./Viewer";
+import { resumeActiveRuns, startRunWatcher } from "./lib/run-watcher";
 
 // Simple client-side view state — the suite's Vite apps (urdf, session-viewer)
 // carry no router, so neither does this one.
@@ -25,9 +27,21 @@ export default function App() {
     setView({ name: "viewer", diagramId, runId });
   }, []);
 
-  const openRun = useCallback((diagramId: number, runId: number) => {
-    setView({ name: "run", diagramId, runId });
-  }, []);
+  // Resume toast notifications for any runs that were still generating when the
+  // app was last open (mirrors train-eval's resumeActiveCopies on mount).
+  useEffect(() => {
+    resumeActiveRuns(openViewer);
+  }, [openViewer]);
+
+  // A new run: start its persistent toast watcher (which localStorage-tracks it
+  // for resume-after-reload) and open the full-screen progress view.
+  const startRun = useCallback(
+    (diagramId: number, runId: number) => {
+      startRunWatcher({ runId, diagramId }, openViewer);
+      setView({ name: "run", diagramId, runId });
+    },
+    [openViewer],
+  );
 
   const backToList = useCallback(() => {
     setListNonce((n) => n + 1);
@@ -66,7 +80,7 @@ export default function App() {
           <NewDiagram
             prefill={view.prefill}
             onCancel={backToList}
-            onStarted={(diagramId, runId) => openRun(diagramId, runId)}
+            onStarted={startRun}
           />
         )}
 
@@ -85,11 +99,13 @@ export default function App() {
             diagramId={view.diagramId}
             runId={view.runId}
             onSelectRun={(runId) => openViewer(view.diagramId, runId)}
-            onRunStarted={openRun}
+            onRunStarted={startRun}
             onBack={backToList}
           />
         )}
       </main>
+
+      <Toaster position="bottom-right" richColors visibleToasts={9} />
     </div>
   );
 }

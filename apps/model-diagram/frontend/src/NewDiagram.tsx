@@ -7,10 +7,12 @@ import {
   createRun,
   getClusters,
   getHealth,
+  getModels,
   uploadPaper,
   validate,
 } from "./api";
-import { FALLBACK_CLUSTERS, type PaperInput } from "./types";
+import { ModelSelect } from "./ModelSelect";
+import { FALLBACK_CLUSTERS, type ModelOption, type PaperInput } from "./types";
 
 type PaperMode = "none" | "url" | "pdf";
 
@@ -29,6 +31,8 @@ interface Props {
 export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
   const [clusters, setClusters] = useState<string[]>(FALLBACK_CLUSTERS);
   const [cluster, setCluster] = useState<string>(prefill?.cluster ?? "local");
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [model, setModel] = useState<string>("");
   const [path, setPath] = useState(prefill?.path ?? "");
   const [paperMode, setPaperMode] = useState<PaperMode>("none");
   const [paperUrl, setPaperUrl] = useState("");
@@ -63,6 +67,16 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
       .then((h) => setRuntime(h.runtime))
       .catch(() => {
         // health probe is best-effort; don't block the form
+      });
+    getModels(controller.signal)
+      .then((m) => {
+        setModels(m.models);
+        // Preselect the backend default; leave empty on failure so the request
+        // omits `model` and the backend still applies its own default.
+        setModel((prev) => prev || m.default);
+      })
+      .catch(() => {
+        // keep the select empty; the backend default still applies
       });
     return () => controller.abort();
   }, []);
@@ -127,7 +141,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
     }
 
     const paper = buildPaper() ?? null;
-    const input = { cluster, path: path.trim(), paper };
+    const input = { cluster, path: path.trim(), paper, model: model || undefined };
     setSubmitting(true);
     try {
       const check = await validate(input);
@@ -156,7 +170,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
     } finally {
       setSubmitting(false);
     }
-  }, [cluster, path, paperMode, paperUrl, pdf, buildPaper, prefill, onStarted]);
+  }, [cluster, model, path, paperMode, paperUrl, pdf, buildPaper, prefill, onStarted]);
 
   const busy = submitting || uploading;
 
@@ -214,6 +228,13 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
               aria-label="Cluster"
             />
           </label>
+
+          {models.length > 0 && (
+            <div className="field">
+              <span className="field__label">Model</span>
+              <ModelSelect value={model} options={models} onChange={setModel} />
+            </div>
+          )}
 
           <label className="field">
             <span className="field__label">Model root path</span>

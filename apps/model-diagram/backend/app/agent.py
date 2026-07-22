@@ -61,6 +61,7 @@ async def run_agent(
     fs: FsAccess,
     cluster: str,
     root: str,
+    model: str,
     paper_block: list[dict],
     on_stage: StageCallback,
     finalize_cb: FinalizeCallback,
@@ -78,7 +79,7 @@ async def run_agent(
 
     for _ in range(settings.AGENT_MAX_ITERATIONS):
         async with client.beta.messages.stream(
-            model=settings.model_name(),
+            model=model,
             max_tokens=_MAX_TOKENS,
             system=system,
             messages=messages,
