@@ -17,6 +17,7 @@
   "exports": {
     "./Markdown": "./src/Markdown.tsx",
     "./Modal": "./src/Modal.tsx",
+    "./PanelResizeHandle": "./src/PanelResizeHandle.tsx",
     "./SsotSelect": "./src/SsotSelect.tsx",
     "./ToolCallView": "./src/ToolCallView.tsx",
     "./transcript-types": "./src/transcript-types.ts",

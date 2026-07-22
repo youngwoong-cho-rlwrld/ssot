@@ -19,7 +19,7 @@ import type {
   AgentMessage,
   AgentModel,
 } from "@/lib/agentTypes";
-import { PanelResizeHandle } from "@/components/PanelResizeHandle";
+import { PanelResizeHandle } from "@ssot/ui/PanelResizeHandle";
 import { Markdown } from "@ssot/ui/Markdown";
 import { SsotSelect, type SsotSelectOption } from "@ssot/ui/SsotSelect";
 

@@ -678,8 +678,10 @@
 }
 
 .viewer__left {
-  flex: 1 1 340px;
-  max-width: 520px;
+  position: relative; /* anchors the drag-resize handle on the right edge */
+  /* Width is user-adjustable via the resize handle (persisted); the var is set
+     inline from Viewer state. Fixed basis so the diagram takes the remaining room. */
+  flex: 0 0 var(--viewer-left-width, 340px);
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -769,9 +771,13 @@
   }
   .viewer__left,
   .viewer__diagram {
-    flex: none;
+    flex: none; /* overrides the resizable fixed basis: stack full-width */
     max-width: none;
     min-height: 240px;
+  }
+  /* No horizontal divider to drag when the panels are stacked vertically. */
+  .viewer__left .panelResizeHandle {
+    display: none;
   }
 }
 
@@ -835,6 +841,13 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Current-paper indicator ahead of the keep/remove/replace segmented control. */
+.reprovision__paper-state {
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-semibold);
+  color: var(--ssot-text-soft);
 }
 
 /* ----------------------------- Model switcher --------------------------- */

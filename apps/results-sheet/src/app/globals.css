@@ -118,56 +118,14 @@ html[data-ssot-theme='dark'] {
   overflow: hidden;
 }
 
-body.panelResizing,
-body.panelResizing * {
-  cursor: col-resize !important;
-  user-select: none;
-}
-
-.panelResizeHandle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 8;
-  width: 12px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  cursor: col-resize;
-  padding: 0;
-  touch-action: none;
-}
-
-.panelResizeHandle::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 4px;
-  width: 4px;
-  background: transparent;
-}
-
-.panelResizeHandle:hover::after,
-.panelResizeHandle:focus-visible::after {
-  background: var(--border-interactive);
-}
-
+/* The base handle grammar (body.panelResizing, .panelResizeHandle + ::after,
+   hover/focus, left/right offsets) now lives in the shared @ssot/theme/panel-resize.css.
+   Only the app-specific bit stays here: keep the bar lit while THIS workspace is
+   actively resizing a panel (driven by the workspace class, not the handle's own
+   --active). --border-interactive aliases --ssot-accent, matching the shared rule. */
 .resultsWorkspaceResizingAgent .panelResizeHandleRight::after,
 .resultsWorkspaceResizingChart .panelResizeHandleLeft::after {
   background: var(--border-interactive);
-}
-
-.panelResizeHandle:focus {
-  outline: none;
-}
-
-.panelResizeHandleLeft {
-  left: -14px;
-}
-
-.panelResizeHandleRight {
-  right: -14px;
 }
 
 .agentPanelClose {
