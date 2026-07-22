@@ -127,7 +127,11 @@ async function watch({ copyId, destCluster, jobName }: ActiveCopy) {
         toast.success(
           `Copied ${s.copies_done} checkpoint${s.copies_done === 1 ? "" : "s"} to ${destCluster}` +
             (jobName ? ` — ${jobName}` : ""),
-          { id: toastId, duration: Infinity, closeButton: true },
+          {
+            id: toastId,
+            duration: Infinity,
+            action: { label: "Close", onClick: () => toast.dismiss(toastId) },
+          },
         );
         removeActive(copyId);
         return;
@@ -143,7 +147,11 @@ async function watch({ copyId, destCluster, jobName }: ActiveCopy) {
           // Mirror the completion toast: a genuine failure is terminal, so it
           // persists until the user explicitly closes it.
           const msg = (s.error && s.error.trim()) || "Copy failed";
-          toast.error(msg, { duration: Infinity, closeButton: true });
+          toast.error(msg, {
+            id: toastId,
+            duration: Infinity,
+            action: { label: "Close", onClick: () => toast.dismiss(toastId) },
+          });
         }
         removeActive(copyId);
         return;

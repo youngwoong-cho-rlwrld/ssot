@@ -99,7 +99,7 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
     toast.success("Diagram ready", {
       id: toastId,
       duration: Infinity,
-      closeButton: true,
+      cancel: { label: "Close", onClick: () => toast.dismiss(toastId) },
       action: {
         label: "View diagram",
         onClick: () => {
@@ -116,9 +116,10 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
     // renders just the icon when a `loading` toast is replaced in-place.
     toast.dismiss(toastId);
     toast.error(ERROR_TITLE[kind] ?? "Analysis failed", {
+      id: toastId,
       description: detail || undefined,
       duration: Infinity,
-      closeButton: true,
+      action: { label: "Close", onClick: () => toast.dismiss(toastId) },
     });
     removeActive(runId);
   };
