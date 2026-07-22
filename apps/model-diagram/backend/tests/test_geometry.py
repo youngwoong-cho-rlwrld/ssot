@@ -158,3 +158,104 @@ def test_measure_page_live_or_skip():
     boxes = geometry.boxes_from_measurement(m)
     assert "a" in boxes
     assert boxes["a"].height > 62  # wrapped text makes the real box taller than min-height
+
+
+# ── wire de-confliction (fan-out / fan-in) ──────────────────────────────────
+
+
+def _parse_segments(d):
+    """Split a path_d into horizontal (y,x1,x2) and vertical (x,y1,y2) segments."""
+    toks = d.split()
+    assert toks[0] == "M"
+    x, y = float(toks[1]), float(toks[2])
+    horiz, vert = [], []
+    i = 3
+    while i < len(toks):
+        cmd = toks[i]
+        if cmd == "V":
+            ny = float(toks[i + 1]); vert.append((x, min(y, ny), max(y, ny))); y = ny; i += 2
+        elif cmd == "H":
+            nx = float(toks[i + 1]); horiz.append((y, min(x, nx), max(x, nx))); x = nx; i += 2
+        else:
+            i += 1
+    return horiz, vert
+
+
+def _spans_overlap(a1, a2, b1, b2):
+    return a1 < b2 and b1 < a2
+
+
+def _share_a_segment(dA, dB, sep=geometry.MIN_SEP_PX):
+    hA, vA = _parse_segments(dA)
+    hB, vB = _parse_segments(dB)
+    for (y1, x1a, x1b) in hA:
+        for (y2, x2a, x2b) in hB:
+            if abs(y1 - y2) < sep and _spans_overlap(x1a, x1b, x2a, x2b):
+                return True
+    for (x1, y1a, y1b) in vA:
+        for (x2, y2a, y2b) in vB:
+            if abs(x1 - x2) < sep and _spans_overlap(y1a, y1b, y2a, y2b):
+                return True
+    return False
+
+
+def _entry_point(d):
+    # last V's x = the arrowhead column into the target box
+    _, vert = _parse_segments(d)
+    return vert[-1][0]
+
+
+def _exit_point(d):
+    toks = d.split()
+    return float(toks[1])  # M x — the exit column off the source box
+
+
+def test_route_edges_fan_out_no_shared_segment():
+    # 1 source → 2 targets on the SAME row (the reported coincident-wire case).
+    boxes = _boxes({
+        "src": (245, 20, 190, 60),
+        "a": (20, 200, 190, 60),
+        "b": (470, 200, 190, 60),
+    })
+    paths = geometry.route_edges([(0, "src", "a"), (1, "src", "b")], boxes)
+    assert not _share_a_segment(paths[0], paths[1]), (paths[0], paths[1])
+    # distinct EXIT points off the shared source edge (no stacked departures)
+    assert _exit_point(paths[0]) != _exit_point(paths[1])
+    # distinct ENTRY points (arrowheads land in different boxes / columns)
+    assert _entry_point(paths[0]) != _entry_point(paths[1])
+
+
+def test_route_edges_fan_out_same_column_targets_deconflict():
+    # Targets whose entry columns are close, so the horizontal corridors would
+    # overlap — they must be pushed to distinct y lanes.
+    boxes = _boxes({
+        "src": (245, 20, 190, 60),
+        "a": (200, 200, 190, 60),
+        "b": (300, 200, 190, 60),
+    })
+    paths = geometry.route_edges([(0, "src", "a"), (1, "src", "b")], boxes)
+    assert not _share_a_segment(paths[0], paths[1]), (paths[0], paths[1])
+    hA, _ = _parse_segments(paths[0])
+    hB, _ = _parse_segments(paths[1])
+    # when the x-spans overlap, the corridor y values must differ
+    if hA and hB and _spans_overlap(hA[0][1], hA[0][2], hB[0][1], hB[0][2]):
+        assert abs(hA[0][0] - hB[0][0]) >= geometry.MIN_SEP_PX
+
+
+def test_route_edges_fan_in_distinct_entries():
+    # 2 sources → 1 target: arrowheads must hit DISTINCT points on the target edge.
+    boxes = _boxes({
+        "a": (20, 20, 190, 60),
+        "b": (470, 20, 190, 60),
+        "dst": (245, 200, 190, 60),
+    })
+    paths = geometry.route_edges([(0, "a", "dst"), (1, "b", "dst")], boxes)
+    assert not _share_a_segment(paths[0], paths[1]), (paths[0], paths[1])
+    assert _entry_point(paths[0]) != _entry_point(paths[1])
+
+
+def test_route_edges_single_edge_is_straight():
+    # A lone same-column edge stays a clean straight vertical (no needless corridor).
+    boxes = _boxes({"src": (245, 20, 190, 60), "dst": (245, 200, 190, 60)})
+    paths = geometry.route_edges([(0, "src", "dst")], boxes)
+    assert paths[0] == "M 340 80 V 200"

@@ -1,13 +1,17 @@
 import io
+import re
 
 from pypdf import PdfWriter
 
+from app import paper as paper_mod
 from app.paper import (
+    arxiv_id,
     normalize_arxiv,
     pdf_panel_html,
     resolve_paper,
     sanitize_paper_html,
     validate_upload,
+    validate_url,
 )
 
 
@@ -113,3 +117,107 @@ def test_pdf_panel_html_has_page_sections(tmp_env):
     # Blank pages extract no text, so a 2-page blank PDF yields an empty panel;
     # the shape (string, no exceptions) is what matters for the fallback path.
     assert isinstance(html, str)
+
+
+# ── arXiv HTML rendition preference (spec A4 panel like the reference) ───────
+
+_ARXIV_HTML_BYTES = (
+    b"<html><head><title>T</title></head><body>"
+    b"<article>"
+    b"<section id='S5'><h2 id='S5.h'>Training setup</h2>"
+    b"<p>We optimize with AdamW using a constant learning rate of 5.16e-5 for the backbone.</p>"
+    b"<p>" + (b"The policy is trained on a large mixture of manipulation datasets across many tasks. " * 12) +
+    b"</p>"
+    b"<table id='A1.T5'><thead><tr><th>param</th><th>value</th></tr></thead>"
+    b"<tbody><tr><td>batch size</td><td>160</td></tr></tbody></table>"
+    b"</section></article></body></html>"
+)
+
+
+def test_arxiv_id_extraction():
+    assert arxiv_id("https://arxiv.org/abs/2310.06825") == "2310.06825"
+    assert arxiv_id("https://arxiv.org/abs/2310.06825v2") == "2310.06825v2"
+    assert arxiv_id("https://arxiv.org/pdf/2310.06825") == "2310.06825"
+    assert arxiv_id("https://arxiv.org/html/2310.06825v3") == "2310.06825v3"
+    assert arxiv_id("https://example.com/paper") is None
+
+
+async def test_arxiv_prefers_html_rendition(tmp_env, monkeypatch):
+    async def fake_fetch(target):
+        return _ARXIV_HTML_BYTES if "/html/" in target else None
+    monkeypatch.setattr(paper_mod, "_fetch_bytes", fake_fetch)
+
+    result = await validate_url("https://arxiv.org/abs/2310.06825")
+    assert result.ok and result.content_type == "text/html" and not result.is_pdf
+    assert result.panel_path
+    panel = open(result.panel_path, encoding="utf-8").read()
+    # LaTeXML structure survives → renders like the reference (headings, tables, ids)
+    assert "<h2" in panel and "<table" in panel
+    assert 'id="S5"' in panel and 'id="A1.T5"' in panel
+    # agent text is derived from the sanitized panel (so quotes will match)
+    assert "AdamW" in result.text and "5.16e-5" in result.text
+
+
+async def test_arxiv_falls_back_to_pdf_when_no_html(tmp_env, monkeypatch):
+    async def no_html(target):
+        return None  # both arxiv.org/html and ar5iv 404
+    monkeypatch.setattr(paper_mod, "_fetch_bytes", no_html)
+
+    pdf = _make_pdf(2)
+
+    class _Resp:
+        status_code = 200
+        headers = {"content-type": "application/pdf"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def aiter_bytes(self):
+            yield pdf
+
+    class _Client:
+        def __init__(self, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def stream(self, method, target):
+            return _Resp()
+
+    monkeypatch.setattr(paper_mod.httpx, "AsyncClient", _Client)
+    result = await validate_url("https://arxiv.org/abs/2310.06825")
+    assert result.ok and result.is_pdf and result.content_type == "application/pdf"
+
+
+def test_sanitize_preserves_headings_and_tables():
+    panel = sanitize_paper_html(_ARXIV_HTML_BYTES.decode("utf-8"))
+    assert "<h2" in panel and "<p>" in panel
+    assert "<table" in panel and "<td>" in panel and "<th>" in panel
+    assert 'id="S5"' in panel and 'id="A1.T5"' in panel
+    assert "<script" not in panel and "<title" not in panel
+
+
+def _js_normalize(s: str) -> str:
+    # mirror updatePaper()'s whitespace collapse + textContent (tags stripped, no space)
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", s)).strip()
+
+
+async def test_quote_from_agent_text_matches_panel(tmp_env, monkeypatch):
+    # A verbatim sentence the agent copies from result.text must be locatable in the
+    # panel's DOM text (the A4 cross-highlighter uses substring on textContent).
+    async def fake_fetch(target):
+        return _ARXIV_HTML_BYTES if "/html/" in target else None
+    monkeypatch.setattr(paper_mod, "_fetch_bytes", fake_fetch)
+    result = await validate_url("https://arxiv.org/abs/2310.06825")
+
+    panel = open(result.panel_path, encoding="utf-8").read()
+    quote = "We optimize with AdamW using a constant learning rate of 5.16e-5 for the backbone."
+    assert quote in result.text  # the agent can read this exact sentence
+    assert _js_normalize(quote) in _js_normalize(panel)  # …and the matcher finds it

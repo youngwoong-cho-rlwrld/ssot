@@ -138,6 +138,103 @@ def route_wire(src: Rect, dst: Rect) -> str:
     return f"M {src.right} {sy} H {corridor} V {dy} H {dst.right}"
 
 
+# Wire de-confliction constants. MIN_SEP: two parallel segments closer than this
+# read as one line. OFFSET_STEP: how far to nudge a conflicting corridor.
+# ARROW_CLEARANCE: min straight run into a box so its arrowhead isn't buried.
+MIN_SEP_PX = 6
+OFFSET_STEP_PX = 8
+ARROW_CLEARANCE_PX = 12
+
+
+def _distribute(left: int, width: int, n: int, i: int) -> int:
+    """The i-th of n distinct points spread across a box edge (centre when n==1)."""
+    if n <= 1:
+        return left + width // 2
+    return round(left + width * (i + 1) / (n + 1))
+
+
+def _edge_points(items: list, *, by_src: bool) -> dict:
+    """Assign each edge a distinct exit (by_src) or entry point on the shared box edge.
+
+    Edges sharing a source distribute their EXIT x across that box's bottom edge;
+    edges sharing a target distribute their ENTRY x across its top edge. Within a
+    group they're ordered by the opposite end's centre x to reduce crossings, so two
+    wires never leave (or arrive at) the same coordinate — no stacked arrowheads.
+    """
+    groups: dict[str, list] = {}
+    for key, sk, dk, s, d in items:
+        groups.setdefault(sk if by_src else dk, []).append((key, sk, dk, s, d))
+    out: dict = {}
+    for members in groups.values():
+        box = members[0][3] if by_src else members[0][4]
+        members.sort(key=lambda t: ((t[4] if by_src else t[3]).left + (t[4] if by_src else t[3]).width / 2))
+        for i, (key, sk, dk, s, d) in enumerate(members):
+            out[key] = _distribute(box.left, box.width, len(members), i)
+    return out
+
+
+def _free_corridor(base: int, a: int, b: int, used: list, lo: int, hi: int) -> int:
+    """A corridor coordinate near ``base`` not within MIN_SEP of a used parallel run.
+
+    ``used`` holds ``(coord, span_lo, span_hi)`` of already-placed segments on the
+    same axis; ``[lo, hi]`` bounds the corridor. Searches base, then ±step outward,
+    so the result is deterministic and stays as close to the ideal as possible.
+    """
+    lo_ok = lo <= hi
+    span_lo, span_hi = min(a, b), max(a, b)
+    candidates = [base]
+    for k in range(1, 40):
+        candidates += [base + k * OFFSET_STEP_PX, base - k * OFFSET_STEP_PX]
+    for y in candidates:
+        if lo_ok and not (lo <= y <= hi):
+            continue
+        if not any(abs(y - uy) < MIN_SEP_PX and span_lo < ux_hi and ux_lo < span_hi
+                   for uy, ux_lo, ux_hi in used):
+            return y
+    return base
+
+
+def route_edges(routes: list, boxes: dict[str, Rect]) -> dict:
+    """De-conflicted orthogonal wires for a whole diagram (fixes coincident arrows).
+
+    ``routes`` is an ordered list of ``(key, src_key, dst_key)``; returns
+    ``{key: path_d}``. Unlike per-edge routing, this distributes shared exit/entry
+    points and assigns each horizontal corridor a distinct y, so parallel edges
+    (fan-out / fan-in) never share a drawn segment or stack their arrowheads.
+    """
+    items = [(key, sk, dk, boxes[sk], boxes[dk]) for key, sk, dk in routes
+             if sk in boxes and dk in boxes]
+    exits = _edge_points(items, by_src=True)
+    entries = _edge_points(items, by_src=False)
+
+    used_h: list = []  # placed horizontal runs: (y, x_lo, x_hi)
+    used_v: list = []  # placed vertical runs: (x, y_lo, y_hi)
+    paths: dict = {}
+    for key, sk, dk, s, d in items:
+        ex, en = exits[key], entries[key]
+        if d.top >= s.bottom:  # forward / downward — the fan-out/fan-in case
+            if ex == en:
+                paths[key] = f"M {ex} {s.bottom} V {d.top}"
+                used_v.append((ex, s.bottom, d.top))
+                continue
+            base = (s.bottom + d.top) // 2
+            lo, hi = s.bottom + MIN_SEP_PX, max(s.bottom + MIN_SEP_PX, d.top - ARROW_CLEARANCE_PX)
+            y = _free_corridor(base, ex, en, used_h, lo, hi)
+            used_h.append((y, min(ex, en), max(ex, en)))
+            used_v.append((ex, s.bottom, y))
+            used_v.append((en, y, d.top))
+            paths[key] = f"M {ex} {s.bottom} V {y} H {en} V {d.top}"
+        else:
+            # Side / feedback edges: keep the simple router but give each a distinct
+            # side corridor so stacked feedback wires don't merge.
+            base = max(s.right, d.right) + 12
+            x = _free_corridor(base, min(s.top, d.top), max(s.bottom, d.bottom), used_v, base, base + 400)
+            sy, dy = s.top + s.height // 2, d.top + d.height // 2
+            used_v.append((x, min(sy, dy), max(sy, dy)))
+            paths[key] = f"M {s.right} {sy} H {x} V {dy} H {d.right}"
+    return paths
+
+
 # ── headless-Chrome measurement (raw CDP over a websocket) ───────────────────
 
 _CHROME_CANDIDATES = (
@@ -333,18 +430,21 @@ def plan_geometry(model: dict, boxes: dict[str, Rect]) -> Optional[GeometryPlan]
     if canvas_height != (model["run"].get("canvas_height") or 0):
         changed = True
 
-    # Regenerate wires from the resolved geometry (kebab id lookups via component id).
+    # Regenerate ALL wires together from the resolved geometry, so parallel edges
+    # (fan-out / fan-in) get de-conflicted corridors + distinct entry/exit points
+    # instead of coinciding into one drawn line (kebab id lookups via component id).
     key_by_id = {c["id"]: c["kebab_id"] for c in model["components"]}
-    edge_paths: dict[int, str] = {}
+    routes = []
     for edge in model["edges"]:
-        src_kebab = key_by_id.get(edge.get("from_component_id"))
-        dst_kebab = key_by_id.get(edge.get("to_component_id"))
-        src, dst = resolved.get(src_kebab), resolved.get(dst_kebab)
-        if src and dst:
-            path = route_wire(src, dst)
-            edge_paths[edge["ordinal"]] = path
-            if path != edge.get("path_d"):
-                changed = True
+        sk = key_by_id.get(edge.get("from_component_id"))
+        dk = key_by_id.get(edge.get("to_component_id"))
+        if sk in resolved and dk in resolved:
+            routes.append((edge["ordinal"], sk, dk))
+    edge_paths: dict[int, str] = route_edges(routes, resolved)
+    for edge in model["edges"]:
+        ordinal = edge["ordinal"]
+        if ordinal in edge_paths and edge_paths[ordinal] != edge.get("path_d"):
+            changed = True
 
     return GeometryPlan(
         changed=changed, box_geom=box_geom, canvas_height=canvas_height,

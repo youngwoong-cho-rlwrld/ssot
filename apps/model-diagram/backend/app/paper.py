@@ -13,6 +13,7 @@ import io
 import re
 from dataclasses import dataclass
 from html import escape as _html_escape
+from html import unescape as _html_unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,8 @@ from pypdf import PdfReader
 from . import settings
 
 _ARXIV_ABS_RE = re.compile(r"^(https?://(?:www\.)?arxiv\.org)/abs/(.+?)(?:\.pdf)?$", re.IGNORECASE)
+# Extract the bare arXiv id (with optional vN) from an abs / pdf / html URL.
+_ARXIV_ID_RE = re.compile(r"arxiv\.org/(?:abs|pdf|html)/(.+?)(?:\.pdf)?/?$", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
 _WS_RE = re.compile(r"[ \t\r\f\v]+")
@@ -59,6 +62,12 @@ def normalize_arxiv(url: str) -> str:
     return url.strip()
 
 
+def arxiv_id(url: str) -> Optional[str]:
+    """The bare arXiv id (e.g. ``2310.06825`` or ``2310.06825v2``), or None."""
+    match = _ARXIV_ID_RE.search(url.strip())
+    return match.group(1) if match else None
+
+
 # ── validation entrypoints ────────────────────────────────────────────────
 
 
@@ -88,7 +97,19 @@ async def validate_upload(data: bytes, *, filename: str = "") -> PaperResult:
 
 
 async def validate_url(url: str) -> PaperResult:
-    """Fetch a paper URL with timeout+size caps and validate by content type."""
+    """Fetch a paper URL with timeout+size caps and validate by content type.
+
+    For arXiv papers, PREFER the LaTeXML HTML rendition (arxiv.org/html/<id>, then
+    the ar5iv mirror) so the paper panel renders with real headings/paragraphs/
+    tables like the reference page — falling back to the PDF only when no HTML
+    rendition exists. Non-arXiv URLs and uploaded PDFs are unchanged.
+    """
+    aid = arxiv_id(url)
+    if aid:
+        html_result = await _try_arxiv_html(url, aid)
+        if html_result is not None:
+            return html_result  # else fall through to the PDF path below
+
     target = normalize_arxiv(url)
     if not target.lower().startswith(("http://", "https://")):
         return PaperResult(ok=False, error="paper URL must be http(s)")
@@ -357,6 +378,80 @@ def sanitize_paper_html(raw_html: str) -> str:
     parser.feed(fragment)
     parser.close()
     return "".join(parser.parts).strip()
+
+
+# Block-level tags in the sanitized subset — their boundaries are sentence breaks,
+# so we drop them as newlines; inline tags (span/em/sub/…) drop as nothing, exactly
+# as the browser's textContent does, so the agent's quotes match the panel's DOM.
+_SANITIZED_BLOCK_TAGS = frozenset({
+    "section", "h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "figure", "figcaption",
+    "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "br",
+})
+_SANITIZED_TAG_RE = re.compile(r"</?([a-zA-Z0-9-]+)[^>]*>")
+_H_TAG_RE = re.compile(r"<h[12][^>]*>(.*?)</h[12]>", re.IGNORECASE | re.DOTALL)
+
+
+def _sanitized_paper_text(sanitized_html: str) -> tuple[str, Optional[str]]:
+    """Agent-facing plain text derived FROM the sanitized panel HTML (+ title).
+
+    Deriving the agent's text from the same sanitized doc the panel renders means a
+    verbatim quote the agent copies is present in the panel's DOM text — so the §A4
+    cross-highlighter finds it (raw-HTML extraction would diverge on math/markup).
+    """
+    def _strip(match: "re.Match") -> str:
+        return "\n" if match.group(1).lower() in _SANITIZED_BLOCK_TAGS else ""
+
+    text = _html_unescape(_SANITIZED_TAG_RE.sub(_strip, sanitized_html))
+    lines = [_WS_RE.sub(" ", line).strip() for line in text.splitlines()]
+    body = "\n".join(line for line in lines if line)
+
+    title = None
+    h = _H_TAG_RE.search(sanitized_html)
+    if h:
+        title = _WS_RE.sub(" ", _html_unescape(_HTML_TAG_RE.sub("", h.group(1)))).strip() or None
+    return body, title
+
+
+async def _fetch_bytes(target: str) -> Optional[bytes]:
+    """GET ``target`` within the size cap; None on any non-200 / error (best effort)."""
+    cap = settings.paper_max_bytes()
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=_FETCH_TIMEOUT) as client:
+            async with client.stream("GET", target) as response:
+                if response.status_code >= 400:
+                    return None
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > cap:
+                        return None
+                    chunks.append(chunk)
+        return b"".join(chunks)
+    except httpx.HTTPError:
+        return None
+
+
+async def _try_arxiv_html(source_url: str, aid: str) -> Optional[PaperResult]:
+    """Fetch + store the arXiv LaTeXML HTML rendition, or None if unavailable."""
+    for base in ("https://arxiv.org/html", "https://ar5iv.org/html"):
+        data = await _fetch_bytes(f"{base}/{aid}")
+        if not data:
+            continue
+        raw_html = data.decode("utf-8", errors="replace")
+        panel = sanitize_paper_html(raw_html)
+        text, title = _sanitized_paper_text(panel)
+        if len(text) < _MIN_HTML_TEXT_CHARS:
+            continue  # a stub/placeholder page — try the next source, else PDF
+        sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        stored = _store_blob(text.encode("utf-8"), sha256, ".txt")
+        panel_path = _store_panel(panel, sha256)
+        return PaperResult(
+            ok=True, kind="url", source_url=source_url, stored_path=str(stored),
+            content_type="text/html", sha256=sha256, page_count=None,
+            parsed_title=title, is_pdf=False, text=text, panel_path=panel_path,
+        )
+    return None
 
 
 def pdf_panel_html(data: bytes) -> str:
