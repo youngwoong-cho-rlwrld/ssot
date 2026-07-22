@@ -7,6 +7,7 @@ the other SSOT app backends.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -217,24 +218,123 @@ def active_runtime() -> str:
     return "none"
 
 
-def codex_runtime() -> str | None:
-    """``cli`` when a codex CLI is present, else ``None``."""
-    return "cli" if codex_cli_path() else None
+# --- runtime auth detection ------------------------------------------------
+# Runtime *availability* on the health probe is auth-aware: a runtime counts as
+# ready only when it can actually start a run. Presence of the CLI is NOT enough —
+# a codex/claude CLI that is installed but not logged in fails at run start (e.g.
+# "codex is not logged in"). The gap this closes: a bare binary made /api/health
+# report the runtime available and the form showed no warning, yet the run died
+# immediately. We now report an installed-but-unauthenticated runtime as
+# unavailable so the inline warning + auth-setup modal appear up front. Detection
+# is a cheap filesystem check (no subprocess); we only ever test a login marker's
+# presence and never read the stored secrets.
+
+_OAUTH_ACCOUNT_RE = re.compile(r'"oauthAccount"\s*:\s*\{')
+# Cap on the config file we scan for the login marker; guards against reading a
+# pathologically large ~/.claude.json into memory on every health probe.
+_CLAUDE_JSON_MAX_BYTES = 25 * 1024 * 1024
+
+
+def _codex_home() -> Path:
+    base = os.environ.get("CODEX_HOME", "").strip() or "~/.codex"
+    return Path(os.path.expanduser(base))
+
+
+def codex_authenticated() -> bool:
+    """True when the codex CLI has usable credentials.
+
+    ``codex login`` writes ``$CODEX_HOME/auth.json`` (default ``~/.codex/auth.json``)
+    and ``codex exec`` reads it; ``OPENAI_API_KEY`` in the environment is an
+    alternate credential codex also honours. Either means a run can start.
+    Presence only — ``auth.json`` is never parsed.
+    """
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return True
+    return (_codex_home() / "auth.json").is_file()
+
+
+def _claude_config_dir() -> Path:
+    base = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or "~/.claude"
+    return Path(os.path.expanduser(base))
+
+
+def _claude_json_path() -> Path:
+    """The Claude Code global config file that records the logged-in account.
+
+    Default is ``~/.claude.json`` (home root, sibling to ``~/.claude/``); a
+    ``CLAUDE_CONFIG_DIR`` override moves it inside that dir.
+    """
+    override = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    if override:
+        return Path(os.path.expanduser(override)) / ".claude.json"
+    return Path(os.path.expanduser("~/.claude.json"))
+
+
+def _has_oauth_account(path: Path) -> bool:
+    """True when ``path`` records a non-null ``oauthAccount`` object (logged in)."""
+    try:
+        if path.stat().st_size > _CLAUDE_JSON_MAX_BYTES:
+            return False
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return bool(_OAUTH_ACCOUNT_RE.search(text))
+
+
+def claude_cli_authenticated() -> bool:
+    """True when the Claude Code CLI has a logged-in account.
+
+    The login marker differs by platform: a Linux OAuth login writes
+    ``<config-dir>/.credentials.json``; on macOS the tokens go to the Keychain but
+    the account is still recorded as a non-null ``oauthAccount`` object in
+    ``~/.claude.json``. Either marker means ``claude`` can drive a run headlessly.
+    Presence only — the tokens are never read.
+    """
+    if (_claude_config_dir() / ".credentials.json").is_file():
+        return True
+    return _has_oauth_account(_claude_json_path())
+
+
+def _claude_runtime_state() -> tuple[str | None, str]:
+    """(runtime, readiness) for the claude family.
+
+    ``runtime`` is ``sdk`` | ``cli`` | ``None`` (None unless ready); ``readiness``
+    is ``ready`` | ``unauthenticated`` | ``missing``. An API key is inherently
+    authenticated (SDK, no login); the CLI must be present AND logged in.
+    """
+    if anthropic_api_key():
+        return "sdk", "ready"
+    if claude_cli_path():
+        return ("cli", "ready") if claude_cli_authenticated() else (None, "unauthenticated")
+    return None, "missing"
+
+
+def _codex_runtime_state() -> tuple[str | None, str]:
+    """(runtime, readiness) for the codex family; see :func:`_claude_runtime_state`."""
+    if codex_cli_path():
+        return ("cli", "ready") if codex_authenticated() else (None, "unauthenticated")
+    return None, "missing"
 
 
 def available_runtimes() -> dict[str, str | None]:
-    """Per-family runtime availability for GET /api/health.
+    """Per-family runtime availability for GET /api/health, auth-aware.
 
-    ``claude`` is ``sdk`` (API key), ``cli`` (Claude Code CLI), or ``None``;
-    ``codex`` is ``cli`` or ``None``.
+    A family reports its runtime string (``claude``: ``sdk``|``cli``, ``codex``:
+    ``cli``) only when it can actually start a run; an installed-but-unauthenticated
+    runtime reports ``None`` so the UI prompts for auth before a run is attempted.
+    Pair with :func:`runtime_status` to tell ``missing`` from ``unauthenticated``.
     """
-    if anthropic_api_key():
-        claude: str | None = "sdk"
-    elif claude_cli_path():
-        claude = "cli"
-    else:
-        claude = None
-    return {"claude": claude, "codex": codex_runtime()}
+    return {"claude": _claude_runtime_state()[0], "codex": _codex_runtime_state()[0]}
+
+
+def runtime_status() -> dict[str, str]:
+    """Per-family readiness for GET /api/health: ``ready`` | ``unauthenticated`` | ``missing``.
+
+    ``ready`` — a run can start now; ``unauthenticated`` — the CLI is installed but
+    not logged in (the setup modal offers the login command); ``missing`` — no
+    runtime at all. The UI picks its warning copy from this.
+    """
+    return {"claude": _claude_runtime_state()[1], "codex": _codex_runtime_state()[1]}
 
 
 def runtime_for_model(model_id: str) -> str:

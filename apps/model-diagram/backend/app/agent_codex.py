@@ -33,10 +33,17 @@ model is steered to our six MCP tools, and run in an empty scratch CWD (``-C``) 
 ``--ephemeral``. The ``-c features.*`` form is used rather than ``--disable`` so an
 unknown/renamed flag degrades gracefully instead of hard-erroring the run.
 
-``--ignore-user-config`` is deliberately NOT used: it makes codex treat our MCP
-tool calls as untrusted and auto-cancel them non-interactively ("user cancelled
-MCP tool call") — verified, and not restorable via approval_policy/trust/features.
-So the user's codex config loads.
+Approvals. Non-interactive ``exec`` auto-cancels every MCP tool call unless a
+reviewer approves it, so we set ``-c approvals_reviewer="auto_review"`` explicitly —
+the run is then self-sufficient regardless of the host's ``~/.codex/config.toml``
+(reproduced on the devserver: with no reviewer in its config, report_stage /
+list_dir / finalize_diagram all came back "cancelled"; this Mac only worked because
+its config happened to set that key). ``approval_policy=never/on-failure`` does NOT
+help — the MCP cancel is governed by the reviewer, not the approval policy.
+``--ignore-user-config`` is still deliberately NOT used: it makes codex treat our
+MCP tool calls as untrusted and auto-cancel them even WITH the reviewer set. The
+reviewer only auto-approves the request; the ``-s read-only`` seccomp sandbox is
+unchanged, so writes/network stay blocked.
 
 Documented limitations (honest residual):
 * Because the user config loads, any remote MCP servers the user has configured
@@ -172,6 +179,16 @@ def _build_codex_cmd(
         scratch,  # empty scratch working root
         "-m",
         model,
+        # Non-interactive `exec` has no human to approve MCP tool calls. Without an
+        # explicit reviewer, codex AUTO-CANCELS every MCP tool call on any host whose
+        # user config lacks one — reproduced on the devserver (report_stage / list_dir /
+        # finalize_diagram all "cancelled"), while this Mac only worked because its
+        # ~/.codex/config.toml happens to set approvals_reviewer="auto_review". Set it
+        # explicitly so the run is self-sufficient regardless of the box's config. This
+        # only auto-APPROVES the request; the -s read-only seccomp sandbox is unchanged,
+        # so writes/network stay blocked (verified: turn metadata still "sandbox":"seccomp").
+        "-c",
+        f"approvals_reviewer={_toml_str('auto_review')}",
         "-c",
         "suppress_unstable_features_warning=true",
         "-c",

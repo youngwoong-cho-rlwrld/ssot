@@ -109,13 +109,17 @@ def _run_detail(run: dict) -> dict:
 @app.get("/api/health")
 async def health() -> dict:
     # `runtime` reports the claude generation path (backward compatible);
-    # `runtimes` reports per-family availability (claude: sdk|cli|null, codex: cli|null);
+    # `runtimes` reports per-family AUTHENTICATED availability (claude: sdk|cli|null,
+    # codex: cli|null) — a runtime whose CLI is installed but not logged in reports
+    # null so the UI prompts for auth before a run is attempted; `runtime_status`
+    # distinguishes that "unauthenticated" case from "missing" for the warning copy;
     # `anthropic_configured` is kept for backward compatibility.
     return {
         "status": "ok",
         "anthropic_configured": settings.anthropic_api_key() is not None,
         "runtime": settings.active_runtime(),
         "runtimes": settings.available_runtimes(),
+        "runtime_status": settings.runtime_status(),
         # The machine the backend (and thus the agent CLIs) run on — auth setup must
         # happen HERE, not on the user's laptop, so the setup modal names it.
         "hostname": socket.gethostname(),

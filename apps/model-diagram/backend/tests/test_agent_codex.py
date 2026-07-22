@@ -43,6 +43,10 @@ def test_cmd_uses_read_only_sandbox_and_is_headless():
     assert "--skip-git-repo-check" in cmd
     assert cmd[cmd.index("-C") + 1] == "/tmp/scratch"
     assert cmd[cmd.index("-m") + 1] == "gpt-5.6-sol"
+    # Explicit reviewer so exec auto-approves our MCP tool calls regardless of the
+    # host's config (without it codex auto-cancels them non-interactively — verified
+    # on the devserver). Sandbox stays read-only, so this does not weaken safety.
+    assert 'approvals_reviewer="auto_review"' in cmd
 
 
 def test_cmd_disables_builtin_tools_gracefully():

@@ -172,15 +172,22 @@ export interface CreateRunResult {
 // retained for backward compatibility.
 export type Runtime = "sdk" | "claude-cli" | "none";
 
-// Per-family runtime availability (GET /api/health `runtimes`).
+// Per-family runtime availability (GET /api/health `runtimes`), auth-aware: a
+// value is non-null only when that runtime is authenticated and can start a run.
 export type ClaudeRuntime = "sdk" | "cli" | null;
 export type CodexRuntime = "cli" | null;
+
+// Per-family readiness (GET /api/health `runtime_status`): `ready` — a run can
+// start now; `unauthenticated` — the CLI is installed but not logged in;
+// `missing` — no runtime at all. Drives which warning copy the form shows.
+export type RuntimeState = "ready" | "unauthenticated" | "missing";
 
 export interface HealthResult {
   status: string;
   anthropic_configured: boolean;
   runtime: Runtime;
   runtimes?: { claude: ClaudeRuntime; codex: CodexRuntime };
+  runtime_status?: { claude: RuntimeState; codex: RuntimeState };
   // The machine the backend (and the agent CLIs) run on — auth setup happens here.
   hostname?: string;
 }

@@ -16,9 +16,22 @@ import { ModelSelect } from "./ModelSelect";
 import {
   FALLBACK_CLUSTERS,
   type HealthResult,
+  type ModelFamily,
   type ModelOption,
   type PaperInput,
+  type RuntimeState,
 } from "./types";
+
+// The readiness of the runtime a given model family needs, from the auth-aware
+// `runtime_status` on /api/health. `undefined` means the health probe hasn't
+// resolved yet (or failed) — the form stays warning-free until it does.
+function familyStateOf(
+  family: ModelFamily | undefined,
+  health: HealthResult | null,
+): RuntimeState | undefined {
+  if (!family || !health?.runtime_status) return undefined;
+  return health.runtime_status[family];
+}
 
 type PaperMode = "none" | "url" | "pdf";
 
@@ -57,8 +70,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
   const [paperError, setPaperError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [runtimes, setRuntimes] = useState<HealthResult["runtimes"] | null>(null);
-  const [hostname, setHostname] = useState<string | null>(null);
+  const [health, setHealth] = useState<HealthResult | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [rechecking, setRechecking] = useState(false);
 
@@ -73,10 +85,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
         // keep the static fallback list
       });
     getHealth(controller.signal)
-      .then((h) => {
-        setRuntimes(h.runtimes ?? null);
-        setHostname(h.hostname ?? null);
-      })
+      .then((h) => setHealth(h))
       .catch(() => {
         // health probe is best-effort; don't block the form
       });
@@ -97,28 +106,28 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
 
   const selectedFamily = models.find((m) => m.id === model)?.family;
 
-  // No notice when the selected model's runtime is available. Only surface a
-  // warning (inline by the model select) when it ISN'T — no API key / no logged-in
-  // CLI for that family. Runtime availability comes from GET /api/health `runtimes`.
-  const claudeRt = runtimes?.claude ?? null;
-  const codexRt = runtimes?.codex ?? null;
+  // No notice when the selected model's runtime is ready. Otherwise surface a
+  // warning inline by the model select, worded for the state: `missing` (nothing
+  // installed) vs `unauthenticated` (installed but not logged in). Readiness is
+  // the auth-aware GET /api/health `runtime_status`.
+  const familyState = familyStateOf(selectedFamily, health);
   let modelWarning: string | null = null;
-  if (selectedFamily === "codex" && !codexRt) {
-    modelWarning = "Codex CLI not available. Set up authentication on the backend host.";
-  } else if (selectedFamily === "claude" && !claudeRt) {
-    modelWarning = "No Claude runtime available. Set up authentication on the backend host.";
+  if (familyState && familyState !== "ready") {
+    const label = selectedFamily === "codex" ? "Codex CLI" : "Claude runtime";
+    modelWarning =
+      familyState === "unauthenticated"
+        ? `${label} is installed but not logged in on the backend host.`
+        : `No ${label} available on the backend host.`;
   }
 
-  // Re-fetch /api/health; if the selected model's runtime now appears, close the
-  // setup modal (the inline warning clears from the refreshed `runtimes`).
+  // Re-fetch /api/health; if the selected model's runtime is now ready, close the
+  // setup modal (the inline warning clears from the refreshed `runtime_status`).
   const recheckAuth = useCallback(async () => {
     setRechecking(true);
     try {
       const h = await getHealth();
-      setRuntimes(h.runtimes ?? null);
-      setHostname(h.hostname ?? null);
-      const ok = selectedFamily === "codex" ? !!h.runtimes?.codex : !!h.runtimes?.claude;
-      if (ok) setAuthOpen(false);
+      setHealth(h);
+      if (familyStateOf(selectedFamily, h) === "ready") setAuthOpen(false);
     } catch {
       // leave the modal open so the user can retry
     } finally {
@@ -379,7 +388,7 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
 
       {authOpen && (
         <AuthSetupModal
-          hostname={hostname}
+          hostname={health?.hostname ?? null}
           family={selectedFamily}
           rechecking={rechecking}
           onRecheck={() => void recheckAuth()}
