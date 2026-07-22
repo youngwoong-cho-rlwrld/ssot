@@ -1,12 +1,11 @@
-# Experiment: dexjoco_physixel_bimanual_5tasks_224
-# DexJoCo bimanual multitask PhysiXel/N1.6 fine-tune at 224x224.
+# Experiment: dexjoco_n16_bimanual_5tasks_224
+# DexJoCo five-task bimanual multitask GR00T N1.6 fine-tune at 224x224.
 
 # ----- model -----
-MODEL_ID=dexjoco-physixel
-TRAIN_GIT_COMMIT=9faf40b35770763f4c7650db2094b66cb4328918
+MODEL_ID=dexjoco-n16
 TRAIN_MODALITY_CONFIG=dexjoco_config_front.py
 TRAIN_ACTION_HORIZON=16
-TRAIN_NOTE="DexJoCo 5-task bimanual multitask - physixel 224x224, state/action 46/44"
+TRAIN_NOTE="DexJoCo 5-task bimanual multitask - GR00T N1.6 224x224, state/action 46/44"
 
 # ----- datasets -----
 export DATA_DIR="$HOME/workspace/dexjoco_n16/src_v30/dexjoco_lerobot_datasets"
@@ -17,14 +16,6 @@ TRAIN_DATASET_NAMES=(
     bimanual_microwave_cook
     bimanual_photograph
     bimanual_unlock_ipad
-)
-
-TRAIN_DATASET_EMBODIMENT_TAGS=(
-    DEXJOCO_DUAL_ARM
-    DEXJOCO_DUAL_ARM
-    DEXJOCO_DUAL_ARM
-    DEXJOCO_DUAL_ARM
-    DEXJOCO_DUAL_ARM
 )
 
 # ----- tasks -----
@@ -39,19 +30,18 @@ TASKS=(
 # ----- training -----
 MAX_STEPS=10000
 SAVE_STEPS=10000
-TRAIN_NUM_GPUS=2
+TRAIN_NUM_GPUS=4
 TRAIN_GLOBAL_BATCH_SIZE=128
 TRAIN_EXTRA_ARGS=(--shortest-image-edge 224 --crop-fraction 1.0)
 
 # ----- eval (DexJoCo MuJoCo harness) -----
 DEXJOCO_SERVER_TYPE=groot
 DEXJOCO_IMAGE_SIZE=224
-DEXJOCO_EMBODIMENT_TAG=dexjoco_dual_arm
-DEXJOCO_EMBODIMENT_TAG_BIMANUAL=dexjoco_dual_arm
+# The stock N1.6 checkout registers this 46/44-D bimanual contract under the
+# generic new_embodiment tag.
+DEXJOCO_EMBODIMENT_TAG=new_embodiment
+DEXJOCO_EMBODIMENT_TAG_BIMANUAL=new_embodiment
 EVAL_NUM_GPUS=4
-# DexJoCo runs independent MuJoCo clients rather than ALLEX vectorized envs.
-# Four clients fit on each L40S for this PhysiXel checkpoint.
-N_ENVS_PER_GPU=4
 N_EPISODES=50
 N_RUNS=3
 EVAL_SETS=(rand_obj)

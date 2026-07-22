@@ -1,0 +1,136 @@
+stage_1:
+  ckpt_path: "${oc.env:DA3_ROOT,.}/checkpoints/track4world_da3.pth"
+  encoder_input_size: 224
+  normalization_stat_path: null
+
+da3_finetune:
+  enabled: true
+  freeze_blocks_before: 13
+  n_action_steps: 9
+  n_views: 3
+  use_temporal_embed: false
+  action_input_rate: 0.4
+
+action_head:
+  type: mlp_resnet
+  input_dim: 1536
+  hidden_dim: 1536
+  n_dims: 44
+  chunk_size: 8
+  chunk_position_encoding: none
+  num_blocks: 2
+  pool_mode: mean
+
+regularization:
+  lambda_feat: 0.0
+  layer_weight_min: 0.5
+  adaptive_lambda: false
+  lambda_depth: 3.0
+  depth_loss_type: da3_style
+  teacher_depth_fallback: true
+  skip_depth_if_no_gt: false
+  depth_grad_weight: 1.0
+  depth_decode_chunk_size: 8
+  lambda_camera: 0.0
+
+proprioception:
+  proprio_dim: 46
+
+predictor:
+  enabled: true
+  type: gam
+  d_model: 1024
+  depth: 12
+  num_heads: 16
+  ffn_ratio: 4.0
+  dropout: 0.0
+  num_patches_per_view: 256
+  use_language: true
+  language_encoder_type: t5
+  t5_model: google-t5/t5-base
+  language_dim: 768
+  language_len: 77
+  condition_mode: concat
+  input_proj_norm: ln
+  lambda_feat_future: 1.0
+  lambda_sigreg: 0.0
+  lambda_feat_current: 0.0
+  feature_loss_type: l1
+  H_choices: [1]
+  H_weights: [1.0]
+  num_register_tokens: 0
+  deep_gradient_checkpointing: false
+
+training:
+  micro_batch_size: 1
+  base_lr: 5.16e-5
+  head_lr_mult: 10.0
+  predictor_lr_mult: 10.0
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_eps: 1.0e-6
+  weight_decay: 0.0
+  lambda_action: 3.0
+  lambda_action_direct: 0.0
+  lambda_action_refine: 1.0
+  epochs: 500000
+  clip_grad: 1.0
+  warmup_steps: 0
+  min_lr_ratio: 1.0
+  log_every: 25
+  vis_every: 999999
+  eval_every: 999999
+  global_seed: 42
+  num_workers: 8
+  bf16: true
+  compile: false
+  ema:
+    enabled: false
+
+dataset:
+  type: dexjoco_lerobot
+  data_root: "${oc.env:GAM_DATA_ROOT,.}"
+  stats_dir: "${oc.env:GAM_STATS_DIR,${oc.env:GAM_DATA_ROOT,.}/_stats}"
+  stats_key: dexjoco_dual_arm_4task_3view_h1_c8_delta
+  n_dims: 44
+  proprio_dim: 46
+  action_frame: base_delta
+  chunk_size: 8
+  future_steps: 8
+  include_current_action: true
+  image_size: [224, 224]
+  n_views: 3
+  camera_keys:
+    - observation.images.ego
+    - observation.images.wrist_left
+    - observation.images.wrist_right
+  rollout_camera_keys: [front, wrist_left, wrist_right]
+  image_augmentation:
+    profile: cosmos_policy_strong
+    train:
+      random_resized_crop_area: 0.9
+      base_crop_scale: 0.9486832980505138
+      base_only_rotation_degrees: 5.0
+      color_jitter:
+        brightness: 0.3
+        contrast: 0.4
+        saturation: 0.5
+        hue: 0.05
+      jpeg:
+        enabled: true
+        quality: 95
+    eval:
+      center_crop_area: 0.9
+      jpeg:
+        enabled: true
+        quality: 95
+  eval_ratio: 0.05
+  action_stats_samples: 10000
+  proprio_stats_samples: 10000
+  datasets:
+    - bimanual_assembly
+    - bimanual_hanoi
+    - bimanual_microwave_cook
+    - bimanual_photograph
+
+use_dit: false

@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from . import cluster_settings
 from . import paths
 from . import user_config
+from .checkpoint_links import find_training_job_for_checkpoint
 from .clusters import load_cluster
 from .data_interface import rewrite_action_horizon
 from .dexjoco_rollout import rollout_for_variant
@@ -32,6 +33,7 @@ from .job_identity import comment_field_fragment
 from .output_namespace import make_output_namespace, validate_output_namespace
 from .partitions import is_background_partition, partition_max_time, walltime_seconds
 from .paths import CLUSTER_STAGING_REL, CONFIGS_DIR, LIB_DIR
+from .remote_paths import remote_shell_path
 from .resource_presets import slurm_resources_for
 from .ssh import rsync_to, ssh_run
 from .submission_snapshot import (
@@ -404,6 +406,50 @@ def config_snapshot_paths(variant: str, job_name: str) -> ConfigSnapshotPaths:
         meta_path=f"$HOME/{meta_rel}",
         modality_path=f"$HOME/{modality_rel}",
     )
+
+
+async def _read_remote_text(cluster: str, path: str) -> str | None:
+    """Best-effort read of a text file on `cluster` (slurm ssh or mlxp exec)."""
+    if not path:
+        return None
+    if cluster == "mlxp":
+        # Lazy import avoids a module-load cycle (details imports submit's peers).
+        from .details import _mlxp_read_file
+
+        text, _err = await _mlxp_read_file(path)
+        return text
+    host = (await load_cluster(cluster)).ssh_alias
+    r = await ssh_run(host, f"cat {remote_shell_path(path)} 2>/dev/null", timeout=10.0)
+    return r.stdout if r.returncode == 0 else None
+
+
+async def resolve_eval_base_config(variant, checkpoint_path: str | None, eval_cluster: str) -> str:
+    """Base config.sh for an eval submission.
+
+    An eval must reproduce the settings its checkpoint was trained under (batch
+    size, action horizon, modality config, ...), so the base config is the
+    training run's submission snapshot — not the repo default. Locate the
+    training job that produced `checkpoint_path`, read its snapshot config, and
+    return that text. Fall back to the repo default (`variant.raw`) whenever the
+    training run or its snapshot can't be resolved (older checkpoints, ambiguous
+    cross-cluster copies, deleted snapshot files).
+    """
+    checkpoint = (checkpoint_path or "").strip()
+    if not checkpoint:
+        return variant.raw
+    info = await find_training_job_for_checkpoint(eval_cluster, checkpoint)
+    if not info:
+        return variant.raw
+    train_cluster = str(info.get("cluster") or eval_cluster)
+    snapshot_path = (info.get("config_snapshot_path") or "").strip()
+    if not snapshot_path:
+        job_name = str(info.get("job_name") or "").strip()
+        if not job_name:
+            return variant.raw
+        # Reconstruct the deterministic snapshot path from the training job name.
+        snapshot_path = config_snapshot_paths(variant.name, job_name).path
+    text = await _read_remote_text(train_cluster, snapshot_path)
+    return text or variant.raw
 
 
 async def _rsync_text(host: str, text: str, remote_rel: str) -> None:
@@ -850,8 +896,9 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
             git=submit_git,
         ))
     else:
+        eval_base_config = await resolve_eval_base_config(variant, eval_checkpoint, req.cluster)
         snapshot_text = render_eval_config_preview(
-            base_config=variant.raw,
+            base_config=eval_base_config,
             variant=req.variant,
             model=model.family,
             job_name=job_name,

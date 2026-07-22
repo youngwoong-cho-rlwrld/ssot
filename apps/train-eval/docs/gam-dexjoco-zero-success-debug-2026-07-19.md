@@ -1,19 +1,28 @@
 # GAM DexJoCo zero-success debug — state & plan (2026-07-19)
 
+> **Superseded for current status (2026-07-21):** see the
+> [audited July 21 plan](./gam-dexjoco-audited-status-and-experiment-plan-2026-07-21.md).
+> This document correctly diagnoses the original absolute-target checkpoint,
+> but that cause
+> must not be generalized to the later plain-delta checkpoint. The 2.3% number
+> is a fraction of normalized target variance, not a measured fraction of L1
+> loss.
+
 Handoff for continuing the investigation into why GAM-family policies score
 **0% success across all DexJoCo tasks** while PhysiXel (groot server) scores
-19–57% on winnable tasks with byte-identical eval configs.
+42% on microwave and 20% on photograph with byte-identical eval configs.
 
-## 0. RESOLVED (2026-07-19, later same day): root cause found — retrain required
+## 0. RESOLVED (2026-07-19): original-run root cause found — retrain required
 
-**The fine-tune hold-collapsed during training.** Targets are absolute joint
-positions normalized to each joint's full q01/q99 working range, so
-within-chunk motion is only **2.3% of the normalized variance the L1 action
-loss sees** (xyz blocks ~1%). "Hold current pose" captures the other 97.7%,
+**The fine-tune hold-collapsed during training.** Targets are absolute EEF-pose
+and hand-joint values normalized to each dimension's full q01/q99 working
+range, so within-chunk motion is only **2.3436% of normalized target variance**
+(xyz blocks ~1%). "Hold current pose" captures the other 97.7% of that target
+variance,
 and the model converged to that optimum: offline teacher-forced chunks carry
 ~**5% of GT motion magnitude** (chance direction on rot/hand), unchanged at
-H=1/3/7 with GT action history. The paper never hits this because LIBERO
-uses zero-centered **delta-EEF actions** where motion IS the loss signal;
+H=1/3/7 with GT action history. The paper avoids this target setup because
+LIBERO uses zero-centered **delta-EEF actions** where motion is the target;
 `base_delta` in our tree is a **no-op alias** (returns actions unchanged),
 so delta targets were never actually implemented for DexJoCo. W&B looked
 healthy (`r2_norm` 0.96) because that metric is DC-dominated — no

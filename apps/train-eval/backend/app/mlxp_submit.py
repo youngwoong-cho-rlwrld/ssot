@@ -328,6 +328,11 @@ async def submit_mlxp(req: MlxpSubmitRequest) -> MlxpSubmitResponse:
         # Queue classes leave placement to the MLXP scheduler — never pin.
         node = ""
     if req.phase == "eval":
+        from .submit import resolve_eval_base_config
+
+        eval_base_config = await resolve_eval_base_config(
+            variant, req.checkpoint_path, "mlxp"
+        )
         snapshot = _build_eval_snapshot_payload(
             variant=variant,
             req=req,
@@ -338,6 +343,7 @@ async def submit_mlxp(req: MlxpSubmitRequest) -> MlxpSubmitResponse:
             model=model,
             settings=settings,
             train_note=train_note,
+            base_config=eval_base_config,
         )
     else:
         snapshot = _build_snapshot_payload(
@@ -502,7 +508,8 @@ def _build_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str, job
 
 def _build_eval_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str, job_name: str,
                                  node: str, submit_git, model: TrainingModel,
-                                 settings: MlxpSettings, train_note: str) -> dict:
+                                 settings: MlxpSettings, train_note: str,
+                                 base_config: str) -> dict:
     from .dexjoco_rollout import rollout_for_variant
     from .eval_harness import harness_for
     from .submit import normalize_eval_sets, normalize_eval_tasks
@@ -521,7 +528,7 @@ def _build_eval_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str
         else None
     )
     config_text = render_eval_config_preview(
-        base_config=variant.raw,
+        base_config=base_config,
         variant=variant.name,
         model=model.family,
         job_name=job_name,

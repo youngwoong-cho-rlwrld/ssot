@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -44,6 +45,7 @@ from . import (
     user_context,
     variant_values,
     variants,
+    videos,
     wandb_auth,
 )
 from .paths import CLUSTER_STAGING_REL
@@ -686,8 +688,11 @@ async def post_submit_config_preview(req: submit.SubmitRequest):
             if req.cluster == "mlxp":
                 suffix = submission_snapshot.snapshot_suffix(job_name)
                 path = f"{mlxp_config.get_settings().experiments_dir}/{req.variant}/config_{suffix}.sh"
+            eval_base_config = await submit.resolve_eval_base_config(
+                variant, checkpoint_path, req.cluster
+            )
             text = submission_snapshot.render_eval_config_preview(
-                base_config=variant.raw,
+                base_config=eval_base_config,
                 variant=req.variant,
                 model=model.family,
                 job_name=job_name,
@@ -978,6 +983,91 @@ async def get_job_eval_runs(cluster: str, job_id: str):
         raise HTTPException(404, str(e))
     except RuntimeError as e:
         raise HTTPException(500, str(e))
+
+
+@app.get("/api/jobs/{cluster}/{job_id}/videos", response_model=videos.VideoListing)
+async def get_job_videos(cluster: str, job_id: str):
+    try:
+        return await videos.list_videos(cluster, job_id)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/jobs/{cluster}/{job_id}/videos/stream")
+async def stream_job_video(request: Request, cluster: str, job_id: str, path: str):
+    if cluster == "mlxp":
+        raise HTTPException(501, "video streaming is not supported for mlxp jobs")
+    try:
+        eval_dir, _harness = await videos.resolve_eval_context(cluster, job_id)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    if not eval_dir:
+        raise HTTPException(404, "job has no eval dir")
+    try:
+        abs_path = videos.resolve_video_path(eval_dir, path)
+    except videos.VideoPathError as e:
+        raise HTTPException(400, str(e))
+
+    size = await videos.remote_file_size(cluster, abs_path)
+    if size is None:
+        raise HTTPException(404, "video not found")
+
+    # no-transform: the Next proxy gzips proxied responses when the browser
+    # advertises Accept-Encoding, which would buffer/mangle the mp4 byte stream.
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-transform"}
+    range_header = request.headers.get("range") or request.headers.get("Range")
+    start, end = _parse_range(range_header, size)
+    if start is None:
+        return StreamingResponse(
+            videos.stream_remote_range(cluster, abs_path, 0, None),
+            media_type="video/mp4",
+            headers={**headers, "Content-Length": str(size)},
+        )
+    length = end - start + 1
+    return StreamingResponse(
+        videos.stream_remote_range(cluster, abs_path, start, length),
+        status_code=206,
+        media_type="video/mp4",
+        headers={
+            **headers,
+            "Content-Range": f"bytes {start}-{end}/{size}",
+            "Content-Length": str(length),
+        },
+    )
+
+
+def _parse_range(range_header: str | None, size: int) -> tuple[int | None, int | None]:
+    """Parse a single-range `bytes=` header into inclusive (start, end).
+
+    Returns (None, None) when there is no usable Range header (caller serves the
+    whole file). Clamps to the file size; ignores malformed/multi-range values.
+    """
+    if not range_header or not range_header.startswith("bytes=") or size == 0:
+        return None, None
+    spec = range_header[len("bytes="):].split(",", 1)[0].strip()
+    if "-" not in spec:
+        return None, None
+    lo, _, hi = spec.partition("-")
+    try:
+        if lo == "":
+            # suffix range: last N bytes
+            n = int(hi)
+            if n <= 0:
+                return None, None
+            start = max(0, size - n)
+            return start, size - 1
+        start = int(lo)
+        end = int(hi) if hi else size - 1
+    except ValueError:
+        return None, None
+    if start > size - 1:
+        return None, None
+    end = min(end, size - 1)
+    if end < start:
+        return None, None
+    return start, end
 
 
 @app.post("/api/jobs/{cluster}/{job_id}/resume", response_model=submit.SubmitResponse)

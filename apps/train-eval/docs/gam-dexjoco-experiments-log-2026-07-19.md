@@ -1,14 +1,21 @@
 # GAM DexJoCo debug — experiment log (2026-07-19)
 
+> **Historical log:** audited conclusions, corrected identifiers, live status,
+> and the next experiment design are in the
+> [audited July 21 plan](./gam-dexjoco-audited-status-and-experiment-plan-2026-07-21.md).
+> "Retrains in flight" below was true when this log was written, not a current
+> status.
+
 Investigation into why GAM DexJoCo policies scored 0% success. Format:
 "To test A, did B → result. *experiment* `job`".
 
-Root cause found: **hold-collapse** — training used absolute joint-position
-targets (`action_frame="base"`) q01/q99-normalized over full joint ranges, so
-within-chunk motion is only ~2.3% of the L1 loss signal; the model converged to
-"hold current pose". The paper works because it uses **relative delta-EEF**
-actions. Fix = observation-anchored delta-action targets + chunk 8 + velocity
-loss; retrains in flight.
+Original-run root cause found: **hold-collapse** — training used absolute
+EEF-pose and hand-joint targets (`action_frame="base"`) q01/q99-normalized over
+full action ranges, so
+within-chunk motion is only ~2.3% of normalized target variance; the model
+converged to "hold current pose". The paper works because it uses **relative
+delta-EEF** actions. Fix = observation-anchored delta-action targets + chunk 8
+and velocity loss; retrains were in flight when this log was written.
 
 ## Question log ("Is A a problem? → Yes/No")
 - **Is the model just learning "hold pose" instead of motion?** → **Yes**
@@ -22,7 +29,7 @@ loss; retrains in flight.
   moves offline, magR 0.6–0.9 → it's ours)
 - **Is the serving/statefulness the root cause?** → **No** (real, but secondary)
 - **Is the root cause our absolute action targets?** → **Yes** (within-chunk
-  motion = 2.3% of loss signal)
+  motion = 2.3% of normalized target variance)
 - **Does the paper legitimize absolute joint targets?** → **No** (all their
   results are delta-EEF; "joint commands" is an unqualified aside)
 
@@ -38,11 +45,16 @@ loss; retrains in flight.
   axis_angle, camera, sampling) verified against the ckpt's embedded config.
   → **Reproduction control PASSES; eval/serving/backbone validated end-to-end.**
 
-Open:
-- **Does the delta-action fix work?** → *testing* (MLXP train `f2fa677f`)
-- **Do relative 3D keypoints add value?** → *testing* (MLXP train `d6810082`)
+Later result:
+- **Does the delta-action fix work?** → It removes hold-collapse but the 30k
+  policy remains inaccurate and scores 0/50 (MLXP train `f2fa677f`, eval
+  `165003`). The underlying precision failure remains unresolved.
+- **Do relative 3D keypoints add value?** → No evidence of benefit: plain delta
+  beats keypoint delta on 5/6 action blocks. The incomplete keypoint-delta eval
+  produced official 0/50 results on four tasks (0/200 total) and no unlock result
+  (MLXP train `d6810082`, eval `164105`, cancelled resume `164916`).
 
-## Running
+## Running when written
 - To test the fix (absolute→relative actions) for hold-collapse, retraining on
   MLXP. *delta-action train* `youngwoong-train-...delta-c8-...-f2fa677f`
 - To test whether relative 3D hand keypoints add value on top of the delta fix,
@@ -56,7 +68,8 @@ Open:
 - To test whether action history rescues it, ran H>1 teacher-forcing → no
   (magR flat at H=1/3/7) → training-side, not serving. *hist fit* (job 163701)
 - To test if the dataset↔env action contract is valid, replayed GT actions in
-  sim → valid (microwave solvable; absolute-pose semantics confirmed).
+  sim → gross layout/semantics valid (microwave solved 2/5 replays;
+  absolute-pose semantics confirmed).
   *GT replay* (job 163699)
 - To test if the DA3 backbone is correct/healthy, ran sha256 + depth render +
   fine-tune drift → correct, sensible depth, no drift. *backbone verify*
@@ -68,7 +81,8 @@ Open:
   env-recreation bug (was mis-reading as 30% from crash-cascade failures).
   *LIBERO reproduction* (skt `163863`/`163864` + eglfix2)
 - To test the root cause, ran variance decomposition of normalized actions →
-  absolute targets, within-chunk motion = 2.3% of loss variance. *collapse cause*
+  absolute targets, within-chunk motion = 2.3436% of normalized target variance.
+  *collapse cause*
 
 ## Notes / open items
 - Serving fix (secondary): boundary threshold recalibrated `GAM_SERVER_RESET_STATE_L2`

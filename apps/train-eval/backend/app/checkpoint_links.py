@@ -385,6 +385,10 @@ def job_info_from_meta(job_id, meta):
         "cluster": meta.get("cluster") or cluster,
         "job_id": str(job_id),
         "job_name": meta.get("job_name") or str(job_id),
+        # Absolute path to the training run's submission config snapshot, so an
+        # eval of this checkpoint can source the config it was trained under
+        # instead of the repo default. Absent for older metadata.
+        "config_snapshot_path": meta.get("config_snapshot_path"),
     }
 
 

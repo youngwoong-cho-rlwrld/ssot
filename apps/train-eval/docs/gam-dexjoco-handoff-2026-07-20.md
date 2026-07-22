@@ -1,5 +1,14 @@
 # GAM DexJoCo debugging — complete handoff (2026-07-20)
 
+> **Audited update (2026-07-21):** current status, corrected causal claims, and
+> the instrumented experiment ladder now live in the
+> [audited July 21 plan](./gam-dexjoco-audited-status-and-experiment-plan-2026-07-21.md).
+> In particular, the 2.3% figure is normalized target variance, the original
+> absolute-target
+> hold-collapse is proven but the remaining plain-delta failure is not
+> root-caused, and the 30k plain-delta run already trained DA3 blocks 13–39.
+> Treat this July 20 document's in-flight status as historical.
+
 Written so someone with **zero prior context** can pick this up. Read top to
 bottom once, then use the sections as reference.
 
@@ -7,23 +16,25 @@ bottom once, then use the sections as reference.
 
 ## 0. TL;DR
 
-- **Problem:** Our GAM robot policies score **0% success** on every DexJoCo
-  manipulation task. A different policy (PhysiXel) scores 19–57% on the same
-  tasks/harness, so the tasks are winnable and the eval works.
-- **Root cause (proven):** GAM was trained to predict **absolute joint
-  positions**. Over one short action chunk the joints barely move, so the
-  "motion" the model must learn is only **2.3% of what the loss sees** — the
+- **Problem:** Our GAM robot policies score **0% success** on every tested
+  DexJoCo manipulation task. PhysiXel scores 42% on microwave and 20% on
+  photograph with the same harness, so those tasks and the harness are winnable.
+- **Original-run root cause (proven):** GAM was trained to predict an
+  **absolute 44-D EEF-pose + hand-joint target**. Over one short action chunk
+  the target barely moves, so within-chunk motion is only **2.3436% of
+  normalized target variance** — the
   model collapses to "hold the current pose." The GAM paper avoids this by
   predicting **relative/delta** actions (motion is the whole signal).
 - **The fix:** retrain predicting **delta actions** (`a_t − current_pose`)
   instead of absolute. This **removed the collapse** (the model now predicts
   motion) **but the retrained policy is still too imprecise to complete tasks
   → still 0% closed-loop.** It is **necessary but not sufficient**; it looks
-  **undertrained** (30k steps vs the paper's 150k) and has a specific broken
-  joint (right wrist rotation).
-- **Where we are:** root cause fully proven; fix is directionally correct but
-  needs a **stronger/longer retrain**. A confirmatory LIBERO ablation is
-  running on an in-house GPU box.
+  possibly undertrained (30k steps vs the paper's 150k reference recipe) and
+  has a badly predicted right-arm EEF rotation block. The cause of that low
+  precision is not yet proven.
+- **Where we are:** the original absolute-target collapse is proven; the delta
+  fix is directionally correct but its remaining failure needs controlled
+  rotation, adaptation, and training-length tests before a stronger retrain.
 
 ---
 
@@ -39,7 +50,7 @@ bottom once, then use the sections as reference.
 - **LIBERO** = a public single-arm benchmark the GAM paper reports on (~90–97%).
   We use it as a **control** (known-good data + public checkpoints).
 - **Action representation** — the crux of everything:
-  - **absolute** = "put the joint/hand AT this pose" (what we wrongly used).
+  - **absolute** = "put the EEF/hand AT this pose" (what we wrongly used).
   - **delta / relative** = "MOVE the end-effector BY this much" (what the
     paper uses; motion is the signal).
 - **Chunk** = the model predicts C future actions at once (paper C=8; our
@@ -49,10 +60,10 @@ bottom once, then use the sections as reference.
 
 ## 2. The root cause, in one paragraph
 
-Action targets are **absolute joint positions**, normalized to each joint's
-full working range (q01/q99). Within one C-step chunk a joint moves a tiny
-fraction of its range, so **within-chunk motion is ~2.3% of the normalized
-variance the L1 loss penalizes** — the other ~98% is the static pose the model
+Action targets are **absolute EEF-pose + hand-joint values**, normalized to each
+dimension's full working range (q01/q99). Within one C-step chunk the action
+moves a tiny fraction of its range, so **within-chunk motion is ~2.3% of
+normalized target variance** — the other ~98% is the static pose the model
 can copy from its own proprioception "for free." The loss optimum is therefore
 "predict ≈ current pose" = **hold-collapse**. The GAM paper's LIBERO setup uses
 **delta end-effector** actions (via robosuite's OSC controller), where the
@@ -70,28 +81,29 @@ successes.
 
 | # | To test… | Recipe | Conclusion | Why |
 |---|---|---|---|---|
-| 1 | our GAM code/backbone/cluster work at all | GAM + LIBERO (paper ckpt) | Plumbing OK | 30/30 closed-loop |
+| 1 | our GAM LIBERO serving/eval path works | GAM + LIBERO (paper ckpt) | LIBERO path OK | 30/30 closed-loop |
 | 2 | calibrate the offline motion metric | GAM + LIBERO (paper ckpt, offline) | good model = magR 0.6–0.9 | reference point |
 | 3 | absolute drops motion into collapse regime (LIBERO) | GAM + LIBERO + absolute (offline) | yes | motion 12.9%→1.9% |
-| 4 | absolute also fails LIBERO closed-loop | GAM + LIBERO + abs (3-way) | **running on box** | arm A training |
+| 4 | absolute also fails LIBERO closed-loop | GAM + LIBERO + abs (3-way) | **incomplete** | see audited Jul 21 plan |
 | 5 | our model predicts motion or holds pose | GAM + DexJoCo + absolute (offline) | hold-collapse (ours) | magR 0.05 vs 0.6–0.9 |
-| 6 | the root cause | GAM + DexJoCo + absolute (variance decomp) | absolute targets | motion 2.3% of loss |
+| 6 | the original-run root cause | GAM + DexJoCo + absolute (variance decomp) | absolute targets | motion 2.3436% of target variance |
 | 7 | action history rescues it | GAM + DexJoCo + absolute + H>1 | no → training-side | flat at H=1/3/7 |
-| 8 | rule out the backbone | DA3 hash/depth/drift | not the cause | hash match, clean depth |
-| 9 | rule out dataset↔env contract | DexJoCo env + GT actions replayed | not the cause | GT actions solve task |
-| 10 | delta fix WITH keypoints (closed-loop) | GAM + DexJoCo + delta + rel-keypoints | fails | 0/50 all tasks |
-| 11 | why kpdelta is 0% (serving vs model) | kpdelta checkpoint (probe) | serving OK, model weak | R² 0.02–0.44; recon exact |
+| 8 | rule out corrupt/catastrophic backbone failure | DA3 hash/depth/drift | ruled out | hash match, clean depth |
+| 9 | test gross dataset↔env contract | DexJoCo env + GT actions replayed | layout/semantics work | GT actions solve 2/5 microwave replays |
+| 10 | delta fix WITH keypoints (closed-loop) | GAM + DexJoCo + delta + rel-keypoints | fails/incomplete | 0/50 on four tasks (0/200); no unlock result |
+| 11 | why kpdelta is 0% (serving vs model) | kpdelta checkpoint (probe) | reconstruction exact, model weak | block R² −0.047–0.435 |
 | 12 | plain delta predicts motion better than kp | GAM + DexJoCo + delta C8 (offline, box) | better, still imprecise | beats kp 5/6 blocks; r_rot broken |
 | 13 | plain delta fix closed-loop | GAM + DexJoCo + delta C8 | **fails (0%)** | 0/25 mic, 0/25 photo |
 
-Reading order (the ablation ladder): **1–2** our stack + backbone work (paper
-model → 30/30). **3–4** on LIBERO, switching delta→absolute reproduces the
-collapse (isolates the ONE variable). **5–9** our DexJoCo+absolute is the 0%,
-root-caused, with backbone and data contract ruled out. **10–13** the delta fix
-removes the collapse offline but the trained policy is still too weak for
-closed-loop success.
+Reading order (the ablation ladder): **1–2** the known-good LIBERO path works
+(paper model → 30/30). **3** shows offline that switching delta→absolute drops
+motion into the collapse regime; **4**, the closed-loop causal confirmation,
+remains incomplete. **5–9** root-cause the original DexJoCo absolute checkpoint
+while ruling out broad contract and corrupt-backbone alternatives. **10–13**
+show that the multi-change delta recipe removes collapse offline but remains too
+weak for closed-loop success.
 
-**Two independent confirmations the root cause is real & specific:**
+**Two independent confirmations the original-run mechanism is real & specific:**
 - The offline *within-chunk motion %* metric: delta=12.9% vs absolute=1.9% (on
   LIBERO, holding everything else fixed).
 - The serving math was **verified correct** (reconstruction roundtrip error
@@ -145,42 +157,39 @@ Two launch bugs found & fixed on the branches (both would silently break a run):
 | Variant | Training | Offline delta R² (per block) | Closed-loop |
 |---|---|---|---|
 | absolute (original) | collapsed | ~0 motion (magR 0.05) | 0% (all tasks) |
-| keypoint-delta | escaped collapse | 0.02–0.44 | **0/50** all tasks |
+| keypoint-delta | escaped collapse | −0.047–0.435 | 0/50 on four tasks; no unlock result |
 | plain delta | escaped collapse | 0.21–0.58 (r_rot **−0.32**) | **0/25** mic, **0/25** photo |
 
 - The delta fix **works at the training level** (model predicts real motion,
   ~half the GT magnitude) but **the policy is not accurate enough** → still
   misses grasps → 0% success.
-- **Plain delta > keypoint-delta** on 5 of 6 joint blocks (worth pursuing the
+- **Plain delta > keypoint-delta** on 5 of 6 action blocks (worth pursuing the
   plain variant, drop the keypoint one for now).
-- **Specific broken joint: right-wrist rotation (`r_rot`, R² −0.32)** — the
-  model predicts basically no right-wrist rotation. Targeted follow-up.
+- **Localized symptom: right-arm EEF rotation (`r_rot`, R² −0.32)** — the model
+  predicts this three-dimensional block especially poorly. This does not yet
+  identify whether the cause is representation, data, or optimization.
 
-**Interpretation:** necessary-but-not-sufficient. Most likely **undertrained**
-(30k steps vs paper 150k) and/or capacity/recipe limited. Not another quick
-config tweak — needs a real retrain.
+**Interpretation:** necessary-but-not-sufficient. Training length, rotation
+representation/data, and adaptation capacity remain hypotheses, not conclusions.
+They need gated tests before an expensive retrain.
 
 ---
 
 ## 6. What should be done next (priority order)
 
-1. **Stronger/longer plain-delta retrain** (highest value). On MLXP:
-   - More steps (aim for the paper's ~150k, or until `motion_ratio`→~1 and
-     offline block-R² clears ~0.8).
-   - Consider **un-freezing the DA3 backbone** (blocks 13–39, as the original
-     absolute run did) — the box ablation froze it for memory, don't inherit
-     that.
-   - Keep: `action_frame=base_delta`, `chunk_size=8`, `stats_key
-     dexjoco_dual_arm_delta`, velocity loss, motion metric.
-   - Then eval (see §7 for the eval constraint) on microwave + photograph vs
-     PhysiXel 42%/20%.
-2. **Fix right-wrist rotation (`r_rot`)** — diagnose why r_rot alone predicts
-   ~nothing (rotvec representation? data imbalance? a per-dim normalizer
-   issue?). Re-run the offline accuracy probe after.
-3. **Finish the LIBERO 3-way ablation** (confirmatory) — expect delta arm A to
-   score, absolute arms B/C to collapse. Running on the box now.
-4. Only if a strong retrain still fails: reconsider data volume/quality or the
-   chunk/recipe more deeply.
+1. **Implement the fixed-manifest debug probe and pass a motion-stratified tiny
+   overfit**, including both rotation blocks and a checkpoint/server reload.
+2. **Audit and A/B rotation targets:** current component-wise rotvec delta
+   versus a matched group-relative SO(3) target. Keep the current method unless
+   the controlled A/B improves rotation without hurting other blocks.
+3. **Test adaptation capacity:** blocks 13–39 are already trainable in the 30k
+   delta run. Compare that baseline with a stronger adaptation setting rather
+   than presenting 13–39 as a new fix.
+4. **Only after those gates pass, run the 150k learning curve**, retaining C=8,
+   delta statistics, velocity loss, and checkpoint-level motion metrics. Submit
+   a 5+5 microwave/photo gate only after offline metrics pass.
+5. **Finish the LIBERO 3-way ablation** as a confirmatory parallel control; do
+   not block the DexJoCo ladder on it.
 
 ---
 
@@ -266,8 +275,9 @@ signal, restrict to `eval_tasks=[microwave, photograph]` with fewer episodes.
 
 - **Don't confuse `action_frame="base"`**: delta in LIBERO code, absolute in the
   DexJoCo config. This ambiguity caused the whole bug.
-- **Serving reconstruction is verified correct** — do NOT go hunting for a
-  serving bug for the 0%; it's the model.
+- **Serving reconstruction is the exact inverse of the current component-wise
+  loader transform.** That rules out a loader/server mismatch, but not whether
+  component-wise rotvec delta is the best geometric target.
 - **`motion_ratio` in training logs is noisy** per-batch (0.008→5.27); don't
   read a single value. Use the offline probe (per-block R² + std_pred/std_gt)
   for a clean read.
@@ -287,8 +297,8 @@ signal, restrict to `eval_tasks=[microwave, photograph]` with fewer episodes.
 
 ## 10. The one-sentence status
 
-Root cause = absolute (not delta) action targets, **proven**; the delta fix
-removes the collapse but the retrained policy is still too imprecise (0%
-closed-loop), so the next move is a **stronger/longer plain-delta retrain
-(more steps, unfrozen backbone) plus fixing right-wrist rotation**, while a
-confirmatory LIBERO absolute-vs-delta ablation finishes on the in-house 5080.
+The original absolute-target checkpoint failed by proven hold-collapse; the
+30k delta checkpoint removed that collapse but remained too imprecise (0%
+closed-loop), and the cause of its low precision is unresolved, so rotation,
+adaptation, and training length must be separated with the instrumented gates
+in the audited July 21 plan before a 150k run.

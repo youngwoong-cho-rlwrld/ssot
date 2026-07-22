@@ -6,8 +6,9 @@ Byte-compatible with lib/dexjoco/gr00t_dexjoco_server.py:
   obs in  (dual-arm):   {"base", "wrist_left", "wrist_right": uint8[H,W,3], "state": float[46], "prompt": str}
   obs out : {"actions": float32[horizon, D]}  D=22 single-arm, 44 dual-arm
 
-GAM is single-view: only "base" (-> the model's single "front"/"ego" training view)
-is consumed; wrist frames are ignored. State and actions are raw joint-space
+Camera inputs follow ``dataset.rollout_camera_keys`` from the checkpoint config.
+DexJoCo's ``base`` image maps to GAM's ``front`` key; ``wrist_left`` and
+``wrist_right`` are forwarded unchanged. State and actions are raw joint-space
 vectors (no EEF math).
 
 Multi-embodiment mapping (a 44-D multitask model served for a single-arm task,
@@ -19,10 +20,9 @@ This mirrors the dataset's single_to_dual padding (see dexjoco/DEXJOCO_INTEGRATI
 The model is built with the GAM repo's ``load_stage1_policy`` (run with
 PYTHONPATH=$GAM_DIR/src). One model step (== chunk_size env actions) is
 returned per request, matching the GR00T server's per-call action chunk.
-Unlike the GR00T server, GAM is an autoregressive world model trained with
-multi-step history (H 1..7) and past-action conditioning, so the server keeps
-the rollout closure's episode state ACROSS requests (committing one history
-anchor per request) and resets it only at detected episode boundaries.
+For checkpoints trained with observation history, the server keeps the rollout
+closure's episode state across requests. For the released H=1 recipe it never
+commits a previous observation, so every request is a single-step input.
 
 The websocket/msgpack/healthz/worker-thread protocol is copied verbatim from the
 GR00T server so the harness client and eval_body_dexjoco.sh need no changes.
@@ -137,6 +137,20 @@ class GamDexJoCoPolicy:
         # history window is governed separately by stage1_history_horizon.
         self.policy.active_action_horizon = 1
 
+        rollout_camera_keys = self.info.get("rollout_camera_keys") or ["front"]
+        self.rollout_camera_keys = tuple(str(key) for key in rollout_camera_keys)
+        supported_camera_keys = {"front", "wrist", "wrist_left", "wrist_right"}
+        unsupported = set(self.rollout_camera_keys) - supported_camera_keys
+        if unsupported:
+            raise ValueError(
+                "Unsupported GAM rollout camera keys "
+                f"{sorted(unsupported)}; supported={sorted(supported_camera_keys)}."
+            )
+        history_choices = self.info.get("stage1_H_choices") or cfg.predictor.get(
+            "H_choices", [1]
+        )
+        self._use_history = max(int(value) for value in history_choices) > 1
+
         # --- Episode state across requests ---
         # The closure accumulates history only via its commit protocol: a bare
         # policy() call stages pending_history but never commits it, so every
@@ -158,22 +172,28 @@ class GamDexJoCoPolicy:
         self.policy.reset_episode()
         # Delta-action checkpoints (branch dexjoco-delta-actions, stats key
         # *_delta): the model outputs observation-anchored deltas
-        # delta_k = a_{t+k}^abs - p44(t). Reconstruct absolute targets by
-        # adding the 44-dim proprio projection of the request's own state
-        # (quat wxyz -> rotvec per arm inside dexjoco_dual_proprio_to_p44).
-        # Past-action feedback stays in DELTA space — that is the action
-        # space training saw.
+        # delta_k = a_{t+k}^abs - p(t). Reconstruct absolute targets by adding
+        # the proprio projection of the request's own state: p44 (dual, 46->44)
+        # or p22 (single, 23->22), quat wxyz -> rotvec per arm. Past-action
+        # feedback stays in DELTA space, the action space training saw.
         stats_key = str(self.info.get("action_stats_key") or "")
         self._delta_mode = stats_key.endswith("_delta")
-        self._proprio_to_p44 = None
+        self._proprio_to_p = None
         if self._delta_mode:
-            from robot.data.dexjoco_lerobot import dexjoco_dual_proprio_to_p44
-            self._proprio_to_p44 = dexjoco_dual_proprio_to_p44
+            # Single-arm (proprio_dim 23 -> p22) vs bimanual (proprio_dim 46 ->
+            # p44); the p map is layout specific, keyed off the model's own
+            # proprio_dim. Imported lazily so non-delta serving never pulls robot.*.
+            if self.proprio_dim == 23:
+                from robot.data.dexjoco_lerobot import dexjoco_single_proprio_to_p22
+                self._proprio_to_p = dexjoco_single_proprio_to_p22
+            else:
+                from robot.data.dexjoco_lerobot import dexjoco_dual_proprio_to_p44
+                self._proprio_to_p = dexjoco_dual_proprio_to_p44
         logger.info(
-            "GAM policy loaded from %s (model_n_dims=%d proprio_dim=%d d_out=%d chunk_size=%s stats_key=%s delta_mode=%s)",
+            "GAM policy loaded from %s (model_n_dims=%d proprio_dim=%d d_out=%d chunk_size=%s stats_key=%s delta_mode=%s cameras=%s history=%s)",
             ckpt_file, self.model_n_dims, self.proprio_dim, self.d_out,
             self.info.get("chunk_size"), self.info.get("action_stats_key"),
-            self._delta_mode,
+            self._delta_mode, self.rollout_camera_keys, self._use_history,
         )
 
     def _prep_state(self, state) -> np.ndarray:
@@ -193,11 +213,21 @@ class GamDexJoCoPolicy:
         if isinstance(prompt, bytes):
             prompt = prompt.decode()
 
-        # Single view: the client's "base" frame is the model's front/ego view.
-        closure_obs = {
-            "front": np.asarray(obs["base"], dtype=np.uint8),
-            "state": self._prep_state(obs["state"]),
+        client_camera_keys = {
+            "front": "base",
+            "wrist": "wrist",
+            "wrist_left": "wrist_left",
+            "wrist_right": "wrist_right",
         }
+        closure_obs = {"state": self._prep_state(obs["state"])}
+        for model_key in self.rollout_camera_keys:
+            client_key = client_camera_keys[model_key]
+            if client_key not in obs:
+                raise KeyError(
+                    f"Checkpoint expects camera {model_key!r}, but request has "
+                    f"only {sorted(key for key in obs if key != 'state')}."
+                )
+            closure_obs[model_key] = np.asarray(obs[client_key], dtype=np.uint8)
 
         # Episode boundary detection. The DexJoCo client keeps ONE websocket
         # for all episodes and sends no episode index or reset flag
@@ -232,7 +262,7 @@ class GamDexJoCoPolicy:
         # commit_observation for a GAM model must be called with exactly 1
         # (model steps, not env actions) — anything else wipes history
         # (eval_libero_unified.py:4020, :4040-4049, reference loop :5553-5575).
-        if self._prev_returned_chunk is not None:
+        if self._use_history and self._prev_returned_chunk is not None:
             self.policy.override_pending_action_chunk(
                 torch.from_numpy(self._prev_returned_chunk)
             )
@@ -251,15 +281,17 @@ class GamDexJoCoPolicy:
         # trained commit stride is one model step regardless
         # (eval_libero_unified.py:3459), so feeding the full chunk is the
         # closest server-side approximation.
-        self._prev_returned_chunk = act_full
+        if self._use_history:
+            self._prev_returned_chunk = act_full
         out = act_full[:, : self.d_out]  # slice dual layout -> single-arm block when needed
         if self._delta_mode:
-            # Anchor is the CURRENT request's raw 46-dim state (pre-padding),
-            # matching the loader's per-chunk observation-frame anchoring.
-            p44 = self._proprio_to_p44(
+            # Anchor is the CURRENT request's raw state (pre-padding), matching
+            # the loader's per-chunk observation-frame anchoring; p22 (single,
+            # 23->22) or p44 (dual, 46->44) per the checkpoint layout.
+            p = self._proprio_to_p(
                 np.asarray(obs["state"], dtype=np.float32).reshape(-1)
             ).astype(np.float32)
-            out = out + p44[None, : out.shape[1]]
+            out = out + p[None, : out.shape[1]]
         return {"actions": np.ascontiguousarray(out, dtype=np.float32)}
 
 

@@ -1,0 +1,18 @@
+train:
+  state_dropout_prob: 0.2
+  datasets:
+    - path: ${DATA_DIR}/bimanual_assembly
+      embodiment_tag: new_embodiment
+      weight: 1.0
+    - path: ${DATA_DIR}/bimanual_hanoi
+      embodiment_tag: new_embodiment
+      weight: 1.0
+    - path: ${DATA_DIR}/bimanual_microwave_cook
+      embodiment_tag: new_embodiment
+      weight: 1.0
+    - path: ${DATA_DIR}/bimanual_photograph
+      embodiment_tag: new_embodiment
+      weight: 1.0
+    - path: ${DATA_DIR}/bimanual_unlock_ipad
+      embodiment_tag: new_embodiment
+      weight: 1.0
