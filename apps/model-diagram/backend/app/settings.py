@@ -67,6 +67,31 @@ def papers_dir() -> Path:
     return path
 
 
+def stage_dir() -> Path:
+    """Scratch dir holding local mirrors of remote roots for the codex runtime.
+
+    The codex sandbox blocks the MCP server's network, so a codex run on a remote
+    cluster mirrors the root here first and reads it locally; each mirror is
+    deleted when its run ends.
+    """
+    override = os.environ.get("MODEL_DIAGRAM_STAGE_DIR")
+    if override:
+        path = Path(os.path.expanduser(override)).resolve()
+    else:
+        path = _data_dir() / "model-diagram" / "staging"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def codex_stage_max_bytes() -> int:
+    """Size cap for mirroring a remote root for the codex runtime (default 2 GiB)."""
+    default = 2 * 1024 * 1024 * 1024
+    try:
+        return int(os.environ.get("MODEL_DIAGRAM_CODEX_STAGE_MAX_BYTES", str(default)))
+    except ValueError:
+        return default
+
+
 # Ordered allowlist of models a run may use; the first entry is the UI default.
 # Each entry is ``(id, label, family)`` where family is the generation runtime:
 # ``claude`` (Anthropic SDK or the Claude Code CLI) or ``codex`` (the OpenAI
@@ -125,8 +150,8 @@ def available_model_catalog() -> list[dict[str, str]]:
     the UI only ever offers a model it can actually run.
     """
     return [
-        {"id": mid, "label": label}
-        for mid, label, _ in MODEL_ALLOWLIST
+        {"id": mid, "label": label, "family": fam}
+        for mid, label, fam in MODEL_ALLOWLIST
         if runtime_for_model(mid) != "none"
     ]
 

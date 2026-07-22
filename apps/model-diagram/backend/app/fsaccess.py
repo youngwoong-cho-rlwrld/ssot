@@ -12,6 +12,7 @@ file. Nothing here writes, and there is no network/web access of any kind.
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import posixpath
 import shlex
 from pathlib import Path
@@ -82,12 +83,23 @@ async def resolve_access(cluster: str) -> dict:
 class FsAccess:
     """Read-only accessor scoped to one cluster + absolute model root."""
 
-    def __init__(self, cluster: str, root: str, access: Optional[dict] = None):
+    def __init__(
+        self,
+        cluster: str,
+        root: str,
+        access: Optional[dict] = None,
+        staged_excludes: Optional[tuple[str, ...]] = None,
+    ):
         self.cluster = cluster
         # Pre-resolved access config (backend). When None, it is resolved lazily
         # via resolve_access() on first remote call — fine in-process (identity
         # is set), but an out-of-process worker MUST pass access explicitly.
         self._access = access
+        # File globs that were excluded when this root was mirrored for the codex
+        # runtime (weights/datasets/…). A read of a missing file matching one of
+        # these gets a clear "excluded artifact" error instead of a bare not-found,
+        # so the agent understands the file exists on the cluster but was not copied.
+        self._staged_excludes = staged_excludes or ()
         if cluster == "local":
             self.local_root: Optional[Path] = Path(root).expanduser().resolve()
             self.root = str(self.local_root)
@@ -165,6 +177,13 @@ class FsAccess:
         cap = max_bytes if max_bytes is not None else settings.SOURCE_MAX_BYTES
         if self.cluster == "local":
             target = self._local_abs(user_path)
+            if self._staged_excludes and not target.is_file():
+                base = target.name
+                if any(fnmatch.fnmatch(base, glob) for glob in self._staged_excludes):
+                    raise FsError(
+                        f"'{user_path}' was excluded from the codex staging mirror (binary/artifact "
+                        "file, not copied) — the analysis reads text/code only; skip it"
+                    )
             return await asyncio.to_thread(self._local_read, target, cap)
 
         target = self._remote_abs(user_path)

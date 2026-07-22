@@ -124,6 +124,65 @@ def test_create_diagram_rejects_off_allowlist_model(client):
     assert res.status_code == 422
 
 
+def test_models_endpoint_includes_family(client, monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", lambda: "sk-test")
+    monkeypatch.setattr(settings, "codex_cli_path", lambda: "/usr/local/bin/codex")
+    body = client.get("/api/models", headers=_USER).json()
+    fam = {m["id"]: m["family"] for m in body["models"]}
+    assert fam["claude-fable-5"] == "claude"
+    assert fam["gpt-5.6-sol"] == "codex"
+
+
+# ── codex + remote cluster: allowed (backend mirrors the root locally) ──────
+
+
+def test_create_allows_codex_on_remote_cluster(client):
+    # Previously 422; codex on a remote cluster is now supported via local staging.
+    res = client.post(
+        "/api/diagrams", headers=_USER,
+        json={"cluster": "kakao", "path": "/models/tiny", "model": "gpt-5.6-sol"},
+    )
+    assert res.status_code == 201
+
+
+def test_create_allows_codex_on_local(client):
+    res = client.post(
+        "/api/diagrams", headers=_USER,
+        json={"cluster": "local", "path": "/models/tiny", "model": "gpt-5.6-sol"},
+    )
+    assert res.status_code == 201
+
+
+def test_create_allows_claude_on_remote(client):
+    res = client.post(
+        "/api/diagrams", headers=_USER,
+        json={"cluster": "kakao", "path": "/models/tiny", "model": "claude-fable-5"},
+    )
+    assert res.status_code == 201
+
+
+def test_validate_passes_codex_on_remote_cluster(client):
+    # No codex/remote guard anymore — validate only checks path + paper.
+    res = client.post(
+        "/api/validate", headers=_USER,
+        json={"cluster": "kakao", "path": "/models/tiny", "model": "gpt-5.6-sol"},
+    )
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+
+def test_reprovision_allows_codex_on_remote_cluster(client):
+    created = client.post(
+        "/api/diagrams", headers=_USER,
+        json={"cluster": "local", "path": "/models/tiny", "model": "claude-fable-5"},
+    ).json()
+    res = client.post(
+        f"/api/diagrams/{created['diagram_id']}/runs", headers=_USER,
+        json={"cluster": "kakao", "model": "gpt-5.6-sol"},
+    )
+    assert res.status_code == 201
+
+
 def test_reprovision_stores_chosen_model(client):
     created = client.post(
         "/api/diagrams",

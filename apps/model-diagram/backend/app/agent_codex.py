@@ -44,9 +44,13 @@ Documented limitations (honest residual):
   plus ``tools.web_search=false`` close the built-in web vectors, and the guard
   forbids external lookups, but a user-configured MCP server is a residual surface
   (mitigated by the read-only sandbox — nothing it does can mutate state).
-* Remote clusters (ssh / kubectl) are unsupported on the codex runtime: the
-  sandboxed MCP server cannot open the network/subprocess those need, so a remote
-  root fails at the first directory read. Use a Claude model for remote roots.
+* Remote clusters (ssh / kubectl): the sandboxed MCP server cannot open the
+  network those need, so the backend MIRRORS the remote root to a local dir before
+  the run (:mod:`app.staging`) and points FsAccess at the mirror — the sandbox stays
+  read-only and the run reads locally. The mirror excludes .git objects (kept: HEAD
+  + refs for commit pinning) and is capped (MODEL_DIAGRAM_CODEX_STAGE_MAX_BYTES) and
+  deleted when the run ends. This is codex-only; other runtimes reach remote roots
+  directly.
 * finalize is single-attempt: the model gets an immediate ack (it cannot receive
   the backend's integrity verdict through the sandbox), so a payload that fails
   §7.1 ends the run ``agent_failure`` rather than being retried. The layout

@@ -30,6 +30,9 @@ class ValidateRequest(BaseModel):
     cluster: Cluster
     path: str
     paper: Optional[PaperRef] = None
+    # Optional selected model, carried through for parity with create; not otherwise
+    # constrained (codex on remote clusters is supported via local staging).
+    model: Optional[str] = None
 
 
 class CreateDiagramRequest(BaseModel):
