@@ -1000,6 +1000,7 @@ def render_eval_config_preview(
     data_dir: str | None = None,
     train_num_gpus: int | None = None,
     eval_num_gpus: int | None = None,
+    n_envs_per_gpu: int | None = None,
     eval_unset_cuda_visible_devices_for_server: int | None = None,
     train_git_commit: str | None = None,
     train_note: str | None = None,
@@ -1024,6 +1025,10 @@ def render_eval_config_preview(
         # (EVAL_GPU_COUNT). It must equal the GPUs the job allocates, or the job
         # reserves N GPUs but only runs one worker on GPU 0.
         text = set_scalar(text, "EVAL_NUM_GPUS", eval_num_gpus)
+    if n_envs_per_gpu is not None:
+        # DexJoCo eval sim envs per GPU. Drives EVAL_PARALLEL_WORKERS in the
+        # eval body; the SUBMIT_N_ENVS_PER_GPU export takes final precedence.
+        text = set_scalar(text, "N_ENVS_PER_GPU", n_envs_per_gpu)
     if eval_n_episodes is not None:
         text = set_scalar(text, "N_EPISODES", eval_n_episodes)
     if eval_n_runs is not None:

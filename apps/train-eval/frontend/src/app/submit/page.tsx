@@ -73,6 +73,7 @@ type EvalConfigEdit = {
   nEpisodes: string;
   nRuns: string;
   numGpus: string;
+  nEnvsPerGpu: string;
   evalSets: string;
   evalTasks: string;
   dexjocoTask: string;
@@ -332,6 +333,7 @@ export default function SubmitPage() {
         variant.data?.vars.EVAL_NUM_GPUS ??
         variant.data?.vars.TRAIN_NUM_GPUS ??
         "1",
+      nEnvsPerGpu: variant.data?.vars.N_ENVS_PER_GPU ?? "1",
       evalSets: formatEvalSetsInput(variant.data?.arrays.EVAL_SETS ?? []),
       // Multitask task-subset selection defaults to all tasks (the SHORT label,
       // first "|"-field of each TASKS entry).
@@ -375,6 +377,12 @@ export default function SubmitPage() {
     !wantsCheckpoint ||
     (isPositiveInteger(evalNumGpus) &&
       (isSlurm || [1, 2, 4, 8].includes(evalNumGpusParsed)));
+  // DexJoCo-only: sim envs per GPU (N_ENVS_PER_GPU). Only meaningful for the
+  // DexJoCo eval harness, so validation is gated on isDexjoco below.
+  const evalNEnvsPerGpu = activeEvalConfigEdit
+    ? activeEvalConfigEdit.nEnvsPerGpu
+    : evalConfigDefaults.nEnvsPerGpu;
+  const evalNEnvsPerGpuParsed = Number.parseInt(evalNEnvsPerGpu.trim(), 10);
   const evalSetValues = parseEvalSetsInput(evalSetsText);
   const evalSetOptions = variant.data?.arrays.EVAL_SETS ?? [];
   // Multitask task-subset selection (SHORT labels), mirroring eval_sets.
@@ -403,10 +411,13 @@ export default function SubmitPage() {
   // Shared eval-config input validity, used by the preview, submit, and review
   // gates below so they stay in lockstep (they previously drifted — canSubmit
   // omitted evalNumGpusValid).
+  const evalNEnvsPerGpuValid =
+    !(wantsCheckpoint && isDexjoco) || isPositiveInteger(evalNEnvsPerGpu);
   const evalConfigInputsValid =
     evalNEpisodesValid &&
     evalNRunsValid &&
     evalNumGpusValid &&
+    evalNEnvsPerGpuValid &&
     evalSetsValid &&
     evalTasksValid &&
     dexjocoTaskValid;
@@ -422,6 +433,7 @@ export default function SubmitPage() {
       nEpisodes: evalConfigDefaults.nEpisodes,
       nRuns: evalConfigDefaults.nRuns,
       numGpus: evalConfigDefaults.numGpus,
+      nEnvsPerGpu: evalConfigDefaults.nEnvsPerGpu,
       evalSets: evalConfigDefaults.evalSets,
       evalTasks: evalConfigDefaults.evalTasks,
       dexjocoTask: evalConfigDefaults.dexjocoTask,
@@ -632,6 +644,8 @@ export default function SubmitPage() {
       eval_n_episodes: wantsCheckpoint ? evalNEpisodesParsed : null,
       eval_n_runs: wantsCheckpoint ? evalNRunsParsed : null,
       eval_num_gpus: wantsCheckpoint ? evalNumGpusParsed : null,
+      eval_n_envs_per_gpu:
+        wantsCheckpoint && isDexjoco ? evalNEnvsPerGpuParsed : null,
       eval_sets: wantsCheckpoint ? evalSetValues : null,
       eval_tasks: wantsCheckpoint && isMultitask ? evalTaskValues : null,
       eval_overwrite_results: wantsCheckpoint ? evalOverwriteResults : false,
@@ -677,6 +691,7 @@ export default function SubmitPage() {
       submittedGitCommit,
       evalNEpisodes,
       evalNRuns,
+      evalNEnvsPerGpu,
       evalSetValues,
       evalTaskValues,
       dexjocoTask,
@@ -1189,6 +1204,23 @@ export default function SubmitPage() {
       flag: "EVAL_NUM_GPUS",
       value: evalNumGpus || "(unset)",
       editor: gpuCountEditor,
+    });
+  }
+  // N_ENVS_PER_GPU is a DexJoCo-only eval knob (sim envs per GPU); Isaac eval
+  // uses EVAL_NUM_ENVS_PER_GPU instead, so only surface it for DexJoCo.
+  if (phase === "eval" && hasVariant && isDexjoco) {
+    extraFlagRows.push({
+      key: "n-envs-per-gpu",
+      flag: "N_ENVS_PER_GPU",
+      value: evalNEnvsPerGpu || "(unset)",
+      editor: (
+        <NumberCellEditor
+          value={evalNEnvsPerGpu}
+          onChange={(value) => updateEvalConfig({ nEnvsPerGpu: value })}
+          valid={evalNEnvsPerGpuValid}
+          invalidMessage="Positive integer."
+        />
+      ),
     });
   }
   if (hasVariant) {

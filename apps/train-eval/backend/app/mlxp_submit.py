@@ -205,6 +205,9 @@ class MlxpSubmitRequest(BaseModel):
     dataset_override: str | list[str] | None = None
     extra_args: list[str] = Field(default_factory=list)
     eval_num_envs_per_gpu: int | None = Field(default=None, ge=1)
+    # Eval-only (DexJoCo): override N_ENVS_PER_GPU sim envs per GPU. Distinct
+    # from eval_num_envs_per_gpu (Isaac native vectorized envs).
+    eval_n_envs_per_gpu: int | None = Field(default=None, ge=1)
     eval_n_episodes: int | None = Field(default=None, ge=1)
     eval_n_runs: int | None = Field(default=None, ge=1)
     eval_sets: list[str] | None = None
@@ -248,6 +251,7 @@ async def submit_mlxp(req: MlxpSubmitRequest) -> MlxpSubmitResponse:
     req.eval_num_envs_per_gpu = clamp_eval_num_envs(req.eval_num_envs_per_gpu)
     if req.phase != "eval" and any((
         req.eval_num_envs_per_gpu is not None,
+        req.eval_n_envs_per_gpu is not None,
         req.eval_n_episodes is not None,
         req.eval_n_runs is not None,
         req.eval_sets is not None,
@@ -408,6 +412,17 @@ def _build_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str, job
     exp_dir = f"{settings.experiments_dir}/{variant.name}"
     path = paths.config_path(exp_dir, suffix)
     meta_path = paths.meta_path(exp_dir, suffix)
+    rewrites_modality = (
+        rewrites_modality_action_horizon(action_horizon_mode)
+        and req.action_horizon is not None
+    )
+    snapshots_n17_multi_modality = (
+        model.family == "n1.7"
+        and bool((variant.vars.get("TRAIN_DATA_YAML") or "").strip())
+        and bool((variant.vars.get("TRAIN_MODALITY_CONFIG") or "").strip())
+    )
+    snapshots_modality = rewrites_modality or snapshots_n17_multi_modality
+    snapshot_modality_name = f"modality_{suffix}.py" if snapshots_modality else None
     config_text = render_training_config_snapshot(
         base_config=variant.raw,
         variant=variant.name,
@@ -423,11 +438,7 @@ def _build_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str, job
         train_save_steps=train_save_steps,
         train_num_workers=train_num_workers,
         train_action_horizon=req.action_horizon,
-        train_modality_config=(
-            f"modality_{suffix}.py"
-            if rewrites_modality_action_horizon(action_horizon_mode) and req.action_horizon is not None
-            else None
-        ),
+        train_modality_config=snapshot_modality_name,
         train_git_commit=req.train_git_commit,
         train_note=train_note,
         wandb_project=_wandb_project(),
@@ -450,9 +461,7 @@ def _build_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str, job
         train_num_workers=train_num_workers,
         train_action_horizon=req.action_horizon,
         train_modality_config=(
-            f"{exp_dir}/modality_{suffix}.py"
-            if rewrites_modality_action_horizon(action_horizon_mode) and req.action_horizon is not None
-            else None
+            f"{exp_dir}/{snapshot_modality_name}" if snapshot_modality_name else None
         ),
         train_git_commit=req.train_git_commit,
         train_note=train_note,
@@ -479,12 +488,14 @@ def _build_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str, job
         "git_committed_dirty": submit_git.committed_dirty,
         "action_horizon_mode": action_horizon_mode,
     }
-    if rewrites_modality_action_horizon(action_horizon_mode) and req.action_horizon is not None:
+    if snapshots_modality:
         _, modality_path = resolve_modality_config(variant)
         payload["modality_path"] = f"{exp_dir}/modality_{suffix}.py"
-        payload["modality_text"] = rewrite_action_horizon(
-            modality_path.read_text(),
-            req.action_horizon,
+        modality_text = modality_path.read_text()
+        payload["modality_text"] = (
+            rewrite_action_horizon(modality_text, req.action_horizon)
+            if rewrites_modality
+            else modality_text
         )
     return payload
 
@@ -526,6 +537,7 @@ def _build_eval_snapshot_payload(*, variant, req: MlxpSubmitRequest, job_id: str
         extra_args=req.extra_args,
         data_dir=settings.datasets_dir,
         eval_num_gpus=req.num_gpus,
+        n_envs_per_gpu=req.eval_n_envs_per_gpu,
         eval_unset_cuda_visible_devices_for_server=1,
         train_git_commit=req.train_git_commit,
         train_note=train_note,
@@ -1079,10 +1091,23 @@ def _render_body_n17(*, variant, req: MlxpSubmitRequest, job_name: str,
             .replace("${DATA_DIR}", settings.datasets_dir)
             .replace("$DATA_DIR", settings.datasets_dir)
         )
+        modality_arg = ""
+        modality_stage = ""
+        modality_rel = (variant.vars.get("TRAIN_MODALITY_CONFIG") or "").strip()
+        if modality_rel:
+            _, modality_path = resolve_modality_config(variant)
+            modality_text = snapshot.get("modality_text")
+            if not isinstance(modality_text, str):
+                modality_text = modality_path.read_text()
+            modality_text = ensure_trailing_newline(modality_text)
+            modality_stage = f"""
+cat > /tmp/modality_config.py <<'PY_EOF'
+{modality_text}PY_EOF"""
+            modality_arg = " --modality-config-path /tmp/modality_config.py"
         action_horizon = (variant.vars.get("TRAIN_ACTION_HORIZON") or "").strip()
         action_horizon_arg = f" --action-horizon {action_horizon}" if action_horizon else ""
         stage_block = f"""cat > /tmp/data_config.yaml <<'YAML_EOF'
-{data_yaml_text}YAML_EOF"""
+{data_yaml_text}YAML_EOF{modality_stage}"""
         launch_block = f"""uv run $UV_RUN_ARGS torchrun --nproc_per_node={req.num_gpus} gr00t/experiment/launch_finetune_multi.py \\
     --base-model-path nvidia/GR00T-N1.7-3B \\
     --data-yaml /tmp/data_config.yaml \\
@@ -1098,7 +1123,7 @@ def _render_body_n17(*, variant, req: MlxpSubmitRequest, job_name: str,
     --use-wandb \\
     --wandb-project {wandb_project} \\
     --color-jitter-params brightness 0.2 contrast 0.2 saturation 0.2 hue 0.1 \\
-    $RESUME_FLAG{action_horizon_arg} {train_extra} {user_extra}"""
+    $RESUME_FLAG{action_horizon_arg}{modality_arg} {train_extra} {user_extra}"""
     else:
         # Single-dataset: inline the modality .py and pass one --dataset-path.
         _, modality_path = resolve_modality_config(variant)
@@ -1198,7 +1223,13 @@ def _render_body_gam(*, variant, req: MlxpSubmitRequest, job_name: str,
     run_log_dir = f"{ckpt_dir}/logs"
     wandb_project = shlex.quote(_wandb_project())
     output_namespace = ckpt_dir.rstrip("/").rsplit("/", 1)[-1]
-    datasets_dir = settings.datasets_dir
+    datasets_dir = (
+        variant.vars.get("MLXP_DATA_DIR") or settings.datasets_dir
+    ).strip()
+    if not datasets_dir.startswith("/"):
+        raise ValueError(
+            f"variant {variant.name}: MLXP_DATA_DIR must be absolute, got {datasets_dir!r}"
+        )
 
     return f"""\
 set -euo pipefail
@@ -1236,6 +1267,16 @@ cat > /tmp/gam_config.yaml <<'GAM_CONFIG_EOF'
 # starts from the pretrained init.
 export DA3_ROOT={shlex.quote(repo_path)}
 export GAM_INIT_CKPT={shlex.quote(f"{repo_path}/checkpoints/pretrained-gam.pt")}
+
+# Auto-resume: when the namespace already holds a step checkpoint with its
+# DeepSpeed shard dir (preempted/killed run resubmitted with the same
+# output_namespace), init from it instead — train_robot restores optimizer
+# state and train_steps from the shard dir and continues to max_steps.
+latest_step_ckpt=$(ls "{ckpt_dir}/checkpoints"/0*.pt 2>/dev/null | sort | tail -n 1)
+if [ -n "${{latest_step_ckpt:-}}" ] && [ -d "${{latest_step_ckpt%.pt}}" ]; then
+    echo "[mlxp] existing step checkpoint detected — resuming from $latest_step_ckpt"
+    export GAM_INIT_CKPT="$latest_step_ckpt"
+fi
 
 # GAM_WANDB_RUN_ID == the display job name: the wrapper enables --wandb with
 # id==job_name (project pinned to dexjoco) so the backend resolves the run link.
@@ -1370,6 +1411,8 @@ cat > {shlex.quote(modality_target)} <<'TEW_MODALITY_EOF'
     ]
     if req.eval_num_envs_per_gpu is not None:
         eval_exports.append(f"export SUBMIT_EVAL_NUM_ENVS_PER_GPU={req.eval_num_envs_per_gpu}")
+    if req.eval_n_envs_per_gpu is not None:
+        eval_exports.append(f"export SUBMIT_N_ENVS_PER_GPU={req.eval_n_envs_per_gpu}")
     if req.eval_n_episodes is not None:
         eval_exports.append(f"export SUBMIT_EVAL_N_EPISODES={req.eval_n_episodes}")
     if req.eval_n_runs is not None:
@@ -1458,6 +1501,8 @@ def _job_comment(req: MlxpSubmitRequest, variant, snapshot: dict, model: Trainin
     else:
         if req.eval_num_envs_per_gpu is not None:
             fields["eval_num_envs_per_gpu"] = str(req.eval_num_envs_per_gpu)
+        if req.eval_n_envs_per_gpu is not None:
+            fields["eval_n_envs_per_gpu"] = str(req.eval_n_envs_per_gpu)
         if req.eval_n_episodes is not None:
             fields["eval_n_episodes"] = str(req.eval_n_episodes)
         if req.eval_n_runs is not None:

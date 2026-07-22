@@ -197,6 +197,7 @@ async def build_resubmit_request(
         # train_num_gpus, which skewed batch validation and SUBMIT_TRAIN_*).
         eval_num_gpus=int_meta("eval_num_gpus"),
         eval_num_envs_per_gpu=eval_num_envs_per_gpu,
+        eval_n_envs_per_gpu=int_meta("eval_n_envs_per_gpu"),
         eval_n_episodes=eval_n_episodes,
         eval_n_runs=eval_n_runs,
         eval_sets=eval_sets,

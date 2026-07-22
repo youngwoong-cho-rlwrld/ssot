@@ -113,6 +113,11 @@ class SubmitRequest(BaseModel):
     eval_n_episodes: int | None = Field(default=None, ge=1)
     eval_n_runs: int | None = Field(default=None, ge=1)
     eval_num_gpus: int | None = Field(default=None, ge=1)
+    # Eval-only (DexJoCo): override N_ENVS_PER_GPU — the number of sim envs run
+    # per GPU by the DexJoCo eval body. None means "use config.sh N_ENVS_PER_GPU".
+    # Distinct from eval_num_envs_per_gpu above (Isaac native vectorized envs,
+    # capped at 1); this drives EVAL_PARALLEL_WORKERS and the CPU/memory request.
+    eval_n_envs_per_gpu: int | None = Field(default=None, ge=1)
     eval_sets: list[str] | None = None
     # Eval-only: multitask task-subset selection (task SHORT labels). None runs
     # all TASKS from config.sh; a subset runs only the chosen tasks this submit.
@@ -713,8 +718,11 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
     if req.phase == "eval":
         job_num_gpus = resolve_eval_num_gpus(variant, req.eval_num_gpus, train_settings.num_gpus)
         # The eval body reads N_ENVS_PER_GPU from the sourced config.sh; read
-        # it here too so the CPU/memory request scales with the sim count.
-        eval_envs_per_gpu = variant_int(variant, "N_ENVS_PER_GPU", 1)
+        # it here too so the CPU/memory request scales with the sim count. An
+        # explicit per-submission override wins over the config default.
+        eval_envs_per_gpu = req.eval_n_envs_per_gpu or variant_int(
+            variant, "N_ENVS_PER_GPU", 1
+        )
     gpus = str(job_num_gpus)
     slurm_resources = slurm_resources_for(
         cluster=req.cluster,
@@ -859,6 +867,7 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
             extra_args=req.extra_args,
             train_num_gpus=train_settings.num_gpus,
             eval_num_gpus=job_num_gpus,
+            n_envs_per_gpu=req.eval_n_envs_per_gpu,
             train_git_commit=train_git_commit,
             train_note=train_note,
             dexjoco_task=req.dexjoco_task,
@@ -1063,6 +1072,10 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
             if req.phase == "eval" and eval_num_envs_per_gpu is not None else ""
         )
         + (
+            f",SUBMIT_N_ENVS_PER_GPU={req.eval_n_envs_per_gpu}"
+            if req.phase == "eval" and req.eval_n_envs_per_gpu is not None else ""
+        )
+        + (
             f",SUBMIT_EVAL_N_EPISODES={req.eval_n_episodes}"
             if req.phase == "eval" and req.eval_n_episodes is not None else ""
         )
@@ -1141,6 +1154,11 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
             # made the Jobs-page GPU fallback and resume rebuild the wrong count.
             f"eval_num_gpus={job_num_gpus}\n"
             if req.phase == "eval"
+            else ""
+        )
+        + (
+            f"eval_n_envs_per_gpu={req.eval_n_envs_per_gpu}\n"
+            if req.phase == "eval" and req.eval_n_envs_per_gpu is not None
             else ""
         )
         + (
