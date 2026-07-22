@@ -247,7 +247,7 @@ export function Viewer({
         >
           <RefreshCcw size={14} /> Re-provision
         </button>
-        {current?.status === "running" && (
+        {(current?.status === "running" || current?.status === "error") && (
           <button
             type="button"
             className={`ssot-icon-btn${outputOpen ? " ssot-icon-btn--on" : ""}`}
@@ -289,10 +289,13 @@ export function Viewer({
       <div className="viewer__frame">
         {error ? (
           <div className="panel__status panel__status--err">{error}</div>
-        ) : current && current.status === "running" ? (
-          // Reconnect to the live stage stream (the backend replays past stage
-          // events on connect, so the checklist restores) and swap in the
-          // rendered diagram once the run completes.
+        ) : current && (current.status === "running" || current.status === "error") ? (
+          // Running: reconnect to the live stage stream (the backend replays past
+          // stage events on connect, so the checklist restores) and swap in the
+          // rendered diagram once the run completes. Errored: the same embedded view
+          // renders the failure notice (kind/detail/hint, or the neutral cancelled
+          // notice) and its agent-output toggle, so the user can see what happened
+          // instead of a bare "this run is error" placeholder.
           <RunProgress
             key={runId}
             embedded
@@ -302,11 +305,6 @@ export function Viewer({
             onDone={() => setReloadNonce((n) => n + 1)}
             onBack={onBack}
           />
-        ) : current && current.status !== "done" ? (
-          <div className="panel__status">
-            This run is {STATUS_LABEL[current.status]}. Select a completed run to
-            view its diagram.
-          </div>
         ) : (
           // Done: an always-present LEFT panel of collapsible sections
           // (chat + memo, OpenClaw LIVE LOG grammar) | the diagram fills the rest.
