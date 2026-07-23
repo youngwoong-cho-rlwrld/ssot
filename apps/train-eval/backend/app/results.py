@@ -30,6 +30,10 @@ class ResultCell(BaseModel):
     completed_runs: int
     expected_runs: int | None = None
     source: str | None = None
+    # True when at least one run was counted from its per-episode outcome dirs
+    # because the summary results.json had not been staged yet. Stored for the
+    # UI to distinguish if ever needed; not yet surfaced.
+    provisional: bool = False
 
 
 class ResultTask(BaseModel):
@@ -76,6 +80,22 @@ class ResultsResponse(BaseModel):
     # last successful scan; stale is True when any cluster's cache is behind.
     fetched_at: dict[str, float] | None = None
     stale: bool | None = None
+
+
+def provisional_rate_from_episodes(success, failure, n_episodes):
+    """Rate for a run whose summary results.json has not been staged yet but
+    whose per-episode outcome dirs are all present.
+
+    Returns (rate, success, total) when success+failure equals the expected
+    episode count, else None so an in-progress run (fewer episodes) stays
+    partial. This is the canonical, unit-tested copy; _REMOTE_SCRIPT carries an
+    identical inline copy because it runs standalone on the cluster — keep the
+    two in sync.
+    """
+    total = success + failure
+    if not n_episodes or total != n_episodes:
+        return None
+    return (success / total if total else 0.0, success, total)
 
 
 async def _scan_cluster_results(
@@ -372,7 +392,7 @@ def rate_from_run(data):
     return None, int_or_none(success_count), int_or_none(total)
 
 
-def cell_from_rates(eval_set, rates, success_counts=None, episode_counts=None, expected_runs=None, source=None):
+def cell_from_rates(eval_set, rates, success_counts=None, episode_counts=None, expected_runs=None, source=None, provisional=False):
     episode_counts = episode_counts or []
     if not rates and not any((v or 0) > 0 for v in episode_counts):
         return None
@@ -386,6 +406,7 @@ def cell_from_rates(eval_set, rates, success_counts=None, episode_counts=None, e
         "completed_runs": len(rates),
         "expected_runs": expected_runs,
         "source": source,
+        "provisional": provisional,
     }
 
 
@@ -533,7 +554,28 @@ def scan_eval_sets(node, configured_eval_sets):
     return ordered
 
 
-def cells_from_runs(task_node, configured_eval_sets, expected_runs):
+def _episode_outcomes(run_path):
+    # Per-run outcome dirs are written as <run>/<*>/episode_<NN>_{success,failure}
+    # (e.g. dexjoco_out/episode_00_success). Count them without assuming the
+    # intermediate dir name.
+    try:
+        succ = sum(1 for _ in Path(run_path).glob("*/episode_*_success"))
+        fail = sum(1 for _ in Path(run_path).glob("*/episode_*_failure"))
+    except Exception:
+        return 0, 0
+    return succ, fail
+
+
+def _provisional_rate_from_episodes(success, failure, n_episodes):
+    # Mirror of results.provisional_rate_from_episodes (this script runs
+    # standalone on the cluster and cannot import it). Keep the two in sync.
+    total = success + failure
+    if not n_episodes or total != n_episodes:
+        return None
+    return (success / total if total else 0.0, success, total)
+
+
+def cells_from_runs(task_node, configured_eval_sets, expected_runs, n_episodes=None):
     cells = []
     if task_node is None:
         return cells
@@ -555,9 +597,21 @@ def cells_from_runs(task_node, configured_eval_sets, expected_runs):
             if rate is not None:
                 vals.append((rate, success_count, total))
                 completed.add(node.name)
+        provisional = False
         partial_episode_counts = []
         for node in run_nodes:
             if node.name in completed:
+                continue
+            # Fallback: a run whose summary results.json has not been staged yet
+            # but whose per-episode outcome dirs are all present is a completed
+            # run — derive its rate from them. Gated on n_episodes so a run still
+            # in progress (fewer episodes) stays partial.
+            succ, fail = _episode_outcomes(node.path)
+            derived = _provisional_rate_from_episodes(succ, fail, n_episodes)
+            if derived is not None:
+                vals.append(derived)
+                completed.add(node.name)
+                provisional = True
                 continue
             try:
                 count = sum(1 for _ in Path(node.path, "videos").glob("ep*.mp4"))
@@ -573,6 +627,7 @@ def cells_from_runs(task_node, configured_eval_sets, expected_runs):
             [v[2] for v in vals] + partial_episode_counts,
             expected_runs,
             eval_node.path,
+            provisional,
         )
         if cell:
             cells.append(cell)
@@ -1076,7 +1131,7 @@ def build_variant_from_root(meta, eval_node, eval_root, top_path, top_exists, to
     for task in tasks:
         short = task.get("short") or variant
         task_node = eval_node.children.get(short) if len(tasks) > 1 else eval_node
-        cells = cells_from_runs(task_node, configured_eval_sets, expected_runs)
+        cells = cells_from_runs(task_node, configured_eval_sets, expected_runs, result["n_episodes"])
         if cells:
             result["tasks"].append({
                 "task": short,

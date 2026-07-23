@@ -326,6 +326,7 @@ export type NotificationSettings = {
   configured: boolean;
   notify_submitted: boolean;
   notify_running: boolean;
+  notify_suspended: boolean;
   notify_completed: boolean;
   notify_failed: boolean;
   notify_cancelled: boolean;

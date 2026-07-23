@@ -36,8 +36,7 @@ import {
   resubmitSourceLabel,
   type JobPhase,
 } from "@/lib/job-status";
-
-const REFRESH_MS = 60_000;
+import { REFRESH_MS } from "@/lib/refresh";
 
 // Query-key families that make up the /jobs view. The refresh button
 // invalidates them and the in-flight indicator watches them, so keep the two

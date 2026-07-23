@@ -23,8 +23,9 @@ import { Th } from "@/components/table";
 import { jobDetailHref, jobVideosHref } from "@/lib/job-links";
 import { basename, formatPct } from "@/lib/format";
 import { copyRich } from "@/lib/clipboard";
+import { RESULTS_REFRESH_MS } from "@/lib/refresh";
+import { useCopiedFlag } from "@/lib/use-copied-flag";
 
-const REFRESH_MS = 120_000;
 const AVERAGE_HELP =
   "Ave is total successes divided by total episodes across all displayed eval sets for this task. It is computed from per-run eval_results/**/run_*/results.json files, not the top-level aggregate results.json.";
 
@@ -60,7 +61,7 @@ export default function ResultsPage() {
         `/api/results?cluster=${encodeURIComponent(c)}${freshClustersRef.current.delete(c) ? "&fresh=1" : ""}`,
       ),
       refetchInterval: (query: { state: { data?: ResultsResponse } }) => (
-        query.state.data?.stale ? 5_000 : REFRESH_MS
+        query.state.data?.stale ? 5_000 : RESULTS_REFRESH_MS
       ),
       placeholderData: keepPreviousData,
     })),
@@ -94,6 +95,14 @@ export default function ResultsPage() {
     0,
   );
 
+  // Most recent per-cluster scan time across loaded clusters (epoch seconds).
+  // Surfaced as "checked <time>" so a refresh that finds no newer eval still
+  // visibly updates — the "latest" labels below track eval recency, not fetches.
+  const lastChecked = resultQueries.reduce((latest, q) => {
+    const stamps = Object.values(q.data?.fetched_at ?? {});
+    return stamps.length ? Math.max(latest, ...stamps) : latest;
+  }, 0);
+
   const groups = groupByExperiment(variants);
   // A narrow name filter means the user is hunting something specific —
   // open the few matching groups so their tables are visible immediately.
@@ -118,6 +127,12 @@ export default function ResultsPage() {
             <span>{taskCount} tasks</span>
             <span className="text-slate-300 dark:text-slate-700">/</span>
             <span>{evalCellCount} eval-set summaries</span>
+            {lastChecked > 0 && (
+              <>
+                <span className="text-slate-300 dark:text-slate-700">/</span>
+                <span>checked {formatKstShort(lastChecked * 1000)}</span>
+              </>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-end justify-end gap-3">
@@ -157,7 +172,7 @@ export default function ResultsPage() {
           {probing.length > 0 && (
             <InlineLoading label={`Loading ${probing.join(", ")}...`} className="h-8" />
           )}
-          <RefreshButton isFetching={isFetching} onRefresh={refresh} intervalMs={REFRESH_MS} />
+          <RefreshButton isFetching={isFetching} onRefresh={refresh} intervalMs={RESULTS_REFRESH_MS} />
         </div>
       </div>
 
@@ -336,7 +351,7 @@ function ExperimentGroup({
           <span className="text-xs text-[var(--ssot-text-soft)]">
             {group.members.length} result{group.members.length === 1 ? "" : "s"}
           </span>
-          {latest && <span className="text-xs text-slate-400">latest {latest}</span>}
+          {latest && <span className="text-xs text-slate-400">latest eval {latest}</span>}
         </span>
       </button>
       {expanded && (
@@ -492,14 +507,13 @@ function CopyResultTableButton({
   variant: ResultVariant;
   evalSets: string[];
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useCopiedFlag();
 
   async function copyTable() {
     try {
       await writeResultTableToClipboard(variant, evalSets);
-      setCopied(true);
+      markCopied();
       toast.success("Result table copied");
-      setTimeout(() => setCopied(false), 1500);
     } catch (e) {
       toast.error(`Copy failed: ${(e as Error).message}`);
     }

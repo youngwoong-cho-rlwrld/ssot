@@ -108,5 +108,75 @@ class NotificationMonitorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("skt/153064", messages)
 
 
+class SuspendedNotificationTests(unittest.IsolatedAsyncioTestCase):
+    def test_event_for_state_maps_suspended(self):
+        # mlxp maps a Kueue-suspended workload (Job .spec.suspend) to the
+        # normalized state "SUSPENDED"; it must be a notable event, and resume
+        # surfaces through the existing RUNNING event.
+        self.assertEqual(notifications._event_for_state("SUSPENDED"), "suspended")
+        self.assertEqual(notifications._event_for_state("RUNNING"), "running")
+        # Non-notable states stay unmapped.
+        self.assertIsNone(notifications._event_for_state("PENDING"))
+
+    def test_event_enabled_gates_suspended(self):
+        cfg = notifications.notifications_config
+        with patch.object(
+            cfg, "get_settings",
+            return_value=cfg.NotificationSettings(notify_suspended=True),
+        ):
+            self.assertTrue(cfg.event_enabled("suspended"))
+        with patch.object(
+            cfg, "get_settings",
+            return_value=cfg.NotificationSettings(notify_suspended=False),
+        ):
+            self.assertFalse(cfg.event_enabled("suspended"))
+
+    async def _run_tick(self, listed_state: str, prior_event: str) -> AsyncMock:
+        async def list_jobs(cluster_names, **_kwargs):
+            return [job(cluster_names[0], listed_state)]
+
+        monitor = notifications._Monitor()
+        monitor.primed = {"person@example.com"}
+        monitor.state = {
+            "person@example.com|skt/153064": {
+                "email": "person@example.com", "cluster": "skt", "event": prior_event,
+            },
+        }
+        monitor._persist = Mock()
+        post = AsyncMock()
+        with (
+            patch.object(notifications.clusters, "list_clusters", return_value=["skt"]),
+            patch.object(notifications.jobs, "list_jobs", list_jobs),
+            patch.object(
+                notifications.notifications_config, "get_settings",
+                return_value=SimpleNamespace(enabled=True, configured=True),
+            ),
+            patch.object(
+                notifications.notifications_config, "event_enabled", return_value=True,
+            ),
+            patch.object(notifications, "_post", post),
+            patch.object(
+                notifications.settings_db, "list_principals",
+                return_value=["person@example.com"],
+            ),
+        ):
+            await monitor._tick()
+        return post
+
+    async def test_transition_into_suspended_notifies(self):
+        post = await self._run_tick("SUSPENDED", prior_event="running")
+        self.assertEqual(post.await_count, 1)
+        message = post.await_args_list[0].args[0]
+        self.assertIn("Suspended", message)
+        self.assertIn("skt/153064", message)
+
+    async def test_resume_from_suspended_notifies_running(self):
+        post = await self._run_tick("RUNNING", prior_event="suspended")
+        self.assertEqual(post.await_count, 1)
+        message = post.await_args_list[0].args[0]
+        self.assertIn("Running", message)
+        self.assertIn("skt/153064", message)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,13 +12,12 @@ import {
   type VideoFile,
   type VideoListing,
 } from "@/lib/api";
-import { formatPct } from "@/lib/format";
+import { formatBytes, formatPct } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/loading-state";
 import { evalRunSlug, jobDetailHref } from "@/lib/job-links";
-
-const REFRESH_MS = 60_000;
+import { REFRESH_MS } from "@/lib/refresh";
 
 function runDirOf(resultsPath: string): string {
   const i = resultsPath.lastIndexOf("/");
@@ -28,13 +27,6 @@ function runDirOf(resultsPath: string): string {
 function relDir(evalDir: string | null, absDir: string): string {
   if (evalDir && absDir.startsWith(evalDir + "/")) return absDir.slice(evalDir.length + 1);
   return absDir;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 function formatSuccess(row: EvalRun): string | null {
@@ -169,7 +161,7 @@ function VideoTile({
       />
       <div className="mt-1 flex items-center justify-between gap-2 text-xs text-[var(--ssot-text-soft)]">
         <span className="truncate font-mono">{videoBasename(video.episode)}</span>
-        <span className="shrink-0">{formatSize(video.size)}</span>
+        <span className="shrink-0">{formatBytes(video.size)}</span>
       </div>
     </div>
   );

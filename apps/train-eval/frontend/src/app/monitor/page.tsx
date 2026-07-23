@@ -12,8 +12,7 @@ import { GpuQueueTooltipContent } from "@/components/gpu-queue-visualization";
 import { isSlurmCluster } from "@/lib/cluster-env";
 import { sumGpu } from "@/lib/gpu";
 import { cn } from "@/lib/utils";
-
-const REFRESH_MS = 60_000;
+import { REFRESH_MS } from "@/lib/refresh";
 const TOOLTIP_VIEWPORT_GAP = 12;
 const TOOLTIP_OFFSET = 8;
 

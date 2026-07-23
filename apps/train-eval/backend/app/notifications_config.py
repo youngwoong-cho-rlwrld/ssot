@@ -11,6 +11,7 @@ class NotificationSettings(BaseModel):
     configured: bool = False
     notify_submitted: bool = False
     notify_running: bool = False
+    notify_suspended: bool = False
     notify_completed: bool = False
     notify_failed: bool = False
     notify_cancelled: bool = False
@@ -21,6 +22,7 @@ class NotificationSettingsUpdate(BaseModel):
     slack_webhook_url: str | None = None
     notify_submitted: bool = False
     notify_running: bool = False
+    notify_suspended: bool = False
     notify_completed: bool = False
     notify_failed: bool = False
     notify_cancelled: bool = False
@@ -43,6 +45,7 @@ def get_settings() -> NotificationSettings:
         configured=bool(webhook_url()),
         notify_submitted=bool(data.get("notify_submitted", False)),
         notify_running=bool(data.get("notify_running", False)),
+        notify_suspended=bool(data.get("notify_suspended", False)),
         notify_completed=bool(data.get("notify_completed", False)),
         notify_failed=bool(data.get("notify_failed", False)),
         notify_cancelled=bool(data.get("notify_cancelled", False)),
@@ -57,6 +60,7 @@ def save_settings(req: NotificationSettingsUpdate) -> NotificationSettings:
             data["slack_webhook_url"] = req.slack_webhook_url.strip()
         data["notify_submitted"] = bool(req.notify_submitted)
         data["notify_running"] = bool(req.notify_running)
+        data["notify_suspended"] = bool(req.notify_suspended)
         data["notify_completed"] = bool(req.notify_completed)
         data["notify_failed"] = bool(req.notify_failed)
         data["notify_cancelled"] = bool(req.notify_cancelled)
@@ -71,6 +75,7 @@ def event_enabled(event: str) -> bool:
     return {
         "submitted": settings.notify_submitted,
         "running": settings.notify_running,
+        "suspended": settings.notify_suspended,
         "completed": settings.notify_completed,
         "failed": settings.notify_failed,
         "cancelled": settings.notify_cancelled,

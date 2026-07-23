@@ -155,6 +155,26 @@ class SubmitRequest(BaseModel):
     commit_dirty_changes: bool = False
 
 
+def derive_model_output_dir(
+    phase: str,
+    unified_exp_root: str,
+    checkpoint_dir: str | None,
+    eval_dir: str | None,
+    exp_out_dir: str,
+) -> str | None:
+    """The MODEL_OUTPUT_DIR value the SKT slurm job_submit filter requires.
+
+    Clusters that pin a unified outputs root run a filter rejecting any sbatch
+    job whose MODEL_OUTPUT_DIR is unset or not under that root. Return the job's
+    real per-job output dir (checkpoints for train, eval_results for eval), which
+    already lives under the unified root; None for clusters without one (no
+    filter), so kakao and mlxp are unaffected.
+    """
+    if not unified_exp_root:
+        return None
+    return (checkpoint_dir if phase == "train" else eval_dir) or exp_out_dir
+
+
 def make_default_job_name(phase: str, variant: str) -> str:
     username = user_config.get_username()
     prefix = f"{username}_" if username else ""
@@ -776,6 +796,7 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
         phase=req.phase,
         num_gpus=job_num_gpus,
         n_envs_per_gpu=eval_envs_per_gpu,
+        env_flag=cluster.vars.get("SLURM_PARTITION_DEFAULTS_ONLY"),
     )
 
     # Unified shape across slurm + MLXP. The cluster/partition are shown in
@@ -807,6 +828,15 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
     )
     results_path = paths.results_path(eval_dir) if eval_dir else None
     job_log_dir = paths.job_log_dir(exp_out_dir, output_namespace) if output_namespace else ""
+    # Clusters that pin a unified outputs root (e.g. SKT) run a slurm job_submit
+    # filter that rejects any sbatch job whose MODEL_OUTPUT_DIR env is unset or
+    # not under /<unified-root>/<user>/. Export this job's real per-job output
+    # dir (checkpoints for train, eval_results for eval) so both fresh submit and
+    # resume clear the filter; both already live under the unified root. Clusters
+    # without a unified root (kakao) have no such filter and set nothing.
+    model_output_dir = derive_model_output_dir(
+        req.phase, unified_exp_root, checkpoint_dir, eval_dir, exp_out_dir
+    )
     snapshot_paths = config_snapshot_paths(req.variant, job_name)
 
     snapshot_rel = snapshot_paths.rel
@@ -1083,6 +1113,10 @@ async def submit(req: SubmitRequest) -> SubmitResponse:
         + (
             f",SUBMIT_OUTPUT_NAMESPACE={shlex.quote(output_namespace)}"
             if output_namespace else ""
+        )
+        + (
+            f",MODEL_OUTPUT_DIR={shlex.quote(model_output_dir)}"
+            if model_output_dir else ""
         )
         # Pin wandb run id to the slurm display name so the URL is stable
         # and matches MLXP's run-id format.

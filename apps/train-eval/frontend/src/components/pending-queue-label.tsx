@@ -5,8 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ImmediateTooltip } from "@/components/immediate-tooltip";
 import { GpuQueueTooltipContent } from "@/components/gpu-queue-visualization";
 import { api, type GpuQueueSnapshot, type Job } from "@/lib/api";
-
-const REFRESH_MS = 60_000;
+import { REFRESH_MS } from "@/lib/refresh";
 
 export function PendingQueueLabel({ job, fallbackLabel }: { job: Job; fallbackLabel: string }) {
   const jobIdParam = job.cluster === "mlxp" ? `&job_id=${encodeURIComponent(job.job_id)}` : "";

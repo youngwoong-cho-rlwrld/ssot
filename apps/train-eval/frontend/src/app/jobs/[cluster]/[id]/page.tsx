@@ -57,8 +57,7 @@ import { JobTimestamp } from "@/components/job-timestamp";
 import { ProgressBar } from "@/components/progress-bar";
 import { JobLink } from "@/components/job-link";
 import { evalRunSlug, jobVideosHref } from "@/lib/job-links";
-
-const REFRESH_MS = 60_000;
+import { REFRESH_MS } from "@/lib/refresh";
 const LOG_PAGE_SIZE = 100;
 
 // Per-job query-key families scoped by [family, cluster, id]. The in-flight

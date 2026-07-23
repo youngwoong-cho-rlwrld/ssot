@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { ImmediateTooltip } from "@/components/immediate-tooltip";
 import { copyText } from "@/lib/clipboard";
+import { useCopiedFlag } from "@/lib/use-copied-flag";
 
 export function CopyButton({ value, title = "Copy" }: { value: string; title?: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, markCopied] = useCopiedFlag();
   return (
     <ImmediateTooltip content={title}>
       <button
@@ -16,8 +16,7 @@ export function CopyButton({ value, title = "Copy" }: { value: string; title?: s
           e.stopPropagation();
           try {
             await copyText(value);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            markCopied();
           } catch {
             // clipboard unavailable; leave the icon unchanged
           }

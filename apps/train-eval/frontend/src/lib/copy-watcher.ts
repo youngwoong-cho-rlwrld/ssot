@@ -2,7 +2,7 @@
 
 import { toast } from "sonner";
 import { api, type CopyJobStatus } from "@/lib/api";
-import { basename } from "@/lib/format";
+import { basename, formatBytes } from "@/lib/format";
 
 const STORAGE_KEY = "copy-checkpoint.active";
 const POLL_MS = 2000;
@@ -17,19 +17,6 @@ type ActiveCopy = {
 // Some browsers fire multiple events for the same tab; dedupe in-process so
 // we don't end up with N toasts for the same copy on hot-reload or remount.
 const watched = new Set<string>();
-
-function formatBytes(b: number | null): string {
-  if (b == null) return "-";
-  if (b < 1024) return `${b}B`;
-  const u = ["KB", "MB", "GB", "TB"];
-  let v = b / 1024;
-  let i = 0;
-  while (v >= 1024 && i < u.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(1)}${u[i]}`;
-}
 
 function readActive(): ActiveCopy[] {
   if (typeof window === "undefined") return [];

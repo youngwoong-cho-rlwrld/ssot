@@ -30,6 +30,28 @@ _SKT_L40S_GPU_TRAIN: dict[int, SlurmResources] = {
 _SLURM_TRAIN_FALLBACK = SlurmResources(cpus_per_task=16, memory="180G")
 _SLURM_EVAL_DEFAULT = SlurmResources(cpus_per_task=4, memory="40G")
 
+# Clusters whose slurmctld runs a job_submit filter that forbids explicit
+# --cpus-per-task / --mem (and --cpus-per-gpu / --mem-per-gpu / --mem-per-cpu) on
+# GPU partitions and auto-applies the partition per-GPU defaults (DefCpuPerGPU /
+# DefMemPerGPU). Submissions to these clusters must carry no CPU/memory flags.
+# This is a per-cluster policy, overridable per cluster via the env flag
+# SLURM_PARTITION_DEFAULTS_ONLY (1/0) when a cluster's filter is added or removed.
+_PARTITION_DEFAULTS_ONLY_CLUSTERS = frozenset({"kakao", "skt"})
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def cluster_enforces_partition_defaults(cluster: str, env_flag: str | None = None) -> bool:
+    """Whether the cluster's slurmctld rejects explicit CPU/memory sbatch flags.
+
+    An explicit SLURM_PARTITION_DEFAULTS_ONLY value in the cluster env wins;
+    otherwise fall back to the known-cluster default so a submission works
+    without extra configuration.
+    """
+    flag = (env_flag or "").strip().lower()
+    if flag:
+        return flag in _TRUTHY
+    return cluster.strip().lower() in _PARTITION_DEFAULTS_ONLY_CLUSTERS
+
 
 def _eval_resources(num_gpus: int, n_envs_per_gpu: int) -> SlurmResources:
     """Scale the eval request with the number of concurrent sim workers.
@@ -52,21 +74,23 @@ def slurm_resources_for(
     phase: Literal["train", "eval"],
     num_gpus: int,
     n_envs_per_gpu: int = 1,
+    env_flag: str | None = None,
 ) -> SlurmResources | None:
     """Resource request for the sbatch command, or None to send no flags.
 
-    kakao's slurmctld rejects an explicit --cpus-per-task ("파티션 기본값
-    (DefCpuPerGPU)이 자동 적용됩니다") and derives CPU/memory from the
-    partition's per-GPU defaults, so kakao submissions must not carry
-    resource flags at all.
+    Clusters whose slurmctld enforces partition-default CPU/memory (kakao and
+    skt) reject explicit --cpus-per-task / --mem ("파티션 기본값(DefCpuPerGPU)이
+    자동 적용됩니다") and derive CPU/memory from the partition per-GPU defaults, so
+    their submissions must carry no resource flags at all. `env_flag` is the
+    cluster's SLURM_PARTITION_DEFAULTS_ONLY override.
     """
-    cluster_key = cluster.strip().lower()
-    if cluster_key == "kakao":
+    if cluster_enforces_partition_defaults(cluster, env_flag):
         return None
 
     if phase == "eval":
         return _eval_resources(num_gpus, n_envs_per_gpu)
 
+    cluster_key = cluster.strip().lower()
     partition_key = partition.strip().lower()
     if cluster_key == "skt" and partition_key == "rlwrld-gpu":
         return _SKT_RLWRLD_GPU_TRAIN.get(num_gpus, _SLURM_TRAIN_FALLBACK)

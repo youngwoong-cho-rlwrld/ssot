@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   keepPreviousData,
   useMutation,
@@ -166,6 +166,10 @@ export default function SubmitPage() {
   const [variantName, setVariantName] = useState<string>("");
   const [variantFilter, setVariantFilter] = useState("");
   const variantFilterRef = useRef<HTMLInputElement>(null);
+  const variantFilterFocusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (variantFilterFocusTimer.current) clearTimeout(variantFilterFocusTimer.current);
+  }, []);
   const [phase, setPhase] = useState<Phase>("train");
   const [partition, setPartition] = useState<string>("");
   const mlxpSettings = useQuery({
@@ -1352,8 +1356,15 @@ export default function SubmitPage() {
                       return;
                     }
                     // Radix focuses the selected item right after open; queue
-                    // our focus behind that so the filter box wins.
-                    setTimeout(() => variantFilterRef.current?.focus(), 0);
+                    // our focus behind that so the filter box wins. Tracked so an
+                    // unmount before it fires can cancel it.
+                    if (variantFilterFocusTimer.current) {
+                      clearTimeout(variantFilterFocusTimer.current);
+                    }
+                    variantFilterFocusTimer.current = setTimeout(
+                      () => variantFilterRef.current?.focus(),
+                      0,
+                    );
                   }}
                 >
                   <SelectTrigger>

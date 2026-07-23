@@ -36,6 +36,7 @@ _BASE_URL = (os.environ.get("TRAIN_EVAL_WEB_BASE_URL") or "").rstrip("/")
 _EMOJI = {
     "submitted": ":rocket:",
     "running": ":runner:",
+    "suspended": ":double_vertical_bar:",
     "completed": ":white_check_mark:",
     "failed": ":x:",
     "cancelled": ":no_entry_sign:",
@@ -43,6 +44,7 @@ _EMOJI = {
 _LABEL = {
     "submitted": "Submitted",
     "running": "Running",
+    "suspended": "Suspended",
     "completed": "Completed",
     "failed": "Failed",
     "cancelled": "Cancelled",
@@ -51,10 +53,17 @@ _LABEL = {
 
 def _event_for_state(state: str) -> str | None:
     """Map a raw slurm/mlxp state to a notification event key (or None for
-    non-notable states like PENDING/COMPLETING/CONFIGURING/SUSPENDED)."""
+    non-notable states like PENDING/COMPLETING/CONFIGURING).
+
+    SUSPENDED is notable: mlxp maps a Kueue-suspended workload
+    (Job `.spec.suspend`) to this state, and a running job dropping into it is
+    a transition the user should hear about. Resume surfaces as the RUNNING
+    event when the scheduler readmits the workload."""
     u = short_state(state or "").upper()
     if u == "RUNNING":
         return "running"
+    if u.startswith("SUSPEND"):
+        return "suspended"
     if u.startswith("COMPLET") and u != "COMPLETING":  # COMPLETED
         return "completed"
     if u.startswith("CANCEL"):
