@@ -144,7 +144,7 @@ async def _extract_tar(stream: AsyncIterator[bytes], dest: str, *, cap_bytes: in
         await proc.wait()
         raise StagingError(
             f"the code/text portion of this root exceeds the {cap_bytes}-byte codex "
-            "staging cap even after excluding weights/datasets/logs — point at a smaller "
+            "staging cap even after excluding weights/datasets/logs; point at a smaller "
             "subtree or raise MODEL_DIAGRAM_CODEX_STAGE_MAX_BYTES"
         )
     _, stderr = await proc.communicate()
@@ -166,5 +166,5 @@ async def stage_root(access: dict, root: str, dest_dir: str, *, size_cap_bytes: 
     # A silently-empty mirror (transport produced nothing) is a failure, not a
     # valid empty root — the agent would then report "not a model root".
     if not os.listdir(mirror):
-        raise StagingError("mirror is empty after transfer — the remote root could not be read")
+        raise StagingError("mirror is empty after transfer, the remote root could not be read")
     return mirror

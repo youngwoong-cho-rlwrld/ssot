@@ -101,13 +101,31 @@ def codex_stage_max_bytes() -> int:
 # The frontend never hard-codes this list — it reads GET /api/models — so adding a
 # model here is the single source of truth. GET /api/models filters this to the
 # models whose runtime is actually available (see :func:`available_model_catalog`).
+#
+# SYNC: the shared picker catalog libs/ui/src/models-catalog.ts (MODEL_CATALOG)
+# mirrors these ids + labels so all three apps' model pickers match. Edit both together.
 MODEL_ALLOWLIST: list[tuple[str, str, str]] = [
+    # Anthropic (claude runtimes). claude-fable-5 stays the default (raw index 0).
     ("claude-fable-5", "Claude Fable", "claude"),
     ("claude-opus-4-8", "Claude Opus 4.8", "claude"),
     ("claude-sonnet-5", "Claude Sonnet", "claude"),
     ("claude-haiku-4-5", "Claude Haiku", "claude"),
+    # OpenAI (codex runtime) — the "configured" set OpenClaw exposes; the codex CLI
+    # accepts each as -m and OpenClaw reports each authed+available.
+    ("o1", "o1", "codex"),
+    ("gpt-5.5", "GPT-5.5", "codex"),
+    ("gpt-5.6", "GPT-5.6", "codex"),
     ("gpt-5.6-sol", "GPT-5.6 Sol", "codex"),
+    ("o3", "o3", "codex"),
 ]
+
+# GET /api/models orders anthropic (claude) before openai (codex), each group
+# sorted by display label; the frontend renders in that order.
+_FAMILY_ORDER = {"claude": 0, "codex": 1}
+
+
+def _sorted_allowlist() -> list[tuple[str, str, str]]:
+    return sorted(MODEL_ALLOWLIST, key=lambda e: (_FAMILY_ORDER.get(e[2], 99), e[1]))
 
 
 def model_name() -> str:
@@ -119,8 +137,9 @@ def model_catalog() -> list[dict[str, str]]:
 
     GET /api/models serves the availability-filtered subset instead
     (:func:`available_model_catalog`); this remains the complete registry.
+    Ordered anthropic-first then openai, each by label (see :func:`_sorted_allowlist`).
     """
-    return [{"id": mid, "label": label} for mid, label, _ in MODEL_ALLOWLIST]
+    return [{"id": mid, "label": label} for mid, label, _ in _sorted_allowlist()]
 
 
 def allowed_model_ids() -> set[str]:
@@ -152,7 +171,7 @@ def available_model_catalog() -> list[dict[str, str]]:
     """
     return [
         {"id": mid, "label": label, "family": fam}
-        for mid, label, fam in MODEL_ALLOWLIST
+        for mid, label, fam in _sorted_allowlist()
         if runtime_for_model(mid) != "none"
     ]
 

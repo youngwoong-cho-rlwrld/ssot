@@ -102,7 +102,7 @@ async def _chat_body(message_id: int, msg: dict, anchor: Optional[dict]) -> None
 
     _log(message_id, f"chat · {runtime} runtime · model {model}")
     if paper_row:
-        _log(message_id, "paper attached — injecting into chat context")
+        _log(message_id, "paper attached, injecting into chat context")
 
     if runtime == "sdk":
         fs = FsAccess(anchor["cluster"], check.resolved_root, access=access)

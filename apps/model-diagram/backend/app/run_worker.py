@@ -37,7 +37,7 @@ _NO_RUNTIME_DETAIL = (
 )
 _NO_CODEX_RUNTIME_DETAIL = (
     "The codex CLI is not available for this model. Install it and sign in "
-    "(run `codex login`), then restart the backend — or pick a Claude model."
+    "(run `codex login`), then restart the backend, or pick a Claude model."
 )
 
 

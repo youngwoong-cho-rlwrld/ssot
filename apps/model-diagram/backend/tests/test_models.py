@@ -70,30 +70,44 @@ def test_models_endpoint(client, monkeypatch):
     assert res.status_code == 200
     body = res.json()
     assert body["default"] == "claude-fable-5"
-    # Only the four claude models; the codex model is filtered out (CLI absent).
+    # Only the claude models (codex CLI absent), sorted by label within the group.
     ids = [m["id"] for m in body["models"]]
-    assert ids == ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]
+    assert ids == ["claude-fable-5", "claude-haiku-4-5", "claude-opus-4-8", "claude-sonnet-5"]
 
 
-def test_models_endpoint_includes_codex_when_cli_present(client, monkeypatch):
+def test_models_endpoint_orders_anthropic_before_openai(client, monkeypatch):
     monkeypatch.setattr(settings, "anthropic_api_key", lambda: "sk-test")
     monkeypatch.setattr(settings, "codex_cli_path", lambda: "/usr/local/bin/codex")
     body = client.get("/api/models", headers=_USER).json()
-    ids = {m["id"] for m in body["models"]}
-    assert "gpt-5.6-sol" in ids
-    assert {m["id"]: m["label"] for m in body["models"]}["gpt-5.6-sol"] == "GPT-5.6 Sol"
+    fams = [m["family"] for m in body["models"]]
+    # every claude entry precedes every codex entry
+    assert max(i for i, f in enumerate(fams) if f == "claude") < min(i for i, f in enumerate(fams) if f == "codex")
+    # each group is sorted by display label
+    claude = [m["label"] for m in body["models"] if m["family"] == "claude"]
+    codex = [m["label"] for m in body["models"] if m["family"] == "codex"]
+    assert claude == sorted(claude) and codex == sorted(codex)
+    labels = {m["id"]: m["label"] for m in body["models"]}
+    assert labels["gpt-5.6-sol"] == "GPT-5.6 Sol" and labels["o1"] == "o1"
+
+
+def test_new_openai_ids_route_to_codex(monkeypatch):
+    monkeypatch.setattr(settings, "codex_cli_path", lambda: "/usr/local/bin/codex")
+    for mid in ("o1", "o3", "gpt-5.5", "gpt-5.6", "gpt-5.6-sol"):
+        assert settings.model_family(mid) == "codex"
+        assert settings.runtime_for_model(mid) == "codex"
 
 
 def test_models_endpoint_excludes_claude_when_no_runtime(client, monkeypatch):
     # No claude runtime, codex CLI present: only codex models are offered and the
-    # default falls back to an available (codex) id rather than an absent claude one.
+    # default falls back to the first available (codex) id, not an absent claude one.
     monkeypatch.setattr(settings, "anthropic_api_key", lambda: None)
     monkeypatch.setattr(settings, "claude_cli_path", lambda: None)
     monkeypatch.setattr(settings, "codex_cli_path", lambda: "/usr/local/bin/codex")
     body = client.get("/api/models", headers=_USER).json()
     ids = [m["id"] for m in body["models"]]
-    assert ids == ["gpt-5.6-sol"]
-    assert body["default"] == "gpt-5.6-sol"
+    assert ids == ["gpt-5.5", "gpt-5.6", "gpt-5.6-sol", "o1", "o3"]  # all codex, label-sorted
+    assert all(m["family"] == "codex" for m in body["models"])
+    assert body["default"] == "gpt-5.5"  # first available
 
 
 def test_create_diagram_stores_default_model_when_omitted(client, monkeypatch):

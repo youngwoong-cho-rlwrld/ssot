@@ -335,7 +335,7 @@ def _hp_section(model: dict) -> str:
     rows = [_hp_row(model, comp) for comp in hp_rows]
     return (
         f'      <section class="hp" aria-label="Paper hyperparameters">\n'
-        f'        <h2 class="hp-title">All hyperparameters — {paper_title}</h2>\n'
+        f'        <h2 class="hp-title">All hyperparameters: {paper_title}</h2>\n'
         f'        <p class="hp-note">Click a row to open the matching code/config in the viewer.</p>\n'
         f'{chr(10).join(rows)}\n'
         f'      </section>'
