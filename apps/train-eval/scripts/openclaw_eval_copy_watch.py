@@ -53,8 +53,9 @@ class ApiError(RuntimeError):
 
 
 class ApiClient:
-    def __init__(self, base_url: str, timeout: float = 180.0):
+    def __init__(self, base_url: str, ssot_user: str, timeout: float = 180.0):
         self.base_url = base_url.rstrip("/")
+        self.ssot_user = ssot_user
         self.timeout = timeout
 
     def get(self, path: str) -> Any:
@@ -75,7 +76,10 @@ class ApiClient:
             url,
             data=data,
             method=method,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "x-ssot-user": self.ssot_user,
+            },
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -811,7 +815,9 @@ def run_workflow(
         )
 
     state_path = Path(args.state_file).expanduser()
-    api = api or ApiClient(args.api_base, timeout=args.api_timeout_seconds)
+    api = api or ApiClient(
+        args.api_base, args.ssot_user, timeout=args.api_timeout_seconds
+    )
     entry = read_entry(state_path, args.state_key, args.request_id)
     if entry.get("eval_job_id"):
         if (
@@ -1180,6 +1186,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--delete-source", action="store_true")
     parser.add_argument("--api-base", default="http://127.0.0.1:8000")
+    parser.add_argument(
+        "--ssot-user",
+        default="youngwoong.cho@rlwrld.ai",
+        help="email sent as x-ssot-user; the backend has no headerless fallback",
+    )
     parser.add_argument("--api-timeout-seconds", type=float, default=180.0)
     parser.add_argument(
         "--state-file", default="~/.openclaw/workspace/state/train-watch.json"

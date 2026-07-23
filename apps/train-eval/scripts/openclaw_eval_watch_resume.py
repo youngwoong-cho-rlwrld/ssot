@@ -59,6 +59,7 @@ def build_worker_command(
     state_key: str,
     entry: dict[str, Any],
     api_base: str,
+    ssot_user: str,
     slack_channel: str,
 ) -> list[str]:
     request_id = str(entry.get("request_id") or "")
@@ -90,6 +91,8 @@ def build_worker_command(
         partition,
         "--api-base",
         api_base,
+        "--ssot-user",
+        ssot_user,
         "--state-file",
         str(state_file),
         "--slack-channel",
@@ -116,13 +119,14 @@ def _api_request(
     method: str,
     path: str,
     *,
+    ssot_user: str,
     timeout_seconds: float = 60.0,
 ) -> Any:
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}{path}",
         data=b"{}" if method == "POST" else None,
         method=method,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "x-ssot-user": ssot_user},
     )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         raw = response.read()
@@ -189,6 +193,7 @@ def _is_exhausted_requeue_detail(row: dict[str, Any]) -> bool:
 def sweep_timed_out_evals(
     *,
     api_base: str,
+    ssot_user: str,
     clusters: list[str],
     hours: int,
     name_prefix: str,
@@ -209,7 +214,9 @@ def sweep_timed_out_evals(
     for cluster in clusters:
         query = urllib.parse.urlencode({"cluster": cluster, "hours": hours})
         try:
-            payload = _api_request(api_base, "GET", f"/api/jobs?{query}")
+            payload = _api_request(
+                api_base, "GET", f"/api/jobs?{query}", ssot_user=ssot_user
+            )
         except Exception as exc:
             errors.append({"cluster": cluster, "error": f"job list failed: {exc}"})
             continue
@@ -243,7 +250,10 @@ def sweep_timed_out_evals(
             if is_requeue_cancel:
                 try:
                     detail = _api_request(
-                        api_base, "GET", f"/api/jobs/{cluster_q}/{job_q}"
+                        api_base,
+                        "GET",
+                        f"/api/jobs/{cluster_q}/{job_q}",
+                        ssot_user=ssot_user,
                     )
                 except Exception as exc:
                     errors.append({
@@ -263,7 +273,10 @@ def sweep_timed_out_evals(
                 continue
             try:
                 response = _api_request(
-                    api_base, "POST", f"/api/jobs/{cluster_q}/{job_q}/resume"
+                    api_base,
+                    "POST",
+                    f"/api/jobs/{cluster_q}/{job_q}/resume",
+                    ssot_user=ssot_user,
                 )
             except Exception as exc:
                 errors.append({"cluster": cluster, "job_id": job_id, "error": str(exc)})
@@ -374,6 +387,7 @@ def run_sweep_worker(args: argparse.Namespace) -> int:
             state = _read_workflow_state(state_file)
             swept, errors = sweep_timed_out_evals(
                 api_base=args.api_base,
+                ssot_user=args.ssot_user,
                 clusters=clusters,
                 hours=args.sweep_hours,
                 name_prefix=args.sweep_name_prefix,
@@ -429,6 +443,8 @@ def spawn_sweep_worker(args: argparse.Namespace, log_path: Path) -> int:
         str(Path(args.state_file).expanduser().resolve()),
         "--api-base",
         args.api_base,
+        "--ssot-user",
+        args.ssot_user,
         "--slack-channel",
         args.slack_channel,
         "--sweep-clusters",
@@ -489,6 +505,11 @@ def main() -> int:
         default=str(Path(__file__).with_name("openclaw_eval_copy_watch.py")),
     )
     parser.add_argument("--api-base", default="http://127.0.0.1:8000")
+    parser.add_argument(
+        "--ssot-user",
+        default="youngwoong.cho@rlwrld.ai",
+        help="email sent as x-ssot-user; the backend has no headerless fallback",
+    )
     parser.add_argument("--slack-channel", default="channel:C0BETH2BDV3")
     parser.add_argument(
         "--no-sweep",
@@ -528,6 +549,7 @@ def main() -> int:
                 state_key=state_key,
                 entry=entry,
                 api_base=args.api_base,
+                ssot_user=args.ssot_user,
                 slack_channel=args.slack_channel,
             )
             log_path = state_file.parent / f"eval-copy-{request_id}.log"

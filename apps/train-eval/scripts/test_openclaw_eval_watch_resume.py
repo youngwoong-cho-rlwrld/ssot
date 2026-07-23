@@ -27,6 +27,7 @@ class ResumeTests(unittest.TestCase):
             sweep_name_prefix="youngwoong_eval_",
             sweep_max_chain=3,
             api_base="http://unused",
+            ssot_user="test@rlwrld.ai",
             slack_channel="channel:test",
         )
 
@@ -89,6 +90,7 @@ class ResumeTests(unittest.TestCase):
             state_key="skt/train1",
             entry=entry,
             api_base="http://127.0.0.1:8000",
+            ssot_user="test@rlwrld.ai",
             slack_channel="channel:test",
         )
         self.assertEqual(command[0], sys.executable)
@@ -112,6 +114,7 @@ class ResumeTests(unittest.TestCase):
             state_key="skt/train2",
             entry=entry,
             api_base="http://127.0.0.1:8000",
+            ssot_user="test@rlwrld.ai",
             slack_channel="channel:test",
         )
         self.assertIn("--skip-copy", command)
@@ -185,7 +188,7 @@ class ResumeTests(unittest.TestCase):
         ]
         calls = []
 
-        def fake_api(base, method, path):
+        def fake_api(base, method, path, *, ssot_user):
             calls.append((method, path))
             if method == "GET":
                 return {"jobs": rows}
@@ -194,6 +197,7 @@ class ResumeTests(unittest.TestCase):
         with unittest.mock.patch.object(resume, "_api_request", fake_api):
             swept, errors = resume.sweep_timed_out_evals(
                 api_base="http://unused",
+                ssot_user="test@rlwrld.ai",
                 clusters=["kakao"],
                 hours=48,
                 name_prefix="youngwoong_eval_",
@@ -222,7 +226,7 @@ class ResumeTests(unittest.TestCase):
              "state": "TIMEOUT", "phase": "eval", "resume_of": "701"},
         ]
 
-        def fake_api(base, method, path):
+        def fake_api(base, method, path, *, ssot_user):
             if method == "GET":
                 return {"jobs": rows}
             raise AssertionError(f"unexpected POST {path}")
@@ -230,6 +234,7 @@ class ResumeTests(unittest.TestCase):
         with unittest.mock.patch.object(resume, "_api_request", fake_api):
             swept, errors = resume.sweep_timed_out_evals(
                 api_base="http://unused",
+                ssot_user="test@rlwrld.ai",
                 clusters=["kakao"],
                 hours=48,
                 name_prefix="youngwoong_eval_",
@@ -256,7 +261,7 @@ class ResumeTests(unittest.TestCase):
         ]
         notices = []
 
-        def fake_api(_base, method, path):
+        def fake_api(_base, method, path, *, ssot_user):
             if path.startswith("/api/jobs?"):
                 return {"jobs": rows}
             if method == "GET":
@@ -266,6 +271,7 @@ class ResumeTests(unittest.TestCase):
         with unittest.mock.patch.object(resume, "_api_request", fake_api):
             swept, errors = resume.sweep_timed_out_evals(
                 api_base="http://unused",
+                ssot_user="test@rlwrld.ai",
                 clusters=["kakao"],
                 hours=48,
                 name_prefix="youngwoong_eval_",
@@ -290,7 +296,7 @@ class ResumeTests(unittest.TestCase):
         ]
         calls = []
 
-        def fake_api(_base, method, path):
+        def fake_api(_base, method, path, *, ssot_user):
             calls.append((method, path))
             if path.startswith("/api/jobs?"):
                 return {"jobs": rows}
@@ -303,6 +309,7 @@ class ResumeTests(unittest.TestCase):
         with unittest.mock.patch.object(resume, "_api_request", fake_api):
             swept, errors = resume.sweep_timed_out_evals(
                 api_base="http://unused",
+                ssot_user="test@rlwrld.ai",
                 clusters=["kakao"],
                 hours=48,
                 name_prefix="youngwoong_eval_",
@@ -328,6 +335,7 @@ class ResumeTests(unittest.TestCase):
             state_key="skt/train3",
             entry=entry,
             api_base="http://127.0.0.1:8000",
+            ssot_user="test@rlwrld.ai",
             slack_channel="channel:test",
         )
         self.assertEqual(
