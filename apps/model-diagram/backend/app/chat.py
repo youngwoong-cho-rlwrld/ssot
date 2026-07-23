@@ -45,7 +45,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 ReviseCallback = Callable[[dict], Awaitable[tuple[bool, Optional[str]]]]
 
 _ANSWER_FALLBACK = "Done."
-_REVISE_FALLBACK = "I've updated the diagram — the revised version is now shown."
+_REVISE_FALLBACK = "I've updated the diagram. The revised version is now shown."
 
 
 @dataclass
@@ -439,3 +439,229 @@ async def run_chat_cli(
             except asyncio.TimeoutError:
                 proc.kill()
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+# ── codex driver (stream-dispatch, mirrors app.agent_codex) ─────────────────
+
+
+def _parse_tool_args(raw) -> dict:
+    """codex may echo tool ``arguments`` as a dict or a JSON string; normalize."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+class _CodexChatDispatcher:
+    """Turns codex ``--json`` events into a chat outcome: the last ``agent_message``
+    is the answer; a ``revise_diagram`` tool call is executed server-side (the
+    sandboxed MCP server only acked it) as a SINGLE attempt, its integrity errors
+    surfaced as the assistant reply."""
+
+    def __init__(self, outcome: ChatOutcome, revise_cb: ReviseCallback,
+                 terminal: asyncio.Event, on_log: LogCallback) -> None:
+        self.outcome = outcome
+        self.revise_cb = revise_cb
+        self.terminal = terminal
+        self.on_log = on_log
+        self.result: dict[str, object] = {}
+        self._seen: set[str] = set()
+        self.answer = ""
+
+    async def handle_line(self, line: bytes) -> None:
+        if (
+            b'"turn.completed"' not in line
+            and b'"turn.failed"' not in line
+            and b'"type":"error"' not in line
+            and b'"mcp_tool_call"' not in line
+            and b'"agent_message"' not in line
+        ):
+            return
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        etype = event.get("type")
+        if etype == "turn.completed":
+            self.result["completed"] = True
+        elif etype == "turn.failed":
+            err = event.get("error") or {}
+            self.result["failed"] = str(err.get("message") or err) if isinstance(err, dict) else str(err)
+        elif etype == "error":
+            self.result["error"] = str(event.get("message") or "codex reported an error")
+        elif etype == "item.completed":
+            await self._dispatch(event.get("item") or {})
+
+    async def _dispatch(self, item: dict) -> None:
+        from .agent_codex import _MCP_SERVER_NAME
+
+        itype = item.get("type")
+        if itype == "agent_message":
+            text = (item.get("text") or "").strip()
+            if text:
+                self.answer = text  # the last message is the answer
+                self.on_log(summarize_text(text))
+            return
+        if itype != "mcp_tool_call" or item.get("server") != _MCP_SERVER_NAME:
+            return
+        if item.get("status") != "completed":
+            return
+        item_id = str(item.get("id") or "")
+        if item_id and item_id in self._seen:  # codex may echo an item twice
+            return
+        if item_id:
+            self._seen.add(item_id)
+        tool = item.get("tool")
+        args = _parse_tool_args(item.get("arguments"))
+        self.on_log(summarize_tool_call(str(tool or ""), args))
+        if tool == "revise_diagram":
+            await self._do_revise(args)
+
+    async def _do_revise(self, args: dict) -> None:
+        ok, error = await self.revise_cb(args)  # creates the new run + runs §7.1
+        if ok:
+            db.mark_terminal(self.outcome.revise_run_id, "done")
+            self.outcome.revised = True
+            self.outcome.status = "done"
+            if not self.answer:
+                self.answer = _REVISE_FALLBACK
+        else:
+            # Single attempt on codex (the sandbox can't receive the verdict for a
+            # retry): close the created run and explain the failure in the reply.
+            if self.outcome.revise_run_id is not None:
+                db.mark_terminal(self.outcome.revise_run_id, "error", error_kind="agent_failure",
+                                 error_detail=f"revise failed integrity: {error}")
+            self.outcome.status = "done"
+            self.answer = (
+                "I tried to update the diagram, but the revision failed the integrity check and was "
+                f"not applied: {error}"
+            )
+        self.outcome._terminal = True
+        self.terminal.set()
+
+
+async def run_chat_codex(
+    *,
+    message_id: int,
+    cluster: str,
+    root: str,
+    model: str,
+    access: dict,
+    summary: str,
+    history: list[dict],
+    user_message: str,
+    paper_text: Optional[str],
+    has_paper: bool,
+    revise_cb: ReviseCallback,
+    outcome: ChatOutcome,
+    on_log: LogCallback,
+) -> None:
+    """Drive ``codex exec`` for a chat turn, mirroring the codex generation runtime.
+
+    Same sandbox (-s read-only) + approvals reviewer + MCP attach as generation; the
+    chat toolset comes from the MCP server (MD_CHAT). revise_diagram is acked in the
+    sandbox and dispatched here from --json (MD_STREAM_ACK); the answer is codex's
+    final agent_message. The anchor paper is exposed at read_file('__paper__')."""
+    import shutil
+    import tempfile
+
+    from . import agent_codex
+
+    codex_path = settings.codex_cli_path()
+    if not codex_path:
+        raise agent_codex.CodexUnavailable("the codex CLI is not available")
+
+    scratch = tempfile.mkdtemp(prefix="md-chat-codex-")
+    proc = None
+    try:
+        mcp_env = {
+            "MD_CLUSTER": cluster,
+            "MD_ROOT": root,
+            "MD_CHAT": "1",
+            # Sandboxed MCP acks revise; the backend dispatches it from the stream.
+            "MD_STREAM_ACK": "1",
+            "MD_CHAT_MESSAGE_ID": str(message_id),
+            "MD_ACCESS_JSON": json.dumps(access),
+        }
+        paper_present = has_paper and bool(paper_text)
+        if paper_present:
+            paper_file = os.path.join(scratch, "paper.txt")
+            with open(paper_file, "w", encoding="utf-8") as fh:
+                fh.write(paper_text)
+            mcp_env["MD_PAPER_FILE"] = paper_file
+
+        mcp_server_path = os.path.join(os.path.dirname(os.path.abspath(agent_codex.__file__)), "mcp_server.py")
+        system_prompt = build_chat_system_prompt(cluster, root, has_paper=paper_present, paper_via_tool=True)
+        initial_user = build_chat_initial_user(
+            summary, history, user_message, has_paper=paper_present, paper_via_tool=True
+        )
+        # codex exec has no system-prompt channel: concatenate and feed on stdin.
+        prompt = f"{system_prompt}\n\n----- CHAT -----\n\n{initial_user}"
+
+        cmd = agent_codex._build_codex_cmd(
+            codex_path=codex_path, model=model, scratch=scratch,
+            mcp_server_path=mcp_server_path, mcp_env=mcp_env,
+        )
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, cwd=scratch, stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        assert proc.stdin is not None
+        proc.stdin.write(prompt.encode("utf-8"))
+        await proc.stdin.drain()
+        proc.stdin.close()
+
+        terminal = asyncio.Event()
+        dispatcher = _CodexChatDispatcher(outcome, revise_cb, terminal, on_log)
+        debug_log = os.environ.get("MODEL_DIAGRAM_CODEX_LOG", "").strip() or None
+        pump = asyncio.create_task(agent_codex._pump_stream(proc, dispatcher, debug_log))
+        watch = asyncio.create_task(terminal.wait())
+        done, _pending = await asyncio.wait({pump, watch}, return_when=asyncio.FIRST_COMPLETED)
+        if watch in done and pump not in done:
+            try:
+                await asyncio.wait_for(pump, timeout=8.0)
+            except asyncio.TimeoutError:
+                pump.cancel()
+        else:
+            watch.cancel()
+
+        await proc.wait()
+        stderr = (await proc.stderr.read()).decode("utf-8", errors="replace") if proc.stderr else ""
+        _finalize_chat_codex_outcome(outcome, dispatcher, proc.returncode or 0, stderr)
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _finalize_chat_codex_outcome(outcome: ChatOutcome, dispatcher: _CodexChatDispatcher,
+                                 returncode: int, stderr: str) -> None:
+    from . import agent_codex
+
+    if outcome._terminal:  # a revise already decided the turn
+        if not outcome.answer_text:
+            outcome.answer_text = dispatcher.answer or _REVISE_FALLBACK
+        outcome.status = outcome.status or "done"
+        return
+
+    failed = dispatcher.result.get("failed")
+    top_error = dispatcher.result.get("error")
+    blob = "\n".join(str(x) for x in (failed, top_error, stderr) if x)
+    if agent_codex._looks_logged_out(blob):
+        outcome.status = "error"
+        outcome.error_detail = "codex is not logged in (run `codex login`, or set CODEX_HOME to an authenticated config)"
+        return
+    if failed or top_error:
+        outcome.status = "error"
+        outcome.error_detail = f"codex error: {failed or top_error}"[:500]
+        return
+    outcome.status = "done"
+    outcome.answer_text = dispatcher.answer.strip() or _ANSWER_FALLBACK

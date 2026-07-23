@@ -13,18 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import sys
+import tempfile
 from typing import Optional
 
-from . import chat, db, paper as paper_mod, settings
+from . import chat, db, paper as paper_mod, settings, staging
 from .fsaccess import FsAccess, FsError, resolve_access
 from .pathcheck import precheck_path
 from .user_context import user_scope
 
-_CODEX_UNSUPPORTED = (
-    "Follow-up chat isn't supported on the codex runtime yet — reopen this diagram with a "
-    "Claude model (Fable/Opus/Sonnet/Haiku) to ask questions or request changes."
-)
 _NO_RUNTIME = (
     "No agent runtime is configured. Set ANTHROPIC_API_KEY in the repo-root .env, or log in to "
     "the Claude Code CLI (run `claude` and sign in), then try again."
@@ -61,9 +59,6 @@ async def _chat_body(message_id: int, msg: dict, anchor: Optional[dict]) -> None
 
     model = msg.get("model") or anchor.get("model") or settings.model_name()
     runtime = settings.runtime_for_model(model)
-    if runtime == "codex":
-        _finish_answer(message_id, _CODEX_UNSUPPORTED)
-        return
     if runtime == "none":
         _fail(message_id, _NO_RUNTIME)
         return
@@ -121,6 +116,9 @@ async def _chat_body(message_id: int, msg: dict, anchor: Optional[dict]) -> None
             ),
             outcome=outcome, on_log=on_log,
         )
+    elif runtime == "codex":
+        await _run_codex_chat(message_id, anchor, check.resolved_root, access, model,
+                              summary, history, user_text, paper_row, outcome, on_log)
     else:  # claude-cli
         paper_text = paper_mod.load_paper_text(paper_row) if paper_row else None
         await chat.run_chat_cli(
@@ -141,8 +139,42 @@ async def _chat_body(message_id: int, msg: dict, anchor: Optional[dict]) -> None
         _fail(message_id, outcome.error_detail or "the chat did not complete")
 
 
-def _finish_answer(message_id: int, text: str) -> None:
-    db.finish_chat_message(message_id, "done", content=text)
+async def _run_codex_chat(message_id, anchor, resolved_root, access, model, summary,
+                          history, user_text, paper_row, outcome, on_log) -> None:
+    """Codex chat: the sandboxed MCP server can't ssh, so mirror a remote anchor
+    root locally (like codex runs) and read from it; the mirror is deleted after."""
+    eff_cluster, eff_root, eff_access = anchor["cluster"], resolved_root, access
+    staged_dir: Optional[str] = None
+    if anchor["cluster"] != "local":
+        staged_dir = tempfile.mkdtemp(prefix=f"md-chat-stage-{message_id}-", dir=str(settings.stage_dir()))
+        on_log(f"staging remote root to local mirror for codex chat ({staged_dir})")
+        try:
+            mirror = await staging.stage_root(
+                access, resolved_root, staged_dir, size_cap_bytes=settings.codex_stage_max_bytes()
+            )
+        except staging.StagingError as exc:
+            shutil.rmtree(staged_dir, ignore_errors=True)
+            _fail(message_id, str(exc))
+            return
+        eff_cluster, eff_root, eff_access = "local", mirror, {"kind": "local"}
+
+    staged_excludes = staging.excluded_file_globs() if staged_dir is not None else None
+    fs = FsAccess(eff_cluster, eff_root, access=eff_access, staged_excludes=staged_excludes)
+    paper_text = paper_mod.load_paper_text(paper_row) if paper_row else None
+    try:
+        await chat.run_chat_codex(
+            message_id=message_id, cluster=eff_cluster, root=eff_root, model=model, access=eff_access,
+            summary=summary, history=history, user_message=user_text,
+            paper_text=paper_text, has_paper=paper_row is not None,
+            revise_cb=chat.make_revise_cb(
+                anchor_run=anchor, diagram_id=anchor["diagram_id"], user_email=anchor["user_email"],
+                outcome=outcome, fs=fs,
+            ),
+            outcome=outcome, on_log=on_log,
+        )
+    finally:
+        if staged_dir is not None:
+            shutil.rmtree(staged_dir, ignore_errors=True)
 
 
 def _fail(message_id: int, detail: str) -> None:

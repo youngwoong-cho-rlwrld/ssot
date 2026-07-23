@@ -181,6 +181,12 @@ def _dispatch_call(fs: FsAccess, name: str, args: dict) -> tuple[dict, bool]:
         return asyncio.run(_call_local(fs, name, args))
     if _chat_mode():
         if name == "revise_diagram":
+            # Codex chat runs the MCP server inside codex's sandbox (no DB/network),
+            # so — like the codex generation path — ack locally and let the backend
+            # dispatch the real revise from codex's --json stream (MD_STREAM_ACK).
+            # The Claude-CLI chat path (unsandboxed) writes straight to the DB here.
+            if os.environ.get("MD_STREAM_ACK"):
+                return {"ok": True}, False
             return _call_chat_revise(fs, args)
         return {"error": f"unknown chat tool: {name}"}, True
     if name in _RUNSTATE_TOOLS:
