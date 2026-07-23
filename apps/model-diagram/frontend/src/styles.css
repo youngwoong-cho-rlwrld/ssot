@@ -717,6 +717,20 @@
   min-height: 0;
 }
 
+/* The memo section holds its NATURAL height (never shrinks): the chat section
+   above (flex:1 1 auto, internal scroll) yields column space to it, so the memo
+   header strip and field stay fully on-screen instead of being squeezed off the
+   bottom. Its body may still scroll as a last resort on a very short column. */
+.viewer__memo-section.vsection--open {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.viewer__memo-section.vsection--open .viewer__memo {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .vsection__toggle {
   display: inline-flex;
   align-items: center;

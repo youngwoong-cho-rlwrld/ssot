@@ -338,6 +338,7 @@ export function Viewer({
               {detail && (
                 <CollapsibleSection
                   title="Memo"
+                  className="viewer__memo-section"
                   open={memoOpen}
                   onToggle={() => setMemoOpen((v) => !v)}
                 >
