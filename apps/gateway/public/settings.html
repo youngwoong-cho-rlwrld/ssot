@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/portal-assets/theme/base.css" />
   <link rel="stylesheet" href="/portal-assets/theme/header.css" />
   <link rel="stylesheet" href="/portal-assets/theme/controls.css" />
+  <link rel="stylesheet" href="/portal-assets/theme/modal.css" />
   <style>
     /* Document-style scrolling page: override base.css's full-viewport shell. */
     html, body { height: auto; }
@@ -27,9 +28,19 @@
     label { display: block; font-size: var(--ssot-text-xs); font-weight: var(--ssot-weight-semibold); color: var(--ssot-text-soft); margin-bottom: 6px; }
     main .ssot-input { width: 100%; }
     .ssot-input:read-only { background: var(--ssot-surface-muted); color: var(--ssot-text-soft); }
-    .row { display: grid; grid-template-columns: 1fr 1fr 32px; gap: 8px; align-items: center; margin-top: 8px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; margin-top: 8px; position: relative; }
     .row .ssot-input { min-width: 0; }
     .row .ssot-input:read-only { cursor: default; }
+    /* The value (and cluster name) input runs to the section's right edge like
+       every other section; the remove (×) overlays the field's right end instead
+       of reserving a column that would inset the input. */
+    .row [data-role="kv-value"], .cluster-head [data-role="cluster-name"] { padding-right: 30px; }
+    .row .del, .cluster-head .del {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      width: 26px; height: 26px; min-height: 0; padding: 0; line-height: 1;
+      border: none; background: transparent; color: var(--ssot-text-faint);
+    }
+    .row .del:hover, .cluster-head .del:hover { background: transparent; color: var(--ssot-danger); }
     .mono { font-family: var(--ssot-font-mono); }
     .sec-foot { margin-top: 18px; display: flex; align-items: center; gap: 12px; }
     .status { font-size: var(--ssot-text-xs); color: var(--ssot-text-faint); }
@@ -41,7 +52,7 @@
     .settings-loading .global-savebar, .settings-load-failed .global-savebar { display: none; }
     .cluster { padding: 14px 0; }
     .cluster + .cluster { border-top: 1px solid var(--ssot-border); }
-    .cluster-head { display: flex; align-items: center; gap: 8px; }
+    .cluster-head { display: flex; align-items: center; gap: 8px; position: relative; }
     .cluster-head .ssot-input { flex: 1; font-weight: var(--ssot-weight-semibold); }
     .global-savebar {
       position: sticky;
@@ -58,6 +69,21 @@
     .check { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ssot-text-sm); font-weight: var(--ssot-weight-medium); color: var(--ssot-text); margin: 8px 0 0; cursor: pointer; }
     .check input { margin: 0; }
     .checks { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; }
+    .status.warn { color: var(--ssot-warning); }
+    /* General section: host re-login command lines (copyable, like model-diagram's
+       auth setup) — no browser OAuth is possible for these CLIs. */
+    .gen-note { margin-top: 16px; color: var(--ssot-text-soft); font-size: var(--ssot-text-xs); }
+    .cmd { display: flex; align-items: center; gap: 8px; margin-top: 8px;
+      background: var(--ssot-surface-muted); border: 1px solid var(--ssot-border);
+      border-radius: var(--ssot-radius-sm); padding: 6px 6px 6px 10px; }
+    .cmd code { flex: 1; min-width: 0; font-family: var(--ssot-font-mono); font-size: var(--ssot-text-xs); color: var(--ssot-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cmd .ssot-btn { flex: none; padding: 4px 10px; }
+    /* General: readonly account field + an "Update" button that opens the host
+       re-login instructions in a modal. */
+    .field-row { display: flex; align-items: center; gap: 8px; }
+    .field-row .ssot-input { flex: 1; min-width: 0; }
+    .field-row .gen-update { flex: none; }
+    .modal__body .cmd { margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -87,6 +113,26 @@
       <div class="field">
         <label for="acct-username">Username</label>
         <input type="text" id="acct-username" class="ssot-input" />
+      </div>
+    </section>
+
+    <!-- General -->
+    <section id="sec-general">
+      <h2>General</h2>
+      <p class="sec-sub">Model subscriptions this SSOT host signs in with. Identity only, tokens are never shown. Sign-in happens on the host, not in this browser.</p>
+      <div class="field">
+        <label for="gen-claude">Claude <span id="gen-claude-status" class="status"></span></label>
+        <div class="field-row">
+          <input type="text" id="gen-claude" class="ssot-input" readonly placeholder="not signed in" />
+          <button type="button" class="ssot-btn gen-update" data-family="claude">Update</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="gen-openai">OpenAI / Codex <span id="gen-openai-status" class="status"></span></label>
+        <div class="field-row">
+          <input type="text" id="gen-openai" class="ssot-input" readonly placeholder="not signed in" />
+          <button type="button" class="ssot-btn gen-update" data-family="openai">Update</button>
+        </div>
       </div>
     </section>
 

@@ -206,6 +206,100 @@
     }
   }
 
+  // --- general: host model subscriptions (read-only) ---------------------
+  function setSubStatus(id, status) {
+    const el = $(id);
+    if (!el) return;
+    if (status === 'logged_in') {
+      el.textContent = 'signed in';
+      el.className = 'status ok';
+    } else if (status === 'logged_out') {
+      el.textContent = 'not signed in';
+      el.className = 'status warn';
+    } else {
+      el.textContent = 'status unavailable';
+      el.className = 'status';
+    }
+  }
+
+  let genHostname = 'the backend host';
+  const RELOGIN = {
+    claude: { label: 'Claude', cmd: 'claude' },
+    openai: { label: 'OpenAI / Codex', cmd: 'codex login' },
+  };
+
+  async function loadGeneral() {
+    try {
+      const res = await api('/api/portal/subscriptions');
+      if (!res.ok) throw new Error('unavailable');
+      const s = await res.json();
+      if (s.hostname) genHostname = s.hostname;
+      const c = s.claude || {};
+      $('gen-claude').value = c.email || (c.status === 'logged_in' ? 'signed in' : '');
+      setSubStatus('gen-claude-status', c.status);
+      const o = s.openai || {};
+      const openai = [o.email, o.plan].filter(Boolean).join(' · ');
+      $('gen-openai').value = openai || (o.status === 'logged_in' ? 'signed in' : '');
+      setSubStatus('gen-openai-status', o.status);
+    } catch {
+      setSubStatus('gen-claude-status', 'unknown');
+      setSubStatus('gen-openai-status', 'unknown');
+    }
+  }
+
+  // Host re-login instructions in a modal (no browser OAuth for these CLIs). Uses
+  // the shared @ssot/theme/modal.css grammar (.modal-overlay/.modal), built by hand
+  // since this page is vanilla JS.
+  function openReloginModal(family) {
+    const info = RELOGIN[family] || RELOGIN.claude;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML =
+      '<div class="modal modal--confirm">' +
+      '<div class="modal__head"><h2 class="modal__title"></h2></div>' +
+      '<div class="modal__body"><p>Sign-in for these CLIs happens on the host, not in ' +
+      'this browser. Run this on <span class="mono" data-host></span>, then reload this page.</p>' +
+      '<div class="cmd"><code data-cmd></code>' +
+      '<button type="button" class="ssot-btn" data-copy>Copy</button></div></div>' +
+      '<div class="modal__foot"><button type="button" class="ssot-btn" data-close>Close</button></div>' +
+      '</div>';
+    overlay.querySelector('.modal__title').textContent = 'Update ' + info.label + ' sign-in';
+    overlay.querySelector('[data-host]').textContent = genHostname;
+    overlay.querySelector('[data-cmd]').textContent = info.cmd;
+
+    const onKey = (event) => {
+      if (event.key === 'Escape') close();
+    };
+    function close() {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+    }
+    overlay.addEventListener('mousedown', (event) => {
+      if (event.target === overlay) close();
+    });
+    overlay.querySelector('[data-close]').addEventListener('click', close);
+    const copyBtn = overlay.querySelector('[data-copy]');
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(info.cmd);
+        copyBtn.textContent = 'Copied';
+        setTimeout(() => {
+          copyBtn.textContent = 'Copy';
+        }, 1200);
+      } catch {
+        /* clipboard blocked; ignore */
+      }
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  }
+
+  for (const btn of document.querySelectorAll('.gen-update')) {
+    btn.addEventListener('click', () => openReloginModal(btn.dataset.family));
+  }
+
   function fillSettings(s) {
     s = s || {};
     $('acct-username').value = (s.profile && s.profile.username) || '';
@@ -238,6 +332,7 @@
 
       fillSettings(s);
       void refreshWandbStatus();
+      void loadGeneral();
 
       // Account identity comes from /api/auth/me since it is not profile settings.
       try {

@@ -1,11 +1,12 @@
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config, repoRoot } from './config.mjs';
-import { registerAuthRoutes, getRequestUser } from './auth.mjs';
+import { registerAuthRoutes, getRequestUser, signedOutPage } from './auth.mjs';
 import { getSettings } from './db.mjs';
 import { registerSettingsRoutes } from './settings.mjs';
 
@@ -88,6 +89,46 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- signed-out page redirect -------------------------------------------
+// An unauthenticated DOCUMENT navigation to any app page (or other gateway-served
+// page) is bounced to the sign-in form with a next= return param, so the browser
+// never loads an app shell whose APIs would only 401. API requests are exempt so
+// they keep returning 401 JSON (handled above / by each route); /auth/*, static
+// portal assets, and the service-worker killer stay open so the login page and
+// its assets render. The root '/' is exempt — it serves the signed-out page below.
+const apiBases = config.apps.filter((a) => a.api).map((a) => a.apiBase);
+const isApiPath = (p) =>
+  p === '/api' ||
+  p.startsWith('/api/') ||
+  apiBases.some((base) => p === base || p.startsWith(`${base}/`));
+const OPEN_EXACT = new Set([
+  '/',
+  '/favicon.ico',
+  '/favicon.svg',
+  '/healthz',
+  '/sw.js',
+  '/service-worker.js',
+  '/serviceworker.js',
+]);
+
+app.use((req, res, next) => {
+  if (req.ssotUser) return next();
+  const p = req.path;
+  if (
+    OPEN_EXACT.has(p) ||
+    p.startsWith('/auth/') ||
+    p.startsWith('/portal-assets/') ||
+    isApiPath(p)
+  ) {
+    return next();
+  }
+  // Only bounce document navigations; anything not requesting HTML falls through.
+  if (req.method === 'GET' && req.accepts('html')) {
+    return res.redirect(`/auth/login?next=${encodeURIComponent(req.originalUrl)}`);
+  }
+  next();
+});
+
 app.get('/api/auth/me', (req, res) => {
   const user = req.ssotUser;
   if (!user) return res.status(401).json({ error: 'unauthenticated' });
@@ -159,7 +200,9 @@ const portalHtml = fs
     )
   );
 
-app.get('/', (_req, res) => {
+app.get('/', (req, res) => {
+  // Signed out: show a minimal "Sign in to continue" page, not the app list.
+  if (!req.ssotUser) return res.type('html').send(signedOutPage());
   res.type('html').send(portalHtml);
 });
 
@@ -209,6 +252,67 @@ app.get('/api/portal/status', async (_req, res) => {
     })
   );
   res.json(Object.fromEntries(entries));
+});
+
+// --- host model subscriptions -------------------------------------------
+// The agent CLIs (claude, codex) authenticate on THIS host, not in the browser.
+// Read only their IDENTITY fields for the settings "General" section — never the
+// tokens/secrets. Best-effort: any parse/IO failure reports "logged out".
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function decodeJwtClaims(token) {
+  try {
+    const segment = String(token).split('.')[1];
+    return JSON.parse(Buffer.from(segment, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function claudeSubscription() {
+  const dir = (process.env.CLAUDE_CONFIG_DIR || '').trim();
+  const jsonPath = dir
+    ? path.join(dir, '.claude.json')
+    : path.join(os.homedir(), '.claude.json');
+  const data = readJson(jsonPath);
+  const account = data && typeof data.oauthAccount === 'object' ? data.oauthAccount : null;
+  if (account) {
+    return { email: account.emailAddress || '', status: 'logged_in' };
+  }
+  return { email: '', status: 'logged_out' };
+}
+
+function openaiSubscription() {
+  const home = (process.env.CODEX_HOME || '').trim() || path.join(os.homedir(), '.codex');
+  const data = readJson(path.join(home, 'auth.json'));
+  if (!data) return { email: '', plan: '', status: 'logged_out' };
+  // Identity (email + ChatGPT plan) rides in the id_token JWT when the CLI is
+  // logged in via ChatGPT; an API-key-only login has neither. auth.json existing
+  // means credentials are present either way.
+  let email = '';
+  let plan = '';
+  const claims = data.tokens && data.tokens.id_token ? decodeJwtClaims(data.tokens.id_token) : null;
+  if (claims) {
+    email = claims.email || '';
+    const authClaim = claims['https://api.openai.com/auth'] || {};
+    plan = authClaim.chatgpt_plan_type || authClaim.chatgpt_account_plan_type || '';
+  }
+  return { email, plan, status: 'logged_in' };
+}
+
+app.get('/api/portal/subscriptions', (req, res) => {
+  if (!req.ssotUser) return res.status(401).json({ error: 'unauthenticated' });
+  res.json({
+    claude: claudeSubscription(),
+    openai: openaiSubscription(),
+    hostname: os.hostname(),
+  });
 });
 
 // --- per-request header injection ---------------------------------------

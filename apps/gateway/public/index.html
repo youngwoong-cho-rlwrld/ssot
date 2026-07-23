@@ -114,6 +114,9 @@
     const DEFAULT_ICON =
       '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>';
     const CHEVRON = '<path d="m9 18 6-6-6-6"/>';
+    // lucide "settings" gear, for the Settings nav row after the app list.
+    const GEAR_ICON =
+      '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>';
 
     function svg(inner) {
       return (
@@ -150,6 +153,35 @@
       row.append(icon, body, chev);
       container.appendChild(row);
     }
+
+    // Settings row — same nav-row grammar, appended after the app list; links to
+    // the gateway-served /settings page.
+    (function appendSettingsRow() {
+      const row = document.createElement('a');
+      row.className = 'app-row';
+      row.href = '/settings';
+
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.innerHTML = svg(GEAR_ICON);
+
+      const body = document.createElement('div');
+      body.className = 'body';
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = 'Settings';
+      const desc = document.createElement('div');
+      desc.className = 'desc';
+      desc.textContent = 'Account, integrations, and host model subscriptions.';
+      body.append(title, desc);
+
+      const chev = document.createElement('span');
+      chev.className = 'chev';
+      chev.innerHTML = svg(CHEVRON);
+
+      row.append(icon, body, chev);
+      container.appendChild(row);
+    })();
   </script>
 </body>
 </html>

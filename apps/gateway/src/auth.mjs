@@ -89,15 +89,7 @@ const escapeHtml = (s) =>
     "'": '&#39;',
   })[c]);
 
-function loginPage({ cfg, next, error, email }) {
-  const domains = cfg.allowedDomains;
-  const allowed = [
-    ...cfg.allowedUserIds.map((id) => escapeHtml(id)),
-    ...domains.map((domain) => '@' + escapeHtml(domain)),
-  ];
-  const hint = allowed.length
-    ? `<p class="hint">Use ${allowed.join(' or ')}.</p>`
-    : '';
+function loginPage({ next, error, email }) {
   const err = error ? `<p class="err">${escapeHtml(error)}</p>` : '';
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
@@ -139,7 +131,38 @@ function loginPage({ cfg, next, error, email }) {
       required value="${escapeHtml(email || '')}" placeholder="you@example.com" />
     <button type="submit" class="ssot-btn ssot-btn-primary">Sign in</button>
   </form>
-  ${hint}
+</div></body></html>`;
+}
+
+// Minimal signed-out landing for the portal root: the same centered card grammar
+// as the login page, but just a prompt + a link to the sign-in form (no app list).
+export function signedOutPage() {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign in - SSOT</title>
+<script src="/portal-assets/theme/theme-init.js"></script>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="/favicon.ico" type="image/png" />
+<link rel="stylesheet" href="/portal-assets/theme/tokens.css" />
+<link rel="stylesheet" href="/portal-assets/theme/base.css" />
+<link rel="stylesheet" href="/portal-assets/theme/controls.css" />
+<style>
+  html, body { height: auto; }
+  p { margin: 0; }
+  body { overflow: visible; min-height: 100vh; display: flex;
+    align-items: center; justify-content: center; padding: 24px; }
+  .card { width: 100%; max-width: 360px; background: var(--ssot-surface);
+    border: 1px solid var(--ssot-border); border-radius: var(--ssot-radius);
+    box-shadow: var(--ssot-shadow); padding: 32px 28px; text-align: center; }
+  .brand { font-size: var(--ssot-text-xl); font-weight: var(--ssot-weight-semibold); letter-spacing: 0.12em; }
+  .sub { margin-top: 6px; color: var(--ssot-text-soft); font-size: var(--ssot-text-sm); }
+  .card .ssot-btn { margin-top: 24px; width: 100%; }
+</style></head>
+<body><div class="card">
+  <div class="brand">SSOT</div>
+  <div class="sub">Sign in to continue</div>
+  <a class="ssot-btn ssot-btn-primary" href="/auth/login">Sign in</a>
 </div></body></html>`;
 }
 
@@ -151,9 +174,8 @@ export function registerAuthRoutes(app) {
   ];
 
   app.get('/auth/login', (req, res) => {
-    const cfg = authConfig();
     const next = safeNext(req.query.next);
-    res.type('html').send(loginPage({ cfg, next, error: null, email: '' }));
+    res.type('html').send(loginPage({ next, error: null, email: '' }));
   });
 
   app.post('/auth/login', ...formBody, (req, res) => {
@@ -166,7 +188,7 @@ export function registerAuthRoutes(app) {
     const email = String(body.identifier || body.email || '').trim().toLowerCase();
 
     const render = (error, status) =>
-      res.status(status).type('html').send(loginPage({ cfg, next, error, email }));
+      res.status(status).type('html').send(loginPage({ next, error, email }));
 
     const isEmail = EMAIL_RE.test(email);
     const isUserId = USER_ID_RE.test(email) && userIdAllowed(cfg, email);
