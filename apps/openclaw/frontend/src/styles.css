@@ -528,12 +528,13 @@
   white-space: nowrap;
 }
 
-/* Chat/transcript header controls (new-chat + tool toggle) layer the shared
-   .ssot-btn grammar (border/hover/focus/font/transition) but stay compact: a
-   pinned 24px head height so every panel head that carries one resolves to the
-   same height and their bottom borders line up across columns. */
-.sessions__new,
-.tool-toggle {
+/* New-chat button sits at the right of the Sessions panel header. Layers the
+   shared .ssot-btn grammar (border/hover/focus/font/transition) but stays
+   compact: a pinned 24px head height so every panel head that carries one
+   resolves to the same height and their bottom borders line up across columns.
+   The tool-toggle control it used to share these rules with now lives in the
+   shared @ssot/theme/controls.css. */
+.sessions__new {
   height: 24px;
   min-height: 24px;
   gap: 4px;
@@ -541,63 +542,11 @@
   font-size: var(--ssot-text-xs);
   font-weight: var(--ssot-weight-normal);
   color: var(--ink-soft);
-}
-
-.sessions__new:hover:not(:disabled),
-.tool-toggle:hover:not(:disabled) {
-  color: var(--accent);
-}
-
-/* New-chat button sits at the right of the Sessions panel header. */
-.sessions__new {
   margin-left: auto;
 }
 
-/* Toggle reflects its on/off state. */
-.tool-toggle--on {
+.sessions__new:hover:not(:disabled) {
   color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-/* First right-aligned control owns the auto margin; the rest sit beside it.
-   Icon-only square, so drop the horizontal padding (.ssot-btn centers it). */
-.tool-toggle {
-  margin-left: auto;
-  position: relative;
-  width: 24px;
-  padding: 0;
-}
-
-.tool-toggle::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  top: calc(100% + 7px);
-  right: 0;
-  z-index: 40;
-  width: max-content;
-  max-width: 280px;
-  padding: 6px 8px;
-  border-radius: var(--ssot-radius-sm);
-  background: var(--ink);
-  color: var(--bg);
-  font-size: var(--ssot-text-xs);
-  font-weight: var(--ssot-weight-normal);
-  line-height: 1.35;
-  text-align: left;
-  white-space: normal;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-2px);
-  transition: opacity 0.12s, transform 0.12s, visibility 0.12s;
-}
-
-.tool-toggle:hover::after,
-.tool-toggle:focus-visible::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
 }
 
 

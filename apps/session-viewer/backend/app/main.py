@@ -303,14 +303,11 @@ def delete_session(
     id: str,
     roots: tuple[Path, Path, Path] = Depends(resolve_roots),
 ) -> DeleteResult:
-    """Delete a session entirely: move its .jsonl to the Trash and drop it from
-    the cache and the board."""
+    """Delete a session entirely: drop it from the cache and the board after
+    removing it from disk. Claude and Codex transcripts move to the Trash;
+    OpenClaw sessions live in a rewritable store with no Trash, so they are
+    deleted permanently."""
     uid = f"{agent}:{id}"
-    if agent == "openclaw":
-        raise HTTPException(
-            status_code=409,
-            detail="delete OpenClaw sessions from the OpenClaw app",
-        )
     session = cache.get_session(uid, *roots)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -321,6 +318,19 @@ def delete_session(
         cache.forget(uid, *roots)
         board_store.delete(uid)
         raise HTTPException(status_code=404, detail="session file no longer exists")
+
+    if agent == "openclaw":
+        # Rewrite sessions.json in the OpenClaw store and permanently unlink the
+        # session's sidecars. There is no Trash to move the file into.
+        try:
+            cleanup_service.delete_openclaw_session(path, roots[2])
+        except DeleteNotAllowed as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"failed to delete: {exc}")
+        cache.forget(uid, *roots)
+        board_store.delete(uid)
+        return DeleteResult(status="deleted", uid=uid, trashed_to="")
 
     try:
         dest = move_to_trash(path, allowed_roots=roots)

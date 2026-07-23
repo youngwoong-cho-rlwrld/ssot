@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { getTranscript, getTranscriptByKey } from "./api";
 import { Markdown } from "./Markdown";
 import { TurnView } from "@ssot/ui/TurnView";
-import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
-import { usePersistedBool } from "./hooks";
+import { ToolVisibilityToggle } from "@ssot/ui/ToolVisibilityToggle";
+import { usePersistedBool } from "@ssot/ui/usePersistedBool";
 import type { TranscriptDetail } from "./types";
 import { errMessage, relativeTime, sessionLabel } from "./util";
 

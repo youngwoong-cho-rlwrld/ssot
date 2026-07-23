@@ -236,7 +236,7 @@ def summarize(
     )
 
 
-def _delete_openclaw_session(path: Path, openclaw_root: Path) -> None:
+def delete_openclaw_session(path: Path, openclaw_root: Path) -> None:
     """Delete an OpenClaw transcript, sidecars, and matching store entry."""
     resolved = path.resolve()
     root = openclaw_root.resolve()
@@ -310,7 +310,7 @@ def clean(
             if candidate.agent == "openclaw":
                 if openclaw_root is None:
                     raise DeleteNotAllowed("OpenClaw root is not configured")
-                _delete_openclaw_session(candidate.path, openclaw_root)
+                delete_openclaw_session(candidate.path, openclaw_root)
             else:
                 delete_permanently(
                     candidate.path,

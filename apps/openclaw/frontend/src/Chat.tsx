@@ -3,8 +3,8 @@ import { ChatSendIcon } from "@ssot/ui/ChatSendIcon";
 import { assistantReply, getTranscriptByKey, postChat } from "./api";
 import { Markdown } from "./Markdown";
 import { ToolCallView } from "@ssot/ui/ToolCallView";
-import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
-import { usePersistedBool } from "./hooks";
+import { ToolVisibilityToggle } from "@ssot/ui/ToolVisibilityToggle";
+import { usePersistedBool } from "@ssot/ui/usePersistedBool";
 import type { ToolCall, Turn } from "./types";
 import { errMessage, randomSessionSuffix } from "./util";
 

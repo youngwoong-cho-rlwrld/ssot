@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Copy, Check, Star, Trash2 } from "lucide-react";
 import { TurnView } from "@ssot/ui/TurnView";
+import { Markdown } from "@ssot/ui/Markdown";
+import { ToolVisibilityToggle } from "@ssot/ui/ToolVisibilityToggle";
+import { usePersistedBool } from "@ssot/ui/usePersistedBool";
 import { deleteSession, getDetail } from "../api";
 import type { BoardNode, SessionDetail } from "../types";
 import { formatAbsolute, relativeTime } from "../board/util";
+
+const renderMarkdown = (text: string) => <Markdown>{text}</Markdown>;
 
 const SWATCHES = [
   "#fdf0d5", // warm cream
@@ -39,6 +44,10 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
   const [copied, setCopied] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showTools, toggleTools] = usePersistedBool(
+    "sessions.showToolCalls",
+    true,
+  );
 
   useEffect(() => {
     let alive = true;
@@ -107,6 +116,12 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 
   const starred = node?.starred ?? false;
 
+  // When tool/system bubbles are hidden, drop every turn that would render
+  // empty: system turns and tool-only turns with no text.
+  const turns = (detail?.turns ?? []).filter(
+    (t) => showTools || (t.role !== "system" && Boolean(t.text)),
+  );
+
   return (
     <>
       <div className="drawer__scrim" onClick={onClose} />
@@ -122,6 +137,11 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
               {detail?.title ?? (loading ? "Loading..." : "Session")}
             </div>
           </div>
+          <ToolVisibilityToggle
+            visible={showTools}
+            onToggle={toggleTools}
+            context="transcript"
+          />
           <button
             type="button"
             className="ssot-icon-btn"
@@ -177,7 +197,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           </div>
         )}
 
-        {agent !== "openclaw" && <div className="drawer__danger">
+        <div className="drawer__danger">
           {!confirmingDelete ? (
             <button type="button" className="danger-btn" onClick={onDelete}>
               <Trash2 size={14} />
@@ -185,7 +205,11 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
             </button>
           ) : (
             <div className="danger-confirm">
-              <span className="danger-confirm__msg">Move to Trash?</span>
+              <span className="danger-confirm__msg">
+                {agent === "openclaw"
+                  ? "Delete permanently? This cannot be undone."
+                  : "Move to Trash?"}
+              </span>
               <button
                 type="button"
                 className="danger-btn danger-btn--solid"
@@ -204,7 +228,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
               </button>
             </div>
           )}
-        </div>}
+        </div>
 
         <div className="drawer__controls">
           <div className="swatches" role="group" aria-label="Card color">
@@ -248,8 +272,14 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           {detail && detail.turns.length === 0 && !loading && (
             <div className="drawer__status">No messages.</div>
           )}
-          {detail?.turns.map((turn, i) => (
-            <TurnView key={i} turn={turn} />
+          {turns.map((turn, i) => (
+            <TurnView
+              key={i}
+              turn={turn}
+              showTools={showTools}
+              renderText={renderMarkdown}
+              hideRoleFor={["user", "assistant"]}
+            />
           ))}
         </div>
       </aside>

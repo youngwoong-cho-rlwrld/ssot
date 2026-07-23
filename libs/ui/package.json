@@ -25,9 +25,11 @@
     "./PanelResizeHandle": "./src/PanelResizeHandle.tsx",
     "./SsotSelect": "./src/SsotSelect.tsx",
     "./ToolCallView": "./src/ToolCallView.tsx",
+    "./ToolVisibilityToggle": "./src/ToolVisibilityToggle.tsx",
     "./TurnView": "./src/TurnView.tsx",
     "./transcript-types": "./src/transcript-types.ts",
     "./useDragResize": "./src/useDragResize.ts",
+    "./usePersistedBool": "./src/usePersistedBool.ts",
     "./package.json": "./package.json"
   }
 }
