@@ -254,6 +254,72 @@ def test_db_direct_runstate_writes_straight_to_db(tmp_path, monkeypatch):
     assert run["error_detail"] == "nope"
 
 
+def test_db_direct_finalize_defers_geometry_to_worker(tmp_path, monkeypatch):
+    """Claude-CLI runtime: a successful finalize inside the stdio MCP server must NOT
+    mark the run done (that would mean the headless-Chrome geometry pass ran in here).
+    It persists rows + caches the provisional HTML + sets the geometry-pending marker,
+    leaving the run 'running' for the worker to finish.
+    """
+    from tests.test_db import _SRC, _payload  # known-good payload + its source
+
+    dbfile = tmp_path / "md.db"
+    monkeypatch.setenv("MODEL_DIAGRAM_DB", str(dbfile))
+    monkeypatch.setenv("SSOT_DATA_DIR", str(tmp_path / "data"))
+
+    from app import db, finalize
+
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="claude-fable-5"
+    )
+    (tmp_path / "model.py").write_text(_SRC)  # finalize fetches the named source's bytes
+
+    env = dict(os.environ)
+    env.update({
+        "MD_CLUSTER": "local", "MD_ROOT": str(tmp_path), "MD_RUN_ID": str(run_id),
+        "MD_DB_DIRECT": "1", "MODEL_DIAGRAM_DB": str(dbfile), "MD_ACCESS_JSON": '{"kind":"local"}',
+    })
+    env.pop("MD_CALLBACK_BASE", None)
+    proc = subprocess.Popen(
+        [sys.executable, _SERVER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+    )
+    try:
+        def rpc(rid, method, params=None):
+            msg = {"jsonrpc": "2.0", "id": rid, "method": method}
+            if params is not None:
+                msg["params"] = params
+            proc.stdin.write(json.dumps(msg) + "\n")
+            proc.stdin.flush()
+            return json.loads(proc.stdout.readline())
+
+        rpc(1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}})
+        r = rpc(2, "tools/call", {"name": "finalize_diagram", "arguments": _payload().model_dump()})
+        payload = json.loads(r["result"]["content"][0]["text"])
+        assert payload["ok"] is True and not r["result"].get("isError")
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    run = db.get_run(run_id)
+    assert run["status"] == "running"  # NOT done — the worker owns the terminal write
+    assert run["geometry_pending"] == 1  # marker the worker observes
+    assert run["rendered_html"]  # static integrity passed; provisional page cached
+
+    # The worker's completion step: run the (disabled) geometry pass + mark done.
+    import asyncio
+
+    asyncio.run(finalize.apply_geometry_pass(run_id))
+    assert db.mark_terminal(run_id, "done") is True
+    assert db.get_run(run_id)["status"] == "done"
+
+
 def test_ssh_access_from_env_no_config_lookup():
     """Regression: the worker must consume the pre-resolved MD_ACCESS_JSON and
     take the ssh path — never fail with 'cluster ... is not configured' (which

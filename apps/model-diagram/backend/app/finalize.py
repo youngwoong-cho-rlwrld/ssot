@@ -30,6 +30,7 @@ async def try_finalize(
     fs: FsAccess,
     *,
     reuse_sources: Optional[dict[str, str]] = None,
+    run_geometry: bool = True,
 ) -> tuple[bool, Optional[str]]:
     """Validate → fetch source bytes → persist → render one finalize attempt.
 
@@ -44,6 +45,11 @@ async def try_finalize(
     run's already-embedded files instead of re-reading them; any name not present
     is fetched fresh. A named file that cannot be read is a RETRYABLE error so the
     agent can correct the path and call finalize again.
+
+    ``run_geometry=False`` persists + renders + runs the STATIC integrity check but
+    SKIPS the headless-Chrome geometry pass. The Claude-CLI runtime uses this so the
+    browser pass never runs inside the stdio MCP server; its worker calls
+    :func:`apply_geometry_pass` afterwards instead (see :mod:`app.mcp_server`).
     """
     try:
         payload = FinalizePayload.model_validate(raw)
@@ -94,8 +100,26 @@ async def try_finalize(
 
     # §7.2 / A6 geometry pass: measure the real render and correct overlaps/wires.
     # Best-effort — a failure here (no browser, protocol error) never fails the run.
-    await _apply_geometry_pass(run_id, html)
+    # Deferred (run_geometry=False) on the Claude-CLI path so the browser pass runs
+    # in the worker, never inside the stdio MCP server.
+    if run_geometry:
+        await _apply_geometry_pass(run_id, html)
     return True, None
+
+
+async def apply_geometry_pass(run_id: int) -> None:
+    """Run the deferred geometry pass on an already-persisted, already-rendered run.
+
+    The Claude-CLI runtime finalizes inside the stdio MCP server with
+    ``run_geometry=False``; its worker calls this afterwards so the headless-Chrome
+    measurement happens in the worker process. Loads the provisional HTML the
+    finalize cached and delegates to the shared best-effort pass (a no-op if the run
+    has no cached HTML, e.g. it was cancelled before finalize).
+    """
+    run = db.get_run(run_id)
+    html = run.get("rendered_html") if run else None
+    if html:
+        await _apply_geometry_pass(run_id, html)
 
 
 def _paper_coverage_error(run_id: int, payload: FinalizePayload) -> Optional[str]:

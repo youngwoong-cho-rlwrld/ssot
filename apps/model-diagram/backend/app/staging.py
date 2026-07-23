@@ -29,8 +29,12 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
-from typing import AsyncIterator
+import shutil
+import tempfile
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Callable, Optional
 
+from . import settings
 from .ssh import ssh_stream_bytes
 
 # Binary / artifact FILE globs — matched anywhere (``*`` spans ``/`` in both GNU
@@ -139,6 +143,14 @@ async def _extract_tar(stream: AsyncIterator[bytes], dest: str, *, cap_bytes: in
         proc.stdin.close()
     except (BrokenPipeError, ConnectionResetError):
         pass
+    finally:
+        # Close the producer on EVERY exit path — a cap hit, a dead tar, or any error
+        # abandons the stream mid-flight, and without an explicit close the ssh /
+        # kubectl child feeding it lingers (its own finally never runs). aclose()
+        # raises GeneratorExit into the suspended producer so its cleanup fires.
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            await aclose()
     if over_cap:
         proc.kill()
         await proc.wait()
@@ -168,3 +180,31 @@ async def stage_root(access: dict, root: str, dest_dir: str, *, size_cap_bytes: 
     if not os.listdir(mirror):
         raise StagingError("mirror is empty after transfer, the remote root could not be read")
     return mirror
+
+
+@asynccontextmanager
+async def staged_root_for_codex(
+    access: dict,
+    resolved_root: str,
+    *,
+    prefix: str,
+    on_log: Optional[Callable[[str], None]] = None,
+):
+    """Mirror a REMOTE root locally for a codex run/chat and yield the effective
+    ``(cluster, root, access, staged_excludes)`` to run against; delete the mirror on
+    exit. Raises :class:`StagingError` if the mirror fails (the caller records it).
+
+    Only for a remote cluster — the sandboxed MCP server cannot ssh/kubectl, so the
+    backend mirrors first and points FsAccess at the local copy. Local roots read
+    directly and never enter this. Shared by the run and chat workers.
+    """
+    staged_dir = tempfile.mkdtemp(prefix=prefix, dir=str(settings.stage_dir()))
+    if on_log:
+        on_log(f"staging remote root to local mirror for codex ({staged_dir})")
+    try:
+        mirror = await stage_root(
+            access, resolved_root, staged_dir, size_cap_bytes=settings.codex_stage_max_bytes()
+        )
+        yield "local", mirror, {"kind": "local"}, excluded_file_globs()
+    finally:
+        shutil.rmtree(staged_dir, ignore_errors=True)

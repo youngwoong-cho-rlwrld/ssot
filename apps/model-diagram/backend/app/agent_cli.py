@@ -37,12 +37,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 import sys
-import tempfile
 from typing import Optional
 
-from . import db, settings
+from . import agent_tools, db, finalize, runtime_common, settings
 from .agent_tools import (
     TOOL_NAMES,
     AgentOutcome,
@@ -55,13 +53,9 @@ from .agent_tools import (
     summarize_text,
     summarize_tool_call,
 )
+from .runtime_common import noop_log as _noop_log
 
 _TERMINAL_STATUSES = {"done", "error"}
-
-
-def _noop_log(_line: str) -> None:
-    pass
-
 
 _MCP_SERVER_NAME = "modeldiagram"
 _EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
@@ -83,8 +77,11 @@ def _effort() -> str:
     MODEL_DIAGRAM_CLI_EFFORT lets ops trade thoroughness for latency/cost without
     a code change (the CLI otherwise defaults to xhigh, which is slower).
     """
-    raw = os.environ.get("MODEL_DIAGRAM_CLI_EFFORT", "high").strip().lower()
-    return raw if raw in _EFFORT_LEVELS else "high"
+    return runtime_common.resolve_effort("MODEL_DIAGRAM_CLI_EFFORT", _EFFORT_LEVELS)
+
+
+def _looks_logged_out(text: str) -> bool:
+    return runtime_common.looks_logged_out(text, _AUTH_HINTS)
 
 
 def _mcp_config(*, mcp_server_path: str, env: dict[str, str]) -> str:
@@ -120,9 +117,7 @@ async def run_agent_cli(
 
     outcome = AgentOutcome(paper_status="attached" if has_paper else "none")
 
-    scratch = tempfile.mkdtemp(prefix="md-cli-")
-    proc: Optional[asyncio.subprocess.Process] = None
-    try:
+    async with runtime_common.RuntimeScratch("md-cli-") as rt:
         mcp_env = {
             "MD_CLUSTER": cluster,
             "MD_ROOT": root,
@@ -134,10 +129,7 @@ async def run_agent_cli(
             "MD_ACCESS_JSON": json.dumps(access),
         }
         if has_paper and paper_text:
-            paper_file = os.path.join(scratch, "paper.txt")
-            with open(paper_file, "w", encoding="utf-8") as fh:
-                fh.write(paper_text)
-            mcp_env["MD_PAPER_FILE"] = paper_file
+            runtime_common.write_paper_file(rt.path, mcp_env, paper_text)
 
         mcp_server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_server.py")
         system_prompt = build_system_prompt(cluster, root, has_paper=has_paper, paper_via_tool=True)
@@ -146,12 +138,9 @@ async def run_agent_cli(
         # to make the model pace itself and wrap up). Without it the model can spiral in a
         # long thinking block on the heavy finalize_diagram payload and never emit it, so
         # nudge it to act once it has enough — mirroring the SDK path's pacing.
-        initial_user += (
-            "\n\nBounded budget — do NOT over-deliberate on layout. You have no geometry-measurement "
-            "tool, so a perfect layout is impossible and not the goal; a correct diagram that passes "
-            "the integrity checks is. Use a simple single-column top-to-bottom layout with straight "
-            "vertical orthogonal wires between adjacent boxes. As soon as the component line ranges "
-            "are verified, emit finalize_diagram — do not keep reasoning about positions or routing."
+        initial_user += agent_tools.LAYOUT_PACING_NUDGE + (
+            "As soon as the component line ranges are verified, emit finalize_diagram — do not keep "
+            "reasoning about positions or routing."
         )
 
         cmd = [
@@ -184,63 +173,69 @@ async def run_agent_cli(
         # so it uses the logged-in subscription).
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=scratch,
+            cwd=rt.path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        rt.proc = proc
 
         result_event: dict[str, object] = {}
         debug_log = os.environ.get("MODEL_DIAGRAM_CLI_LOG", "").strip() or None
         pump = asyncio.create_task(_pump_stdout(proc, result_event, debug_log, on_log))
-        watch = asyncio.create_task(_watch_db_terminal(run_id))
-        done, _pending = await asyncio.wait({pump, watch}, return_when=asyncio.FIRST_COMPLETED)
-
-        if watch in done and pump not in done:
-            # The MCP writer recorded a terminal status (finalize / report_problem).
-            # Give the CLI a brief window to wrap up, then stop it — outcome decided.
-            try:
-                await asyncio.wait_for(pump, timeout=8.0)
-            except asyncio.TimeoutError:
-                pump.cancel()
-        else:
-            watch.cancel()
+        # The MCP writer records finalize / report_problem on the DB row (terminal
+        # status, or the geometry-pending marker a successful finalize sets — the
+        # heavy geometry pass runs HERE in the worker, not inside the stdio server).
+        watch = asyncio.create_task(_watch_db_settled(run_id))
+        await runtime_common.await_pump_or_terminal(pump, watch)
 
         await proc.wait()
         stderr = (await proc.stderr.read()).decode("utf-8", errors="replace") if proc.stderr else ""
-        # The DB is authoritative: if the MCP subprocess recorded a terminal status
-        # (done, integrity give-up, not_a_model_root), keep it. Only when the CLI
-        # exited with the row still 'running' do we map its exit into a failure.
-        run = db.get_run(run_id)
-        if run and run["status"] in _TERMINAL_STATUSES:
-            outcome.status = run["status"]
-            outcome.error_kind = run.get("error_kind")
-            outcome.error_detail = run.get("error_detail")
-            outcome._terminal = True
-        else:
-            _finalize_outcome(outcome, proc.returncode or 0, result_event, stderr)
+        await _resolve_cli_outcome(run_id, outcome, proc.returncode or 0, result_event, stderr)
         return outcome
-    finally:
-        if proc is not None and proc.returncode is None:
-            proc.terminate()
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                proc.kill()
-        shutil.rmtree(scratch, ignore_errors=True)
 
 
-async def _watch_db_terminal(run_id: int, poll_seconds: float = 0.5) -> None:
-    """Return once the run's DB row reaches a terminal status.
+async def _resolve_cli_outcome(
+    run_id: int, outcome: AgentOutcome, returncode: int, result_event: dict, stderr: str
+) -> None:
+    """Decide the run outcome once the CLI has exited, honouring the authoritative DB.
 
-    The MCP subprocess writes run-state (including the terminal done/error) straight
-    to the DB, so the worker learns the outcome by polling the row rather than via a
-    callback event. This only drives the early-stop of the CLI; the authoritative
-    status is read from the DB after the process exits.
+    The MCP subprocess persisted run-state straight to the DB. Three cases:
+
+    * the row is already terminal (report_problem / finalize give-up) → keep it;
+    * the row is 'running' with the geometry-pending marker → a finalize passed the
+      static integrity check; run the deferred headless-Chrome geometry pass HERE in
+      the worker (never inside the stdio MCP server), then mark the run done;
+    * otherwise the CLI exited with the row still 'running' → map its exit to failure.
+    """
+    run = db.get_run(run_id)
+    if run and run["status"] in _TERMINAL_STATUSES:
+        outcome.status = run["status"]
+        outcome.error_kind = run.get("error_kind")
+        outcome.error_detail = run.get("error_detail")
+        outcome._terminal = True
+        return
+    if run and run.get("geometry_pending"):
+        await finalize.apply_geometry_pass(run_id)
+        # Guarded: a cancel that landed first already flipped the row terminal.
+        db.mark_terminal(run_id, "done")
+        outcome.status = "done"
+        outcome._terminal = True
+        return
+    _finalize_outcome(outcome, returncode, result_event, stderr)
+
+
+async def _watch_db_settled(run_id: int, poll_seconds: float = 0.5) -> None:
+    """Return once the run's DB row is settled: terminal, or finalize-complete.
+
+    The MCP subprocess records run-state on the DB row — a terminal done/error, or
+    the geometry-pending marker a successful finalize sets. Either settles the run
+    from the CLI's side, so the worker stops the CLI and resolves the outcome. This
+    only drives the early-stop; the authoritative state is read after the CLI exits.
     """
     while True:
         await asyncio.sleep(poll_seconds)
         run = db.get_run(run_id)
-        if run and run["status"] in _TERMINAL_STATUSES:
+        if run and (run["status"] in _TERMINAL_STATUSES or run.get("geometry_pending")):
             return
 
 
@@ -257,38 +252,15 @@ async def _pump_stdout(
     :func:`_finalize_outcome`. Assistant messages are additionally condensed into
     ``on_log`` lines (text + tool calls) for the live agent-output pane. Set
     MODEL_DIAGRAM_CLI_LOG to tee the raw stream-json to a file for debugging.
-
-    Reads in fixed-size chunks and splits lines by hand, deliberately NOT using
-    ``proc.stdout.readline`` / ``async for`` — those enforce asyncio's 64KB line
-    limit and raise LimitOverrunError. Individual stream-json lines routinely
-    exceed that (the finalize_diagram assistant message carries base64 sources),
-    and a crash here would leave the CLI blocked on a full stdout pipe until the
-    run times out. Oversized lines are summarized without a full JSON parse.
+    Oversized lines (the base64 finalize payload) flow through intact via
+    :func:`runtime_common.stream_lines` and are summarized by shape, never parsed.
     """
     assert proc.stdout is not None
-    log = open(debug_log, "a", encoding="utf-8") if debug_log else None
-    buf = bytearray()
-    max_line = 128 * 1024 * 1024  # bound memory on a pathological unterminated line
-    try:
-        while True:
-            chunk = await proc.stdout.read(65536)
-            if not chunk:
-                break
-            buf += chunk
-            while True:
-                nl = buf.find(b"\n")
-                if nl == -1:
-                    if len(buf) > max_line:
-                        buf.clear()  # give up on a runaway line; keep the stream alive
-                    break
-                line = bytes(buf[: nl])
-                del buf[: nl + 1]
-                _handle_stream_line(line, result_event, log, on_log)
-        if buf:
-            _handle_stream_line(bytes(buf), result_event, log, on_log)
-    finally:
-        if log:
-            log.close()
+
+    async def on_line(line: bytes) -> None:
+        _handle_stream_line(line, result_event, on_log)
+
+    await runtime_common.stream_lines(proc.stdout, on_line, debug_log=debug_log)
 
 
 # Cheap byte-substring gate: only the small lifecycle lines are worth parsing.
@@ -301,12 +273,10 @@ _ASSISTANT_MARKER = b'"type":"assistant"'
 _LOG_PARSE_MAX = 65536
 
 
-def _handle_stream_line(line: bytes, result_event: dict, log, on_log: LogCallback = _noop_log) -> None:
+def _handle_stream_line(line: bytes, result_event: dict, on_log: LogCallback = _noop_log) -> None:
+    # Raw-line tee-ing to the debug log is handled by runtime_common.stream_lines.
     if not line.strip():
         return
-    if log:
-        log.write(line.decode("utf-8", errors="replace") + "\n")
-        log.flush()
     if _RESULT_MARKER in line or _INIT_MARKER in line:
         try:
             event = json.loads(line)
@@ -380,8 +350,3 @@ def _finalize_outcome(outcome: AgentOutcome, returncode: int, result_event: dict
     outcome.status = "error"
     outcome.error_kind = "agent_failure"
     outcome.error_detail = "the agent stopped without calling finalize_diagram"
-
-
-def _looks_logged_out(text: str) -> bool:
-    lowered = text.lower()
-    return any(hint in lowered for hint in _AUTH_HINTS)

@@ -132,16 +132,6 @@ def model_name() -> str:
     return os.environ.get("MODEL_DIAGRAM_MODEL", "claude-fable-5")
 
 
-def model_catalog() -> list[dict[str, str]]:
-    """The full allowlist as ``[{"id", "label"}, ...]`` (unfiltered).
-
-    GET /api/models serves the availability-filtered subset instead
-    (:func:`available_model_catalog`); this remains the complete registry.
-    Ordered anthropic-first then openai, each by label (see :func:`_sorted_allowlist`).
-    """
-    return [{"id": mid, "label": label} for mid, label, _ in _sorted_allowlist()]
-
-
 def allowed_model_ids() -> set[str]:
     return {mid for mid, _, _ in MODEL_ALLOWLIST}
 

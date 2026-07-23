@@ -234,7 +234,7 @@ def test_reconcile_orphaned_skips_terminal(tmp_env):
         user_email="u@example.com", cluster="local", path="/p", model="m"
     )
     db.set_run_pid(done, _DEAD_PID)
-    db.update_run_status(done, "done")
+    db.mark_terminal(done, "done")
 
     ids = db.reconcile_orphaned_runs()
     assert done not in ids

@@ -89,6 +89,29 @@ async def test_stage_cap_enforced_during_stream(tmp_path, monkeypatch):
     assert "staging cap" in str(exc.value)
 
 
+async def test_producer_closed_on_cap_exceed(tmp_path, monkeypatch):
+    # Regression: on a cap hit (or any abort) the tar producer stream must be closed
+    # so the ssh/kubectl child feeding it does not linger. A fake producer records
+    # that its GeneratorExit cleanup fired.
+    closed = {"v": False}
+
+    async def leaky_producer(access, cmd):
+        try:
+            while True:
+                yield b"\x00" * 4096  # never-ending → forces the cap abort
+        finally:
+            closed["v"] = True  # aclose() raises GeneratorExit → this runs
+
+    monkeypatch.setattr(staging, "_producer_stream", leaky_producer)
+    dest = tmp_path / "stage"
+    dest.mkdir()
+    with pytest.raises(staging.StagingError):
+        await staging.stage_root(
+            {"kind": "ssh", "ssh_alias": "x"}, "/whatever", str(dest), size_cap_bytes=1024
+        )
+    assert closed["v"] is True  # the producer was closed on the abort path
+
+
 async def test_stage_empty_mirror_is_error(tmp_path, monkeypatch):
     async def empty_producer(access, cmd):
         yield b"\x00" * 1024  # a minimal valid empty tar archive

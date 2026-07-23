@@ -70,7 +70,9 @@ def start_run(run_id: int, *, user_email: str | None = None) -> None:
     try:
         pid = _spawn_worker("app.run_worker", run_id, f"reap-run-{run_id}")
     except Exception as exc:  # spawning failed outright — fail the run in the DB
-        db.update_run_status(
+        # Guarded terminal write (WHERE status='running'): a run cancelled in the
+        # spawn window is not resurrected as an agent_failure.
+        db.mark_terminal(
             run_id, "error", error_kind="agent_failure",
             error_detail=f"could not start the generation worker: {exc}",
         )

@@ -74,7 +74,7 @@ async def test_event_stream_replays_and_terminates_from_db(tmp_env):
     db.add_stage_event(run_id, "inspecting_root", "looking")
     db.add_output_line(run_id, "→ read_file model.py")
     db.add_stage_event(run_id, "finalizing", "")
-    db.update_run_status(run_id, "done")
+    db.mark_terminal(run_id, "done")
 
     frames = await _collect(run_id)
     types = [f["type"] for f in frames]
@@ -90,7 +90,7 @@ async def test_event_stream_replays_and_terminates_from_db(tmp_env):
 async def test_event_stream_emits_mismatch_warning_and_error(tmp_env):
     run_id = _mk_run()
     db.set_paper_status(run_id, "mismatch", "paper is for a different model")
-    db.update_run_status(run_id, "error", error_kind="agent_failure", error_detail="boom")
+    db.mark_terminal(run_id, "error", error_kind="agent_failure", error_detail="boom")
 
     frames = await _collect(run_id)
     warn = next(f for f in frames if f["type"] == "warning")
@@ -134,7 +134,7 @@ async def test_cancel_run_marks_cancelled_and_signals_group(tmp_env, monkeypatch
 
 async def test_cancel_run_rejects_non_running(tmp_env, monkeypatch):
     run_id = _mk_run()
-    db.update_run_status(run_id, "done")
+    db.mark_terminal(run_id, "done")
     monkeypatch.setattr(runs.os, "killpg", lambda *a: (_ for _ in ()).throw(AssertionError("must not signal")))
     assert await runs.cancel_run(run_id) == "not_running"
     assert db.get_run(run_id)["status"] == "done"
@@ -153,5 +153,5 @@ def test_cancel_endpoint_404_and_409(tmp_env):
     _, run_id = db.create_diagram_with_run(
         user_email="u@example.com", cluster="local", path="/p", model="claude-fable-5"
     )
-    db.update_run_status(run_id, "done")
+    db.mark_terminal(run_id, "done")
     assert client.post(f"/api/runs/{run_id}/cancel", headers=headers).status_code == 409

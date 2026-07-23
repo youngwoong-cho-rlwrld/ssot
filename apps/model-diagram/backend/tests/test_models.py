@@ -23,10 +23,12 @@ def test_default_model_is_claude_fable(monkeypatch):
     assert settings.default_model() == "claude-fable-5"
 
 
-def test_model_catalog_shape_and_default_present():
-    catalog = settings.model_catalog()
-    assert catalog[0] == {"id": "claude-fable-5", "label": "Claude Fable"}
-    ids = {m["id"] for m in catalog}
+def test_model_allowlist_shape_and_default_present():
+    # The sorted allowlist backs GET /api/models (via available_model_catalog); check
+    # its ordering + labels directly now that the unfiltered model_catalog() is gone.
+    sorted_allowlist = settings._sorted_allowlist()
+    assert sorted_allowlist[0][:2] == ("claude-fable-5", "Claude Fable")
+    ids = {mid for mid, _, _ in sorted_allowlist}
     assert {"claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"} <= ids
     assert settings.default_model() in ids
 

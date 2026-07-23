@@ -45,6 +45,17 @@ STAGES = (
 # runtime injects the paper as a document block instead).
 PAPER_VPATH = "__paper__"
 
+# Shared layout-pacing preamble appended to the initial user message on the two
+# CLI runtimes (the SDK path paces via output_config.task_budget instead). Neither
+# CLI has a geometry-measurement tool, so a correct integrity-passing diagram — not
+# a perfect layout — is the goal; each runtime adds its own closing sentence.
+LAYOUT_PACING_NUDGE = (
+    "\n\nBounded budget — do NOT over-deliberate on layout. You have no geometry-measurement "
+    "tool, so a perfect layout is impossible and not the goal; a correct diagram that passes "
+    "the integrity checks is. Use a simple single-column top-to-bottom layout with straight "
+    "vertical orthogonal wires between adjacent boxes. "
+)
+
 _READ_MAX_LINES = 1400
 
 StageCallback = Callable[[str, str], Awaitable[None]]

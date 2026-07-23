@@ -128,7 +128,11 @@ def _call_db_direct(fs: FsAccess, name: str, args: dict) -> tuple[dict, bool]:
 
     async def finalize_cb(raw: dict):
         # The backend fetches source bytes itself via the run's scoped access (fs).
-        return await finalize.try_finalize(run_id, raw, fs)
+        # run_geometry=False: the headless-Chrome geometry pass must NOT run inside
+        # this stdio JSON-RPC server. A successful finalize persists rows + caches the
+        # provisional HTML + runs STATIC integrity here; the worker (which tails the
+        # DB) sees the geometry-pending marker, runs the browser pass, and marks done.
+        return await finalize.try_finalize(run_id, raw, fs, run_geometry=False)
 
     if name == "report_stage":
         return asyncio.run(agent_tools.handle_stage(on_stage, args)), False
@@ -142,7 +146,9 @@ def _call_db_direct(fs: FsAccess, name: str, args: dict) -> tuple[dict, bool]:
         result, is_error = asyncio.run(agent_tools.handle_finalize(_OUTCOME, finalize_cb, args))
         if _OUTCOME._terminal:
             if _OUTCOME.status == "done":
-                db.mark_terminal(run_id, "done")
+                # Static integrity passed; hand the deferred geometry pass to the
+                # worker rather than marking done + running a browser in here.
+                db.mark_geometry_pending(run_id)
             else:
                 db.mark_terminal(run_id, "error", error_kind=_OUTCOME.error_kind, error_detail=_OUTCOME.error_detail)
         return result, is_error
@@ -166,9 +172,11 @@ def _call_chat_revise(fs: FsAccess, args: dict) -> tuple[dict, bool]:
     if not anchor:
         return {"error": "anchor run not found"}, True
     outcome = _chat_outcome()
+    # run_geometry=False: never run the headless-Chrome pass inside this stdio server.
+    # The Claude-CLI chat worker runs it after the CLI exits (chat.run_chat_cli).
     revise_cb = chat.make_revise_cb(
         anchor_run=anchor, diagram_id=anchor["diagram_id"], user_email=anchor["user_email"],
-        outcome=outcome, fs=fs,
+        outcome=outcome, fs=fs, run_geometry=False,
     )
     result, is_error = asyncio.run(chat.handle_revise(outcome, revise_cb, args))
     if outcome.revised and outcome.revise_run_id:

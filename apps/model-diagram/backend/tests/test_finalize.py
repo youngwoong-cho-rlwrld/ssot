@@ -8,6 +8,51 @@ from app.agent_tools import AgentOutcome, handle_finalize
 from tests.test_db import _payload, fake_fs  # a known-good FinalizePayload + fs stub
 
 
+async def test_run_geometry_flag_gates_the_browser_pass(tmp_env, monkeypatch):
+    # run_geometry=False (the Claude-CLI path, which finalizes inside the stdio MCP
+    # server) must persist + render but NEVER invoke the headless-Chrome pass; the
+    # worker runs it afterwards. run_geometry=True keeps the inline pass.
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    calls: list = []
+
+    async def spy(rid, html):
+        calls.append(rid)
+
+    monkeypatch.setattr(finalize, "_apply_geometry_pass", spy)
+
+    ok, err = await finalize.try_finalize(run_id, _payload().model_dump(), fake_fs(), run_geometry=False)
+    assert ok and err is None and calls == []  # skipped inside the MCP server
+    assert db.get_run(run_id)["rendered_html"]  # rows + provisional HTML still cached
+
+    ok, err = await finalize.try_finalize(run_id, _payload().model_dump(), fake_fs(), run_geometry=True)
+    assert ok and calls == [run_id]  # inline pass ran on the in-worker path
+
+
+async def test_apply_geometry_pass_reads_cached_html(tmp_env, monkeypatch):
+    # The deferred public entry loads the run's cached HTML and delegates; a run with
+    # no cached HTML is a safe no-op (e.g. cancelled before finalize).
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="m"
+    )
+    seen: list = []
+
+    async def spy(rid, html):
+        seen.append((rid, html))
+
+    monkeypatch.setattr(finalize, "_apply_geometry_pass", spy)
+
+    await finalize.apply_geometry_pass(run_id)  # no HTML yet → no-op
+    assert seen == []
+
+    await finalize.try_finalize(run_id, _payload().model_dump(), fake_fs(), run_geometry=False)
+    await finalize.apply_geometry_pass(run_id)  # now the cached HTML is passed through
+    assert len(seen) == 1 and seen[0][0] == run_id and "<html" in seen[0][1].lower()
+
+
 async def test_try_finalize_persists_and_caches_html(tmp_env):
     db.init_db()
     _, run_id = db.create_diagram_with_run(

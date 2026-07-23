@@ -71,12 +71,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 import sys
-import tempfile
 from typing import Optional
 
-from . import agent_tools, settings
+from . import agent_tools, runtime_common, settings
 from .agent_tools import (
     AgentOutcome,
     FinalizeCallback,
@@ -88,10 +86,7 @@ from .agent_tools import (
     summarize_text,
     summarize_tool_call,
 )
-
-
-def _noop_log(_line: str) -> None:
-    pass
+from .runtime_common import noop_log as _noop_log
 
 _MCP_SERVER_NAME = "modeldiagram"
 _EFFORT_LEVELS = {"minimal", "low", "medium", "high", "xhigh"}
@@ -134,8 +129,11 @@ def _effort() -> str:
 
     MODEL_DIAGRAM_CODEX_EFFORT lets ops trade thoroughness for latency/cost.
     """
-    raw = os.environ.get("MODEL_DIAGRAM_CODEX_EFFORT", "high").strip().lower()
-    return raw if raw in _EFFORT_LEVELS else "high"
+    return runtime_common.resolve_effort("MODEL_DIAGRAM_CODEX_EFFORT", _EFFORT_LEVELS)
+
+
+def _looks_logged_out(text: str) -> bool:
+    return runtime_common.looks_logged_out(text, _AUTH_HINTS)
 
 
 def _toml_str(value: str) -> str:
@@ -214,42 +212,30 @@ def _build_codex_cmd(
     return cmd
 
 
-class _StreamDispatcher:
-    """Turns codex ``--json`` events into run-state handler calls.
+class _CodexStreamDispatcher:
+    """Base for turning codex's ``--json`` JSONL into runtime effects.
 
-    The four run-state MCP tools are answered with a local ack inside the
-    sandboxed MCP server; their real effect happens here, driven off the tool
-    call codex echoes on stdout. Lifecycle events (turn.completed / turn.failed /
-    top-level error) are recorded for :func:`_finalize_outcome`.
+    Parses only the lines a runtime cares about (a cheap byte gate first), records
+    the lifecycle events (turn.completed / turn.failed / top-level error) into
+    ``self.result`` for the exit mapping, and forwards each completed item to the
+    subclass's :meth:`_dispatch_item`. The dedup guard is shared: codex may echo an
+    item id more than once.
     """
 
-    def __init__(
-        self,
-        outcome: AgentOutcome,
-        on_stage: StageCallback,
-        on_paper_mismatch: MismatchCallback,
-        finalize_cb: FinalizeCallback,
-        terminal: asyncio.Event,
-        on_log: LogCallback = _noop_log,
-    ) -> None:
-        self.outcome = outcome
-        self.on_stage = on_stage
-        self.on_paper_mismatch = on_paper_mismatch
-        self.finalize_cb = finalize_cb
-        self.terminal = terminal
-        self.on_log = on_log
+    _GATE = (
+        b'"turn.completed"',
+        b'"turn.failed"',
+        b'"type":"error"',
+        b'"mcp_tool_call"',
+        b'"agent_message"',
+    )
+
+    def __init__(self) -> None:
         self.result: dict[str, object] = {}
         self._seen: set[str] = set()
 
     async def handle_line(self, line: bytes) -> None:
-        # Cheap gate: only lifecycle lines and our tool-call items are worth parsing.
-        if (
-            b'"turn.completed"' not in line
-            and b'"turn.failed"' not in line
-            and b'"type":"error"' not in line
-            and b'"mcp_tool_call"' not in line
-            and b'"agent_message"' not in line
-        ):
+        if not any(marker in line for marker in self._GATE):
             return
         try:
             event = json.loads(line)
@@ -264,9 +250,46 @@ class _StreamDispatcher:
         elif etype == "error":
             self.result["error"] = str(event.get("message") or "codex reported an error")
         elif etype == "item.completed":
-            await self._maybe_dispatch(event.get("item") or {})
+            await self._dispatch_item(event.get("item") or {})
 
-    async def _maybe_dispatch(self, item: dict) -> None:
+    def _already_seen(self, item: dict) -> bool:
+        """True if this item id was handled before (codex may echo an item twice)."""
+        item_id = str(item.get("id") or "")
+        if item_id and item_id in self._seen:
+            return True
+        if item_id:
+            self._seen.add(item_id)
+        return False
+
+    async def _dispatch_item(self, item: dict) -> None:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+
+class _StreamDispatcher(_CodexStreamDispatcher):
+    """Generation runtime: dispatch run-state from the tool calls codex echoes.
+
+    The four run-state MCP tools are answered with a local ack inside the sandboxed
+    MCP server; their real effect happens here.
+    """
+
+    def __init__(
+        self,
+        outcome: AgentOutcome,
+        on_stage: StageCallback,
+        on_paper_mismatch: MismatchCallback,
+        finalize_cb: FinalizeCallback,
+        terminal: asyncio.Event,
+        on_log: LogCallback = _noop_log,
+    ) -> None:
+        super().__init__()
+        self.outcome = outcome
+        self.on_stage = on_stage
+        self.on_paper_mismatch = on_paper_mismatch
+        self.finalize_cb = finalize_cb
+        self.terminal = terminal
+        self.on_log = on_log
+
+    async def _dispatch_item(self, item: dict) -> None:
         itype = item.get("type")
         if itype == "agent_message":
             text = summarize_text(item.get("text") or "")
@@ -277,12 +300,9 @@ class _StreamDispatcher:
             return
         if item.get("status") != "completed":
             return
-        tool = item.get("tool")
-        item_id = str(item.get("id") or "")
-        if item_id and item_id in self._seen:  # codex may echo an item more than once
+        if self._already_seen(item):
             return
-        if item_id:
-            self._seen.add(item_id)
+        tool = item.get("tool")
         args = item.get("arguments") or {}
         self.on_log(summarize_tool_call(str(tool or ""), args))
         if tool not in _RUNSTATE_TOOLS:
@@ -328,9 +348,7 @@ async def run_agent_codex(
         raise CodexUnavailable("the codex CLI is not available")
 
     outcome = AgentOutcome(paper_status="attached" if has_paper else "none")
-    scratch = tempfile.mkdtemp(prefix="md-codex-")
-    proc: Optional[asyncio.subprocess.Process] = None
-    try:
+    async with runtime_common.RuntimeScratch("md-codex-") as rt:
         # No MD_DB_DIRECT → the MCP server runs in stream-ack mode; run-state is
         # dispatched here from codex's --json output.
         mcp_env = {
@@ -341,23 +359,17 @@ async def run_agent_codex(
             "MD_ACCESS_JSON": json.dumps(access),
         }
         if has_paper and paper_text:
-            paper_file = os.path.join(scratch, "paper.txt")
-            with open(paper_file, "w", encoding="utf-8") as fh:
-                fh.write(paper_text)
-            mcp_env["MD_PAPER_FILE"] = paper_file
+            runtime_common.write_paper_file(rt.path, mcp_env, paper_text)
 
         mcp_server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_server.py")
         system_prompt = build_system_prompt(cluster, root, has_paper=has_paper, paper_via_tool=True)
         initial_user = build_initial_user(cluster, root, has_paper, paper_via_tool=True)
-        # Same pacing nudge as the Claude-CLI path: no geometry tool exists, so a
-        # correct integrity-passing diagram is the goal, not a perfect layout — and
-        # here finalize is single-attempt, so getting it right the first time matters.
-        initial_user += (
-            "\n\nBounded budget — do NOT over-deliberate on layout. You have no geometry-measurement "
-            "tool, so a perfect layout is impossible and not the goal; a correct diagram that passes "
-            "the integrity checks is. Use a simple single-column top-to-bottom layout with straight "
-            "vertical orthogonal wires between adjacent boxes. Verify every component line range before "
-            "you call finalize_diagram, and call it once with the full, correct structure."
+        # Same pacing preamble as the Claude-CLI path (no geometry tool → a correct
+        # integrity-passing diagram is the goal, not a perfect layout); here finalize
+        # is single-attempt, so getting it right the first time matters.
+        initial_user += agent_tools.LAYOUT_PACING_NUDGE + (
+            "Verify every component line range before you call finalize_diagram, and call it once "
+            "with the full, correct structure."
         )
         # codex exec has no system-prompt channel: concatenate and feed on stdin.
         prompt = f"{system_prompt}\n\n----- TASK -----\n\n{initial_user}"
@@ -365,18 +377,19 @@ async def run_agent_codex(
         cmd = _build_codex_cmd(
             codex_path=codex_path,
             model=model,
-            scratch=scratch,
+            scratch=rt.path,
             mcp_server_path=mcp_server_path,
             mcp_env=mcp_env,
         )
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=scratch,
+            cwd=rt.path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        rt.proc = proc
         assert proc.stdin is not None
         proc.stdin.write(prompt.encode("utf-8"))
         await proc.stdin.drain()
@@ -387,116 +400,55 @@ async def run_agent_codex(
         debug_log = os.environ.get("MODEL_DIAGRAM_CODEX_LOG", "").strip() or None
         pump = asyncio.create_task(_pump_stream(proc, dispatcher, debug_log))
         watch = asyncio.create_task(terminal.wait())
-        done, _pending = await asyncio.wait({pump, watch}, return_when=asyncio.FIRST_COMPLETED)
-
-        if watch in done and pump not in done:
-            # A terminal tool (finalize / report_problem) fired. Give codex a brief
-            # window to wrap up its turn, then stop it — the outcome is decided.
-            try:
-                await asyncio.wait_for(pump, timeout=8.0)
-            except asyncio.TimeoutError:
-                pump.cancel()
-        else:
-            watch.cancel()
+        await runtime_common.await_pump_or_terminal(pump, watch)
 
         await proc.wait()
         stderr = (await proc.stderr.read()).decode("utf-8", errors="replace") if proc.stderr else ""
         _finalize_outcome(outcome, proc.returncode or 0, dispatcher.result, stderr)
         return outcome
-    finally:
-        if proc is not None and proc.returncode is None:
-            proc.terminate()
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                proc.kill()
-        shutil.rmtree(scratch, ignore_errors=True)
 
 
-async def _pump_stream(proc: asyncio.subprocess.Process, dispatcher: "_StreamDispatcher", debug_log: Optional[str]) -> None:
-    """Feed codex's ``--json`` JSONL to the dispatcher, line by line.
-
-    Reads fixed-size chunks and splits lines by hand — NOT ``readline`` /
-    ``async for`` — because those enforce asyncio's 64KB line cap and raise
-    LimitOverrunError. The finalize_diagram tool call is echoed on a single line
-    carrying the full base64 source payload, which routinely exceeds 64KB and
-    which we MUST parse (it is how the payload reaches the backend). Set
-    MODEL_DIAGRAM_CODEX_LOG to tee the raw stream to a file.
-    """
+async def _pump_stream(proc: asyncio.subprocess.Process, dispatcher: _CodexStreamDispatcher, debug_log: Optional[str]) -> None:
+    """Feed codex's ``--json`` JSONL to the dispatcher, one oversized-safe line at a time."""
     assert proc.stdout is not None
-    log = open(debug_log, "a", encoding="utf-8") if debug_log else None
-    buf = bytearray()
-    max_line = 128 * 1024 * 1024  # bound memory on a pathological unterminated line
-    try:
-        while True:
-            chunk = await proc.stdout.read(65536)
-            if not chunk:
-                break
-            buf += chunk
-            while True:
-                nl = buf.find(b"\n")
-                if nl == -1:
-                    if len(buf) > max_line:
-                        buf.clear()
-                    break
-                line = bytes(buf[:nl])
-                del buf[: nl + 1]
-                if log and line.strip():
-                    log.write(line.decode("utf-8", errors="replace") + "\n")
-                    log.flush()
-                await dispatcher.handle_line(line)
-        if buf:
-            await dispatcher.handle_line(bytes(buf))
-    finally:
-        if log:
-            log.close()
+    await runtime_common.stream_lines(proc.stdout, dispatcher.handle_line, debug_log=debug_log)
+
+
+def classify_codex_exit(result: dict, returncode: int, stderr: str) -> Optional[str]:
+    """Map a finished ``codex`` invocation to a failure detail, or None if it exited
+    cleanly. Shared by the generation and chat runtimes (which set different outcome
+    objects but classify the exit identically).
+
+    Precedence: an unauthenticated CLI (its 401 signature), then a failed turn, then
+    a top-level error without a completed turn, then a non-zero exit.
+    """
+    failed = result.get("failed") if isinstance(result, dict) else None
+    top_error = result.get("error") if isinstance(result, dict) else None
+    completed = bool(result.get("completed")) if isinstance(result, dict) else False
+    blob = "\n".join(str(x) for x in (failed, top_error, stderr) if x)
+
+    if _looks_logged_out(blob):
+        return "codex is not logged in (run `codex login`, or set CODEX_HOME to an authenticated config)"
+    if failed:
+        return f"codex turn failed: {failed}"[:500]
+    if top_error and not completed:
+        return f"codex error: {top_error}"[:500]
+    if returncode != 0:
+        detail = (stderr.strip() or "").splitlines()
+        return f"codex exited {returncode}: {detail[-1] if detail else 'no output'}"[:500]
+    return None
 
 
 def _finalize_outcome(outcome: AgentOutcome, returncode: int, result: dict, stderr: str) -> None:
     """Decide the run outcome once codex has exited.
 
     If a run-state tool already set the outcome (done / not_a_model_root / failed
-    finalize), keep it. Otherwise map codex's own exit into an ``agent_failure``,
-    detecting an unauthenticated CLI specifically.
+    finalize), keep it. Otherwise map codex's own exit into an ``agent_failure`` (a
+    detected failure), or — a clean exit with no finalize — the stopped-early error.
     """
     if outcome._terminal:
         return
-
-    failed = result.get("failed") if isinstance(result, dict) else None
-    top_error = result.get("error") if isinstance(result, dict) else None
-    blob = "\n".join(str(x) for x in (failed, top_error, stderr) if x)
-
-    if _looks_logged_out(blob):
-        outcome.status = "error"
-        outcome.error_kind = "agent_failure"
-        outcome.error_detail = "codex is not logged in (run `codex login`, or set CODEX_HOME to an authenticated config)"
-        return
-
-    if failed:
-        outcome.status = "error"
-        outcome.error_kind = "agent_failure"
-        outcome.error_detail = f"codex turn failed: {failed}"[:500]
-        return
-
-    if top_error and not result.get("completed"):
-        outcome.status = "error"
-        outcome.error_kind = "agent_failure"
-        outcome.error_detail = f"codex error: {top_error}"[:500]
-        return
-
-    if returncode != 0:
-        detail = (stderr.strip() or "").splitlines()
-        outcome.status = "error"
-        outcome.error_kind = "agent_failure"
-        outcome.error_detail = f"codex exited {returncode}: {detail[-1] if detail else 'no output'}"[:500]
-        return
-
-    # codex finished cleanly but never called finalize_diagram.
+    detail = classify_codex_exit(result, returncode, stderr)
     outcome.status = "error"
     outcome.error_kind = "agent_failure"
-    outcome.error_detail = "the agent stopped without calling finalize_diagram"
-
-
-def _looks_logged_out(text: str) -> bool:
-    lowered = text.lower()
-    return any(hint in lowered for hint in _AUTH_HINTS)
+    outcome.error_detail = detail or "the agent stopped without calling finalize_diagram"

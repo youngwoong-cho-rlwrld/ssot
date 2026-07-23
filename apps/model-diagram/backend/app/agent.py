@@ -38,10 +38,7 @@ from .agent_tools import (
     tool_specs,
 )
 from .fsaccess import FsAccess
-
-
-def _noop_log(_line: str) -> None:
-    pass
+from .runtime_common import noop_log as _noop_log
 
 _TASK_BUDGET = max(20000, int(os.environ.get("MODEL_DIAGRAM_TASK_BUDGET", "200000")))
 _MAX_TOKENS = int(os.environ.get("MODEL_DIAGRAM_MAX_TOKENS", "64000"))

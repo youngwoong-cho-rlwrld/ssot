@@ -9,7 +9,8 @@ import asyncio
 
 import pytest
 
-from app import agent_cli
+from app import agent_cli, db
+from app.agent_tools import AgentOutcome
 
 
 class _FakeProc:
@@ -57,3 +58,50 @@ async def test_effort_defaults_and_override(monkeypatch):
     assert agent_cli._effort() == "low"
     monkeypatch.setenv("MODEL_DIAGRAM_CLI_EFFORT", "bogus")
     assert agent_cli._effort() == "high"  # invalid falls back to high
+
+
+# ── worker completion of a deferred finalize (item 14) ──────────────────────
+
+
+async def test_resolve_outcome_runs_deferred_geometry_then_marks_done(tmp_env, monkeypatch):
+    # The MCP server finalized inside the stdio server (geometry deferred): the row is
+    # still 'running' with the geometry-pending marker. The worker's resolve step must
+    # run the geometry pass HERE and then mark the run done.
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="claude-fable-5"
+    )
+    db.set_rendered_html(run_id, "<html>provisional</html>")
+    assert db.mark_geometry_pending(run_id) is True
+
+    ran: list = []
+
+    async def spy(rid):
+        ran.append(rid)
+
+    monkeypatch.setattr(agent_cli.finalize, "apply_geometry_pass", spy)
+
+    outcome = AgentOutcome()
+    await agent_cli._resolve_cli_outcome(run_id, outcome, 0, {}, "")
+    assert ran == [run_id]  # the browser pass ran in the worker
+    assert outcome.status == "done" and outcome._terminal is True
+    assert db.get_run(run_id)["status"] == "done"
+
+
+async def test_resolve_outcome_keeps_terminal_row(tmp_env, monkeypatch):
+    # A row already terminal (report_problem / finalize give-up) is respected as-is,
+    # and the geometry pass is not run.
+    db.init_db()
+    _, run_id = db.create_diagram_with_run(
+        user_email="u@example.com", cluster="local", path="/p", model="claude-fable-5"
+    )
+    db.mark_terminal(run_id, "error", error_kind="not_a_model_root", error_detail="nope")
+
+    async def boom(_rid):
+        raise AssertionError("geometry must not run on a terminal row")
+
+    monkeypatch.setattr(agent_cli.finalize, "apply_geometry_pass", boom)
+
+    outcome = AgentOutcome()
+    await agent_cli._resolve_cli_outcome(run_id, outcome, 0, {}, "")
+    assert outcome.status == "error" and outcome.error_kind == "not_a_model_root"

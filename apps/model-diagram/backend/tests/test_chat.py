@@ -20,7 +20,7 @@ def _done_diagram() -> tuple[int, int]:
     diagram_id, run_id = db.create_diagram_with_run(
         user_email="u@example.com", cluster="local", path="/models/tiny", model="claude-fable-5"
     )
-    db.update_run_status(run_id, "done")
+    db.mark_terminal(run_id, "done")
     return diagram_id, run_id
 
 
@@ -413,12 +413,26 @@ def test_post_chat_creates_turn_and_history(client):
     assert hist["messages"][0]["content"] == "why is the head 4-dim?"
 
 
+def test_get_chat_is_read_only_creates_no_thread(client):
+    """A GET before any message must return an empty history and create NO thread
+    (thread creation is a POST-only side effect)."""
+    _, run_id = _done_diagram()
+    body = client.get(f"/api/runs/{run_id}/chat", headers=_USER).json()
+    assert body["messages"] == [] and body["thread_id"] is None
+    # No thread row was created by the read.
+    assert db.get_thread_id(run_id) is None
+    # After a POST the thread exists and the GET reflects it.
+    client.post(f"/api/runs/{run_id}/chat", headers=_USER, json={"message": "hi"})
+    after = client.get(f"/api/runs/{run_id}/chat", headers=_USER).json()
+    assert after["thread_id"] is not None and len(after["messages"]) == 2
+
+
 def test_chat_is_per_run(client):
     """Two runs under one diagram have INDEPENDENT transcripts."""
     diagram_id, run1 = _done_diagram()
     run2 = db.create_run(diagram_id=diagram_id, user_email="u@example.com",
                          cluster="local", path="/models/tiny", model="claude-fable-5")
-    db.update_run_status(run2, "done")
+    db.mark_terminal(run2, "done")
     client.post(f"/api/runs/{run1}/chat", headers=_USER, json={"message": "about run 1"})
     client.post(f"/api/runs/{run2}/chat", headers=_USER, json={"message": "about run 2"})
     h1 = client.get(f"/api/runs/{run1}/chat", headers=_USER).json()
@@ -470,59 +484,6 @@ def test_chat_cancel_404_and_409(client):
 # ── codex chat runtime ──────────────────────────────────────────────────────
 
 
-class _FakeStream:
-    def __init__(self, data: bytes = b""):
-        self._data, self._sent = data, False
-
-    async def read(self, n: int = -1) -> bytes:
-        if self._sent:
-            return b""
-        self._sent = True
-        return self._data
-
-
-class _FakeStdin:
-    def write(self, b):
-        pass
-
-    async def drain(self):
-        pass
-
-    def close(self):
-        pass
-
-
-class _FakeCodexProc:
-    def __init__(self, stdout_bytes: bytes):
-        self.stdout = _FakeStream(stdout_bytes)
-        self.stderr = _FakeStream(b"")
-        self.stdin = _FakeStdin()
-        self.returncode = None
-
-    async def wait(self):
-        self.returncode = 0
-        return 0
-
-    def terminate(self):
-        self.returncode = 0
-
-    def kill(self):
-        self.returncode = 0
-
-
-def _codex_stream(*events) -> bytes:
-    return b"".join((json.dumps(e) + "\n").encode() for e in events)
-
-
-def _install_fake_codex(monkeypatch, events, capture):
-    async def fake_exec(*cmd, **kw):
-        capture["cmd"] = list(cmd)
-        return _FakeCodexProc(_codex_stream(*events))
-
-    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
-    monkeypatch.setattr(settings, "codex_cli_path", lambda: "/usr/local/bin/codex")
-
-
 _ANSWER_EVENTS = [
     {"type": "item.completed", "item": {"type": "agent_message", "text": "The dataset box maps to loader.py:1."}},
     {"type": "turn.completed"},
@@ -557,12 +518,12 @@ async def test_chat_worker_routes_codex_no_unsupported(tmp_env, tmp_path, monkey
     assert "supported" not in (done["content"] or "")  # no unsupported message
 
 
-async def test_codex_chat_arg_construction(tmp_env, tmp_path, monkeypatch):
+async def test_codex_chat_arg_construction(tmp_env, tmp_path, monkeypatch, install_fake_codex):
     db.init_db()
     _, run_id = _done_diagram()
     outcome = chat.ChatOutcome()
     capture: dict = {}
-    _install_fake_codex(monkeypatch, _ANSWER_EVENTS, capture)
+    install_fake_codex(_ANSWER_EVENTS, capture)
 
     await chat.run_chat_codex(
         message_id=1, cluster="local", root=str(tmp_path), model="gpt-5.6-sol",
@@ -580,9 +541,9 @@ async def test_codex_chat_arg_construction(tmp_env, tmp_path, monkeypatch):
     assert outcome.status == "done" and "loader.py" in outcome.answer_text
 
 
-async def test_codex_chat_answer_from_agent_message(tmp_env, tmp_path, monkeypatch):
+async def test_codex_chat_answer_from_agent_message(tmp_env, tmp_path, monkeypatch, install_fake_codex):
     outcome = chat.ChatOutcome()
-    _install_fake_codex(monkeypatch, _ANSWER_EVENTS, {})
+    install_fake_codex(_ANSWER_EVENTS, {})
     await chat.run_chat_codex(
         message_id=1, cluster="local", root=str(tmp_path), model="gpt-5.6-sol",
         access={"kind": "local"}, summary="S", history=[], user_message="hi",
@@ -594,7 +555,7 @@ async def test_codex_chat_answer_from_agent_message(tmp_env, tmp_path, monkeypat
     assert outcome.revised is False
 
 
-async def test_codex_chat_stream_dispatch_revise(tmp_env, tmp_path, monkeypatch):
+async def test_codex_chat_stream_dispatch_revise(tmp_env, tmp_path, monkeypatch, install_fake_codex):
     db.init_db()
     diagram_id, run_id = _done_diagram()
     anchor = db.get_run(run_id)
@@ -608,7 +569,7 @@ async def test_codex_chat_stream_dispatch_revise(tmp_env, tmp_path, monkeypatch)
             "status": "completed", "id": "t1", "arguments": _payload().model_dump()}},
         {"type": "turn.completed"},
     ]
-    _install_fake_codex(monkeypatch, events, {})
+    install_fake_codex(events, {})
     await chat.run_chat_codex(
         message_id=1, cluster="local", root=str(tmp_path), model="gpt-5.6-sol",
         access={"kind": "local"}, summary="S", history=[], user_message="fix the head box",
@@ -621,7 +582,7 @@ async def test_codex_chat_stream_dispatch_revise(tmp_env, tmp_path, monkeypatch)
     assert new_run["rendered_html"]
 
 
-async def test_codex_chat_integrity_failed_revise_reports_errors(tmp_env, tmp_path, monkeypatch):
+async def test_codex_chat_integrity_failed_revise_reports_errors(tmp_env, tmp_path, monkeypatch, install_fake_codex):
     db.init_db()
     diagram_id, run_id = _done_diagram()
     anchor = db.get_run(run_id)
@@ -637,7 +598,7 @@ async def test_codex_chat_integrity_failed_revise_reports_errors(tmp_env, tmp_pa
             "status": "completed", "id": "t1", "arguments": bad}},
         {"type": "turn.completed"},
     ]
-    _install_fake_codex(monkeypatch, events, {})
+    install_fake_codex(events, {})
     await chat.run_chat_codex(
         message_id=1, cluster="local", root=str(tmp_path), model="gpt-5.6-sol",
         access={"kind": "local"}, summary="S", history=[], user_message="change it",

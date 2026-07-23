@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS runs (
   paper_status TEXT NOT NULL DEFAULT 'none',
   paper_warning TEXT,
   pid INTEGER,
+  geometry_pending INTEGER NOT NULL DEFAULT 0,
   canvas_width INTEGER,
   canvas_height INTEGER,
   rendered_html TEXT,
@@ -246,6 +247,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(runs)").fetchall()}
     if "pid" not in cols:
         conn.execute("ALTER TABLE runs ADD COLUMN pid INTEGER")
+    if "geometry_pending" not in cols:
+        # Marker the Claude-CLI runtime sets when a finalize passed static integrity
+        # but the headless-Chrome geometry pass is deferred to the worker.
+        conn.execute("ALTER TABLE runs ADD COLUMN geometry_pending INTEGER NOT NULL DEFAULT 0")
 
     diagram_cols = {r["name"] for r in conn.execute("PRAGMA table_info(diagrams)").fetchall()}
     if diagram_cols and "memo" not in diagram_cols:
@@ -454,34 +459,23 @@ def list_runs(diagram_id: int) -> list[dict]:
         conn.close()
 
 
-def update_run_status(
-    run_id: int,
-    status: str,
-    *,
-    error_kind: Optional[str] = None,
-    error_detail: Optional[str] = None,
-    paper_status: Optional[str] = None,
-    paper_warning: Optional[str] = None,
-) -> None:
-    fields = ["status = ?", "updated_at = ?"]
-    params: list[Any] = [status, _now()]
-    if error_kind is not None:
-        fields.append("error_kind = ?")
-        params.append(error_kind)
-    if error_detail is not None:
-        fields.append("error_detail = ?")
-        params.append(error_detail)
-    if paper_status is not None:
-        fields.append("paper_status = ?")
-        params.append(paper_status)
-    if paper_warning is not None:
-        fields.append("paper_warning = ?")
-        params.append(paper_warning)
-    params.append(run_id)
+def mark_geometry_pending(run_id: int) -> bool:
+    """Flag a still-``running`` run as finalized-but-geometry-deferred; True if flagged.
+
+    The Claude-CLI runtime's MCP subprocess sets this after a finalize passes the
+    static integrity check (rows persisted + provisional HTML cached) so the worker
+    knows to run the headless-Chrome geometry pass and then mark the run done. Guarded
+    on ``status = 'running'`` so a cancel that already finalized the row wins the race
+    (the marker is ignored once the row is terminal).
+    """
     conn = _connect()
     try:
-        conn.execute(f"UPDATE runs SET {', '.join(fields)} WHERE id = ?", params)
+        cur = conn.execute(
+            "UPDATE runs SET geometry_pending = 1, updated_at = ? WHERE id = ? AND status = 'running'",
+            (_now(), run_id),
+        )
         conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()
 
@@ -816,6 +810,20 @@ _CHAT_ORPHAN_DETAIL = (
     "the chat worker for this reply is no longer running (it crashed or was killed); "
     "ask again"
 )
+
+
+def get_thread_id(run_id: int) -> Optional[int]:
+    """The chat thread id for a run, or None if none exists yet (read-only).
+
+    GET /api/runs/{id}/chat uses this so a plain read never creates a thread; the
+    thread is created on the first POST (:func:`get_or_create_thread`).
+    """
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT id FROM chat_threads WHERE run_id = ?", (run_id,)).fetchone()
+        return int(row["id"]) if row else None
+    finally:
+        conn.close()
 
 
 def get_or_create_thread(run_id: int, diagram_id: int, user_email: str) -> int:

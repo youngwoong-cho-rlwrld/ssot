@@ -245,3 +245,53 @@ def test_finalize_outcome_clean_exit_without_finalize():
     agent_codex._finalize_outcome(oc, 0, {"completed": True}, "")
     assert oc.error_kind == "agent_failure"
     assert "without calling finalize_diagram" in oc.error_detail
+
+
+def test_classify_codex_exit_precedence():
+    # Shared exit classifier: logged-out beats a turn failure beats a top error beats
+    # a bad returncode; a clean exit returns None.
+    assert "not logged in" in agent_codex.classify_codex_exit({"failed": "401 Unauthorized"}, 1, "")
+    assert agent_codex.classify_codex_exit({"failed": "oom"}, 0, "").startswith("codex turn failed")
+    assert agent_codex.classify_codex_exit({"error": "bad"}, 0, "").startswith("codex error")
+    assert "exited 3" in agent_codex.classify_codex_exit({}, 3, "boom")
+    assert agent_codex.classify_codex_exit({"completed": True}, 0, "") is None
+
+
+# ── full run driver via the shared fake-codex harness (conftest) ────────────
+
+
+async def test_run_agent_codex_end_to_end_finalize(tmp_env, tmp_path, install_fake_codex):
+    # Drive run_agent_codex through the fake child: report_stage + a successful
+    # finalize over the --json stream must produce a done outcome, exercising the
+    # RuntimeScratch + pump + dispatch + await-terminal plumbing end to end.
+    events = [
+        {"type": "item.completed", "item": {
+            "type": "mcp_tool_call", "server": "modeldiagram", "tool": "report_stage",
+            "status": "completed", "id": "s1", "arguments": {"stage": "inspecting_root", "detail": "x"}}},
+        {"type": "item.completed", "item": {
+            "type": "mcp_tool_call", "server": "modeldiagram", "tool": "finalize_diagram",
+            "status": "completed", "id": "f1", "arguments": {"title": "T"}}},
+        {"type": "turn.completed"},
+    ]
+    capture: dict = {}
+    install_fake_codex(events, capture)
+
+    stages: list = []
+
+    async def on_stage(stage, detail):
+        stages.append((stage, detail))
+
+    async def on_mismatch(reason):
+        pass
+
+    async def finalize_cb(raw):
+        return (True, None)
+
+    outcome = await agent_codex.run_agent_codex(
+        run_id=1, cluster="local", root=str(tmp_path), model="gpt-5.6-sol",
+        access={"kind": "local"}, paper_text=None, has_paper=False,
+        on_stage=on_stage, finalize_cb=finalize_cb, on_paper_mismatch=on_mismatch,
+    )
+    assert outcome.status == "done" and outcome._terminal is True
+    assert ("inspecting_root", "x") in stages
+    assert capture["cmd"][:2] == ["/usr/local/bin/codex", "exec"]

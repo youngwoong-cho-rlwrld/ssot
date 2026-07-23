@@ -403,8 +403,11 @@ async def get_run_chat(run_id: int) -> dict:
     run = db.get_run(run_id)
     if run is None or run["user_email"] != email:
         raise HTTPException(404, "run not found")
-    thread_id = db.get_or_create_thread(run_id, run["diagram_id"], email)
-    messages = db.list_chat_messages(thread_id)
+    # Read-only: a GET must not create a thread (that happens on the first POST). A
+    # run with no thread yet returns an empty history, which the frontend renders as
+    # the empty-chat state.
+    thread_id = db.get_thread_id(run_id)
+    messages = db.list_chat_messages(thread_id) if thread_id is not None else []
     return {
         "thread_id": thread_id,
         "run_id": run_id,

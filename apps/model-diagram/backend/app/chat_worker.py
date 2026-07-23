@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 import sys
-import tempfile
 from typing import Optional
 
 from . import chat, db, paper as paper_mod, settings, staging
@@ -143,25 +141,10 @@ async def _run_codex_chat(message_id, anchor, resolved_root, access, model, summ
                           history, user_text, paper_row, outcome, on_log) -> None:
     """Codex chat: the sandboxed MCP server can't ssh, so mirror a remote anchor
     root locally (like codex runs) and read from it; the mirror is deleted after."""
-    eff_cluster, eff_root, eff_access = anchor["cluster"], resolved_root, access
-    staged_dir: Optional[str] = None
-    if anchor["cluster"] != "local":
-        staged_dir = tempfile.mkdtemp(prefix=f"md-chat-stage-{message_id}-", dir=str(settings.stage_dir()))
-        on_log(f"staging remote root to local mirror for codex chat ({staged_dir})")
-        try:
-            mirror = await staging.stage_root(
-                access, resolved_root, staged_dir, size_cap_bytes=settings.codex_stage_max_bytes()
-            )
-        except staging.StagingError as exc:
-            shutil.rmtree(staged_dir, ignore_errors=True)
-            _fail(message_id, str(exc))
-            return
-        eff_cluster, eff_root, eff_access = "local", mirror, {"kind": "local"}
-
-    staged_excludes = staging.excluded_file_globs() if staged_dir is not None else None
-    fs = FsAccess(eff_cluster, eff_root, access=eff_access, staged_excludes=staged_excludes)
     paper_text = paper_mod.load_paper_text(paper_row) if paper_row else None
-    try:
+
+    async def drive(eff_cluster, eff_root, eff_access, staged_excludes) -> None:
+        fs = FsAccess(eff_cluster, eff_root, access=eff_access, staged_excludes=staged_excludes)
         await chat.run_chat_codex(
             message_id=message_id, cluster=eff_cluster, root=eff_root, model=model, access=eff_access,
             summary=summary, history=history, user_message=user_text,
@@ -172,9 +155,17 @@ async def _run_codex_chat(message_id, anchor, resolved_root, access, model, summ
             ),
             outcome=outcome, on_log=on_log,
         )
-    finally:
-        if staged_dir is not None:
-            shutil.rmtree(staged_dir, ignore_errors=True)
+
+    if anchor["cluster"] == "local":
+        await drive(anchor["cluster"], resolved_root, access, None)
+        return
+    try:
+        async with staging.staged_root_for_codex(
+            access, resolved_root, prefix=f"md-chat-stage-{message_id}-", on_log=on_log,
+        ) as (eff_cluster, eff_root, eff_access, staged_excludes):
+            await drive(eff_cluster, eff_root, eff_access, staged_excludes)
+    except staging.StagingError as exc:
+        _fail(message_id, str(exc))
 
 
 def _fail(message_id: int, detail: str) -> None:

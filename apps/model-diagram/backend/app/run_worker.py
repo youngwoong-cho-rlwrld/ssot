@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 import sys
-import tempfile
 from typing import Optional
 
 from . import agent, agent_cli, agent_codex, db, finalize, paper as paper_mod, settings, staging
@@ -100,33 +98,23 @@ async def _run_body(run_id: int) -> None:
     # run on a REMOTE cluster cannot ssh/kubectl. Mirror the root to a local dir and
     # run against that (read scoping + finalize byte-fetch resolve locally). Other
     # runtimes reach remote roots directly and need no staging.
-    eff_cluster, eff_root, eff_access = run["cluster"], check.resolved_root, access
-    staged_dir: Optional[str] = None
     if runtime == "codex" and run["cluster"] != "local":
-        staged_dir = tempfile.mkdtemp(prefix=f"md-stage-{run_id}-", dir=str(settings.stage_dir()))
-        _log(run_id, f"staging remote root to local mirror for codex ({staged_dir})")
         try:
-            mirror = await staging.stage_root(
-                access, check.resolved_root, staged_dir,
-                size_cap_bytes=settings.codex_stage_max_bytes(),
-            )
+            async with staging.staged_root_for_codex(
+                access, check.resolved_root, prefix=f"md-stage-{run_id}-",
+                on_log=lambda line: _log(run_id, line),
+            ) as (eff_cluster, eff_root, eff_access, staged_excludes):
+                _log(run_id, f"mirror ready; running codex against {eff_root}")
+                # A read of an excluded (not-mirrored) artifact gets a clear error.
+                await _dispatch_runtime(
+                    run_id, runtime, model, eff_cluster, eff_root, eff_access,
+                    staged_excludes=staged_excludes,
+                )
         except staging.StagingError as exc:
-            shutil.rmtree(staged_dir, ignore_errors=True)
             _fail(run_id, "broken_path", str(exc))
-            return
-        eff_cluster, eff_root, eff_access = "local", mirror, {"kind": "local"}
-        _log(run_id, f"mirror ready; running codex against {mirror}")
+        return
 
-    # A read of an excluded (not-mirrored) artifact gets a clear error, not not-found.
-    staged_excludes = staging.excluded_file_globs() if staged_dir is not None else None
-    try:
-        await _dispatch_runtime(
-            run_id, runtime, model, eff_cluster, eff_root, eff_access,
-            staged_excludes=staged_excludes,
-        )
-    finally:
-        if staged_dir is not None:
-            shutil.rmtree(staged_dir, ignore_errors=True)
+    await _dispatch_runtime(run_id, runtime, model, run["cluster"], check.resolved_root, access)
 
 
 async def _dispatch_runtime(

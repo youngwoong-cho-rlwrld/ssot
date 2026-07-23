@@ -31,7 +31,7 @@ def _diagram_with_paper(source_url: str = "http://paper/A", sha: str = "shaA") -
     diagram_id, run_id = db.create_diagram_with_run(
         user_email="u@example.com", cluster="local", path="/m", model="claude-fable-5"
     )
-    db.update_run_status(run_id, "done")
+    db.mark_terminal(run_id, "done")
     db.add_paper(
         run_id, kind="url", source_url=source_url, stored_path="/x/A.txt",
         content_type="text/html", sha256=sha, page_count=None, parsed_title="Paper A",
@@ -105,7 +105,7 @@ def test_inherits_from_anchor_not_paperless_latest(client):
         diagram_id=diagram_id, user_email="u@example.com", cluster="local", path="/m",
         model="claude-fable-5",
     )
-    db.update_run_status(paperless_latest, "done")
+    db.mark_terminal(paperless_latest, "done")
     assert db.get_paper(paperless_latest) is None  # the bug artifact
 
     res = client.post(
