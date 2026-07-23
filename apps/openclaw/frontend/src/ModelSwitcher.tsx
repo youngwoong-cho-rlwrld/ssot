@@ -1,36 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { KeyRound } from "lucide-react";
 import { ModelSwitcher as SharedModelSwitcher } from "@ssot/ui/ModelSwitcher";
 import { resolveCatalog } from "@ssot/ui/models-catalog";
 import { getModels, setDefaultModel, setModelAuth } from "./api";
-import type { ModelsResponse } from "./types";
+import { useAsyncData } from "./hooks";
+import { errMessage } from "./util";
 
 // The gateway's default-model picker. Owns the model data + the per-provider
 // API-key flow; the trigger/listbox presentation is the shared @ssot/ui
 // ModelSwitcher, and the option list is the shared canonical catalog resolved
 // against the daemon's live models, so it matches model-diagram + results-sheet.
 export function ModelSwitcher() {
-  const [data, setData] = useState<ModelsResponse | null>(null);
+  const { data, error, setError, reload, mounted } = useAsyncData((signal) =>
+    getModels(signal),
+  );
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [configure, setConfigure] = useState<string | null>(null); // provider id
   const [keyInput, setKeyInput] = useState("");
-
-  const load = useCallback((signal?: AbortSignal) => {
-    return getModels(signal)
-      .then((d) => setData(d))
-      .catch((err) => {
-        if (!signal?.aborted) setError(err instanceof Error ? err.message : String(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const c = new AbortController();
-    void load(c.signal);
-    return () => c.abort();
-  }, [load]);
 
   const activeKey =
     data?.models.find((m) => m.isDefault)?.key ?? data?.resolvedDefault ?? "";
@@ -54,13 +42,15 @@ export function ModelSwitcher() {
       setNote(null);
       try {
         await setDefaultModel(m.key);
-        await load();
-        setNote(`Default is now ${m.name}.`);
-        setOpen(false);
+        await reload();
+        if (mounted.current) {
+          setNote(`Default is now ${m.name}.`);
+          setOpen(false);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (mounted.current) setError(errMessage(err));
       } finally {
-        setBusy(false);
+        if (mounted.current) setBusy(false);
       }
     } else {
       // Unavailable (missing credentials): open the configure flow.
@@ -78,14 +68,16 @@ export function ModelSwitcher() {
     setNote(null);
     try {
       await setModelAuth(configure, keyInput);
-      setKeyInput("");
-      setConfigure(null);
-      await load();
-      setNote(`Saved ${configure} credentials.`);
+      if (mounted.current) {
+        setKeyInput("");
+        setConfigure(null);
+      }
+      await reload();
+      if (mounted.current) setNote(`Saved ${configure} credentials.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setError(errMessage(err));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 

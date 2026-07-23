@@ -1,6 +1,6 @@
 import { toast } from "sonner";
-import { ApiError, getRun, openRunEvents } from "../api";
 import { requestCancelConfirm } from "./cancel-bus";
+import { watchRun } from "./watch-run";
 import { ERROR_TITLE, STAGE_LABEL } from "../RunProgress";
 import type { Stage } from "../types";
 
@@ -84,6 +84,13 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
   // resumed toast shows true elapsed time, not time-since-reload.
   let startedAt = Date.now();
   let currentStage: string | null = null;
+  let clock: number | null = null;
+  const stopClock = () => {
+    if (clock !== null) {
+      window.clearInterval(clock);
+      clock = null;
+    }
+  };
 
   // Mirror copy-watcher's cancel affordance: the loading toast carries a Cancel
   // action. It opens the shared confirmation modal (safety guard) rather than
@@ -110,6 +117,7 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
 
   const showSuccess = () => {
     terminal = true;
+    stopClock();
     // Completion is terminal and worth acknowledging: keep it up until the user
     // dismisses it (or clicks through), rather than auto-closing.
     toast.success("Diagram ready", {
@@ -125,10 +133,12 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
       },
     });
     removeActive(runId);
+    watched.delete(runId);
   };
 
   const showError = (kind: string, detail: string) => {
     terminal = true;
+    stopClock();
     // Dismiss the loading toast first — sonner with `richColors` sometimes
     // renders just the icon when a `loading` toast is replaced in-place.
     toast.dismiss(toastId);
@@ -137,6 +147,7 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
     if (kind === "cancelled") {
       toast("Analysis cancelled", { duration: 4000 });
       removeActive(runId);
+      watched.delete(runId);
       return;
     }
     toast.error(ERROR_TITLE[kind] ?? "Analysis failed", {
@@ -146,55 +157,35 @@ async function watch({ runId, diagramId }: ActiveRun, onOpenViewer: OpenViewer) 
       action: { label: "Close", onClick: () => toast.dismiss(toastId) },
     });
     removeActive(runId);
+    watched.delete(runId);
   };
 
-  try {
-    const detail = await getRun(runId);
-    startedAt = new Date(detail.created_at).getTime();
-    if (detail.status === "done") {
-      showSuccess();
-      watched.delete(runId);
-      return;
-    }
-    if (detail.status === "error") {
-      showError(
-        detail.error_kind ?? "agent_failure",
-        detail.error_detail ?? "The analysis did not complete.",
-      );
-      watched.delete(runId);
-      return;
-    }
-  } catch (e) {
-    // A run that no longer exists (e.g. its diagram was deleted) drops out.
-    if (e instanceof ApiError && e.status === 404) {
-      toast.dismiss(toastId);
-      removeActive(runId);
-      watched.delete(runId);
-      return;
-    }
-    // Other errors are transient; the SSE stream can still resolve the outcome.
-  }
-
-  renderLoading();
-  const clock = window.setInterval(renderLoading, 1000);
-
-  await new Promise<void>((resolve) => {
-    openRunEvents(runId, {
+  // Prime the run record then tail its SSE stream via the shared core. A run
+  // already terminal at prime time short-circuits to showSuccess/showError without
+  // opening the stream; a live one starts the elapsed clock (onOpen) and streams.
+  watchRun(
+    runId,
+    {
+      onPrime: (detail) => {
+        startedAt = new Date(detail.created_at).getTime();
+      },
+      onOpen: () => {
+        renderLoading();
+        clock = window.setInterval(renderLoading, 1000);
+      },
       onStage: (stage) => {
         currentStage = stage;
         renderLoading();
       },
-      onDone: () => {
-        window.clearInterval(clock);
-        showSuccess();
-        resolve();
+      onDone: () => showSuccess(),
+      onError: (kind, det) => showError(kind, det),
+      // A run that no longer exists (e.g. its diagram was deleted) drops out.
+      onMissing: () => {
+        toast.dismiss(toastId);
+        removeActive(runId);
+        watched.delete(runId);
       },
-      onError: (kind, det) => {
-        window.clearInterval(clock);
-        showError(kind, det);
-        resolve();
-      },
-    });
-  });
-  watched.delete(runId);
+    },
+    { shortCircuitTerminal: true },
+  );
 }

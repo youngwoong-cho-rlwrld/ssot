@@ -54,6 +54,12 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Fire a mutation whose response body we ignore; throws ApiError on non-2xx. */
+async function requestVoid(input: string, init?: RequestInit): Promise<void> {
+  const res = await fetch(input, init);
+  if (!res.ok) throw await readError(res);
+}
+
 function jsonBody(body: unknown): RequestInit {
   return {
     method: "POST",
@@ -165,25 +171,22 @@ export async function getRunOutput(
   );
 }
 
-export async function deleteDiagram(id: number): Promise<void> {
-  const res = await fetch(`${BASE}/diagrams/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) throw await readError(res);
+export function deleteDiagram(id: number): Promise<void> {
+  return requestVoid(`${BASE}/diagrams/${id}`, { method: "DELETE" });
 }
 
 /** Save a diagram's memo (free-text note). Throws ApiError(404) if not found. */
-export async function updateDiagramMemo(id: number, memo: string): Promise<void> {
-  const res = await fetch(`${BASE}/diagrams/${id}`, {
+export function updateDiagramMemo(id: number, memo: string): Promise<void> {
+  return requestVoid(`${BASE}/diagrams/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ memo }),
   });
-  if (!res.ok) throw await readError(res);
 }
 
 /** Cancel a running run. Throws ApiError(409) if the run is already terminal. */
-export async function cancelRun(id: number): Promise<void> {
-  const res = await fetch(`${BASE}/runs/${id}/cancel`, { method: "POST" });
-  if (!res.ok) throw await readError(res);
+export function cancelRun(id: number): Promise<void> {
+  return requestVoid(`${BASE}/runs/${id}/cancel`, { method: "POST" });
 }
 
 /** Self-contained rendered diagram page, embedded in an iframe. */
@@ -286,9 +289,8 @@ export async function postChat(
 }
 
 /** Cancel a pending chat turn. Throws ApiError(409) if it already finished. */
-export async function cancelChat(messageId: number): Promise<void> {
-  const res = await fetch(`${BASE}/chat/${messageId}/cancel`, { method: "POST" });
-  if (!res.ok) throw await readError(res);
+export function cancelChat(messageId: number): Promise<void> {
+  return requestVoid(`${BASE}/chat/${messageId}/cancel`, { method: "POST" });
 }
 
 export interface ChatEventHandlers {

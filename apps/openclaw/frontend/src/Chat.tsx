@@ -6,7 +6,7 @@ import { ToolCallView } from "@ssot/ui/ToolCallView";
 import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
 import { usePersistedBool } from "./hooks";
 import type { ToolCall, Turn } from "./types";
-import { randomSessionSuffix } from "./util";
+import { errMessage, randomSessionSuffix } from "./util";
 
 type ChatItem =
   | { kind: "msg"; role: "user" | "assistant" | "error"; text: string }
@@ -132,7 +132,7 @@ export function Chat({
           {
             kind: "msg",
             role: "error",
-            text: err instanceof Error ? err.message : String(err),
+            text: errMessage(err),
           },
         ]);
       }

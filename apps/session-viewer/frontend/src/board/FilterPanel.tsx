@@ -121,6 +121,7 @@ export function FilterPanel({
             <div className="fp-search">
               <Search size={15} className="fp-search__icon" />
               <input
+                className="ssot-input"
                 autoFocus
                 type="search"
                 placeholder="Title, prompt, project…"
@@ -134,12 +135,12 @@ export function FilterPanel({
           {/* Agent */}
           <div className="fp-field">
             <span className="fp-field__label">Agent</span>
-            <div className="seg" role="group" aria-label="Agent filter">
+            <div className="ssot-seg" role="group" aria-label="Agent filter">
               {AGENT_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
-                  className={`seg__btn${draft.agent === opt.value ? " seg__btn--on" : ""}`}
+                  className={`ssot-seg__btn${draft.agent === opt.value ? " ssot-seg__btn--on" : ""}`}
                   onClick={() => set({ agent: opt.value })}
                 >
                   {opt.label}
@@ -190,6 +191,7 @@ export function FilterPanel({
                 <label className="fp-date">
                   <span>From</span>
                   <input
+                    className="ssot-input"
                     type="date"
                     value={draft.dateFrom}
                     max={draft.dateTo || undefined}
@@ -199,6 +201,7 @@ export function FilterPanel({
                 <label className="fp-date">
                   <span>To</span>
                   <input
+                    className="ssot-input"
                     type="date"
                     value={draft.dateTo}
                     min={draft.dateFrom || undefined}
@@ -267,6 +270,7 @@ export function FilterPanel({
                   <label className="fp-num">
                     <span>Min</span>
                     <input
+                      className="ssot-input"
                       type="number"
                       min={0}
                       max={hi}
@@ -280,6 +284,7 @@ export function FilterPanel({
                   <label className="fp-num">
                     <span>Max</span>
                     <input
+                      className="ssot-input"
                       type="number"
                       min={lo}
                       max={maxMessages}

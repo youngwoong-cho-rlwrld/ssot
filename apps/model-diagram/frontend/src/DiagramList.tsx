@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { FileText, Plus, RefreshCw, RotateCw, Trash2 } from "lucide-react";
 import { deleteDiagram, getDiagrams } from "./api";
+import { STATUS_LABEL } from "./types";
 import type { DiagramListItem, RunSummary, Status } from "./types";
-
-const STATUS_LABEL: Record<Status, string> = {
-  running: "Running",
-  done: "Ready",
-  error: "Error",
-};
 
 function statusModifier(status: Status): string {
   if (status === "done") return "ok";

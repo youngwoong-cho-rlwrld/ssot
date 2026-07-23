@@ -8,7 +8,7 @@ import {
   Loader2,
   Terminal,
 } from "lucide-react";
-import { getRun, openRunEvents } from "./api";
+import { watchRun } from "./lib/watch-run";
 import type { Stage } from "./types";
 
 // Cap the agent-output pane so a long run cannot grow the DOM without bound; the
@@ -106,13 +106,13 @@ export function RunProgress({
   const toggleOutput = () =>
     controlledOutput ? onOutputToggle() : setInternalShowOutput((v) => !v);
 
-  // Prime from the run record: learn paper status, and short-circuit if the run
-  // already reached a terminal state before we opened the stream.
+  // Prime from the run record (learn paper status, surface a terminal state
+  // reached before we connected), then tail the live stage stream, which replays
+  // persisted stages and closes itself on any terminal frame. The shared watchRun
+  // core drives both halves.
   useEffect(() => {
-    let alive = true;
-    getRun(runId)
-      .then((run) => {
-        if (!alive) return;
+    const close = watchRun(runId, {
+      onPrime: (run) => {
         setHasPaper(run.has_paper);
         if (run.paper_status === "mismatch") setMismatch(run.paper_warning ?? "");
         if (run.status === "done") {
@@ -123,19 +123,8 @@ export function RunProgress({
             detail: run.error_detail ?? "The analysis did not complete.",
           });
         }
-      })
-      .catch(() => {
-        if (alive) setHasPaper(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [runId]);
-
-  // Live stage stream. openRunEvents replays persisted stages then tails live
-  // events, closing itself on any terminal frame.
-  useEffect(() => {
-    const close = openRunEvents(runId, {
+      },
+      onPrimeError: () => setHasPaper(false),
       onStage: (stage) => {
         // A paper stage arriving is proof a paper is attached, whatever the
         // run record said — never filter out the stage we're currently in.

@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { getTranscript, getTranscriptByKey } from "./api";
 import { Markdown } from "./Markdown";
-import { ToolCallView } from "@ssot/ui/ToolCallView";
+import { TurnView } from "@ssot/ui/TurnView";
 import { ToolVisibilityToggle } from "./ToolVisibilityToggle";
 import { usePersistedBool } from "./hooks";
-import type { TranscriptDetail, Turn } from "./types";
-import { relativeTimeIso, sessionLabel } from "./util";
+import type { TranscriptDetail } from "./types";
+import { errMessage, relativeTime, sessionLabel } from "./util";
 
 interface TranscriptPanelProps {
   agentId: string | null;
@@ -14,29 +14,7 @@ interface TranscriptPanelProps {
   kind: string | null;
 }
 
-function TurnView({
-  turn,
-  showTools,
-}: {
-  turn: Turn;
-  showTools: boolean;
-}) {
-  return (
-    <div className={`turn turn--${turn.role}`}>
-      {turn.role !== "user" && turn.role !== "assistant" && (
-        <div className="turn__role">{turn.role}</div>
-      )}
-      {turn.text && (
-        <div className="turn__text">
-          <Markdown>{turn.text}</Markdown>
-        </div>
-      )}
-      {turn.tool_calls.length > 0 &&
-        showTools &&
-        turn.tool_calls.map((tc, i) => <ToolCallView key={i} call={tc} />)}
-    </div>
-  );
-}
+const renderMarkdown = (text: string) => <Markdown>{text}</Markdown>;
 
 export function TranscriptPanel({
   agentId,
@@ -77,7 +55,7 @@ export function TranscriptPanel({
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        if (alive) setError(err instanceof Error ? err.message : String(err));
+        if (alive) setError(errMessage(err));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -115,7 +93,7 @@ export function TranscriptPanel({
           )}
           <div>
             <dt>Updated</dt>
-            <dd>{relativeTimeIso(detail.updated_at)}</dd>
+            <dd>{relativeTime(detail.updated_at)}</dd>
           </div>
           {sessionKey && (
             <div className="transcript__facts-wide">
@@ -146,6 +124,8 @@ export function TranscriptPanel({
             key={i}
             turn={turn}
             showTools={showTools}
+            renderText={renderMarkdown}
+            hideRoleFor={["user", "assistant"]}
           />
         ))}
       </div>

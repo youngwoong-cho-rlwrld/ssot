@@ -38,6 +38,15 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.URL.revokeObjectURL(url);
+}
+
 function createGroupId(name: string): string {
   return `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now().toString(36)}`;
 }
@@ -259,12 +268,7 @@ export function App() {
       nodesByGroup,
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${model?.name ?? "urdf"}-joint-groups.json`;
-    link.click();
-    window.URL.revokeObjectURL(url);
+    downloadBlob(blob, `${model?.name ?? "urdf"}-joint-groups.json`);
   };
 
   const applyGroupConfig = (parsed: unknown, statusLabel?: string) => {
@@ -361,13 +365,8 @@ export function App() {
         setError("Could not save viewport image.");
         return;
       }
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
       const frameLabel = rows.length > 0 ? `frame-${String(frameIndex + 1).padStart(6, "0")}` : "view";
-      link.href = url;
-      link.download = `${model?.name ?? "urdf"}-${frameLabel}.png`;
-      link.click();
-      window.URL.revokeObjectURL(url);
+      downloadBlob(blob, `${model?.name ?? "urdf"}-${frameLabel}.png`);
     }, "image/png");
   };
 
@@ -506,8 +505,9 @@ export function App() {
                 type="file"
                 accept="application/json,.json"
                 onChange={(event) => {
-                  void loadGroupConfig(event.target.files?.[0] ?? null).finally(() => {
-                    event.currentTarget.value = "";
+                  const input = event.currentTarget;
+                  void loadGroupConfig(input.files?.[0] ?? null).finally(() => {
+                    input.value = "";
                   });
                 }}
               />

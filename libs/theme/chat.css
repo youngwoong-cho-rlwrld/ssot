@@ -6,9 +6,6 @@
  * shared --ssot-* tokens (and the base.css aliases --accent/--muted/--line/--ink
  * /--panel-bg/--bg), so any app that loads tokens.css + base.css can adopt the
  * OpenClaw chat look by importing this file and using these class names.
- *
- * OpenClaw's own chat rules currently live in its app styles.css; the intent is
- * for OpenClaw to consume this file too so the design has a single source.
  */
 
 /* ----------------------- Rendered markdown (.md) ------------------------ */

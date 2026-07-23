@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Upload, X } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { SsotSelect } from "@ssot/ui/SsotSelect";
+import { PaperPicker, type PaperMode } from "./PaperPicker";
 import {
   ApiError,
   createDiagram,
@@ -33,8 +34,6 @@ function familyStateOf(
   if (!family || !health?.runtime_status) return undefined;
   return health.runtime_status[family];
 }
-
-type PaperMode = "none" | "url" | "pdf";
 
 interface Prefill {
   diagramId: number;
@@ -301,70 +300,25 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
 
           <div className="field">
             <span className="field__label">Source paper (optional)</span>
-            <div className="segmented" role="tablist" aria-label="Paper source">
-              {(["none", "url", "pdf"] as PaperMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  role="tab"
-                  aria-selected={paperMode === mode}
-                  className={`segmented__opt${
-                    paperMode === mode ? " segmented__opt--on" : ""
-                  }`}
-                  onClick={() => selectMode(mode)}
-                >
-                  {mode === "none" ? "No paper" : mode === "url" ? "URL" : "PDF"}
-                </button>
-              ))}
-            </div>
-
-            {paperMode === "url" && (
-              <input
-                className="ssot-input newdiag__paper-input"
-                type="url"
-                value={paperUrl}
-                onChange={(e) => setPaperUrl(e.target.value)}
-                placeholder="https://arxiv.org/abs/…"
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-              />
-            )}
-
-            {paperMode === "pdf" && (
-              <div className="newdiag__pdf">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  className="ssot-sr-only"
-                  id="paper-pdf"
-                  onChange={(e) => void onPickPdf(e.target.files?.[0])}
-                />
-                <label htmlFor="paper-pdf" className="ssot-btn newdiag__pdf-btn">
-                  {uploading ? (
-                    <Loader2 size={14} className="spin" />
-                  ) : (
-                    <Upload size={14} />
-                  )}
-                  {pdf ? pdf.name : "Choose PDF…"}
-                </label>
-                {pdf && (
-                  <>
-                    <span className="newdiag__pdf-pages">{pdf.pages} pp</span>
-                    <button
-                      type="button"
-                      className="ssot-icon-btn"
-                      onClick={() => selectMode("pdf")}
-                      title="Clear file"
-                      aria-label="Clear file"
-                    >
-                      <X size={14} />
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+            <PaperPicker
+              options={[
+                { value: "none", label: "No paper" },
+                { value: "url", label: "URL" },
+                { value: "pdf", label: "PDF" },
+              ]}
+              mode={paperMode}
+              onSelect={selectMode}
+              paperUrl={paperUrl}
+              onPaperUrlChange={setPaperUrl}
+              urlClassName="ssot-input newdiag__paper-input"
+              pdfInputId="paper-pdf"
+              pdf={pdf}
+              uploading={uploading}
+              onPickPdf={onPickPdf}
+              onClearPdf={() => selectMode("pdf")}
+              fileInputRef={fileInputRef}
+              showPages
+            />
 
             {paperError && <span className="field__err">{paperError}</span>}
           </div>

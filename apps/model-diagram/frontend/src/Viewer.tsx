@@ -8,13 +8,13 @@ import {
   Loader2,
   RefreshCcw,
   Terminal,
-  Upload,
-  X,
 } from "lucide-react";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { SsotSelect } from "@ssot/ui/SsotSelect";
 import { PanelResizeHandle } from "@ssot/ui/PanelResizeHandle";
+import { useDragResize } from "@ssot/ui/useDragResize";
 import { ChatPanel } from "./ChatPanel";
+import { PaperPicker, type PaperMode } from "./PaperPicker";
 import { requestCancelConfirm } from "./lib/cancel-bus";
 import {
   ApiError,
@@ -31,19 +31,13 @@ import { ModelSwitcher } from "@ssot/ui/ModelSwitcher";
 import { resolveCatalog } from "@ssot/ui/models-catalog";
 import { CHAT_PANEL_WIDTH } from "@ssot/ui/chat-panel";
 import { RunProgress } from "./RunProgress";
+import { STATUS_LABEL } from "./types";
 import type {
   DiagramDetail,
   ModelOption,
   PaperInput,
   RunSummary,
-  Status,
 } from "./types";
-
-const STATUS_LABEL: Record<Status, string> = {
-  running: "running",
-  done: "ready",
-  error: "error",
-};
 
 // Left chat/memo panel width — drag-resizable and persisted. Default/min/max come
 // from the shared @ssot/ui constant so this and results-sheet's chat panel can't
@@ -104,9 +98,8 @@ export function Viewer({
   const [reloadNonce, setReloadNonce] = useState(0);
   // Resizable left-panel width (persisted). resizing keeps the drag handle lit.
   const [leftWidth, setLeftWidth] = useState<number>(loadLeftWidth);
-  const [resizing, setResizing] = useState(false);
+  const { startDrag, dragging: resizing } = useDragResize();
   const splitRef = useRef<HTMLDivElement>(null);
-  const resizeCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     window.localStorage.setItem(LEFT_WIDTH_KEY, String(leftWidth));
@@ -127,41 +120,17 @@ export function Viewer({
     [maxLeftWidth],
   );
 
+  // Panel is on the left with the handle on its right edge: drag right grows it.
+  // The shared useDragResize hook owns the pointer bookkeeping and body class;
+  // this closure captures the per-drag start width + clamp bound.
   const startLeftResize = useCallback(
     (event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      resizeCleanupRef.current?.();
-      const target = event.currentTarget;
-      const pointerId = event.pointerId;
-      const startX = event.clientX;
       const startWidth = leftWidth;
       const max = maxLeftWidth();
-      target.setPointerCapture?.(pointerId);
-      setResizing(true);
-      document.body.classList.add("panelResizing");
-
-      // Panel is on the left with the handle on its right edge: drag right grows it.
-      const handleMove = (moveEvent: globalThis.PointerEvent) => {
-        setLeftWidth(clampWidth(startWidth + (moveEvent.clientX - startX), max));
-      };
-      const cleanup = () => {
-        if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
-        window.removeEventListener("pointermove", handleMove);
-        window.removeEventListener("pointerup", cleanup);
-        window.removeEventListener("pointercancel", cleanup);
-        document.body.classList.remove("panelResizing");
-        setResizing(false);
-        resizeCleanupRef.current = null;
-      };
-      resizeCleanupRef.current = cleanup;
-      window.addEventListener("pointermove", handleMove);
-      window.addEventListener("pointerup", cleanup, { once: true });
-      window.addEventListener("pointercancel", cleanup, { once: true });
+      startDrag(event, (deltaX) => setLeftWidth(clampWidth(startWidth + deltaX, max)));
     },
-    [leftWidth, maxLeftWidth],
+    [leftWidth, maxLeftWidth, startDrag],
   );
-
-  useEffect(() => () => resizeCleanupRef.current?.(), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -400,8 +369,6 @@ function CollapsibleSection({
   );
 }
 
-type PaperMode = "keep" | "none" | "url" | "pdf";
-
 interface ReprovisionProps {
   diagramId: number;
   cluster: string;
@@ -570,73 +537,27 @@ function ReprovisionForm({
         <span className="reprovision__paper-state">
           Paper: {paperAttached ? "attached" : "none"}
         </span>
-        <div className="segmented" role="tablist" aria-label="Paper source">
-          {(["keep", "none", "url", "pdf"] as PaperMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              role="tab"
-              aria-selected={paperMode === mode}
-              className={`segmented__opt${
-                paperMode === mode ? " segmented__opt--on" : ""
-              }`}
-              onClick={() => selectMode(mode)}
-            >
-              {mode === "keep"
-                ? paperAttached
-                  ? "Keep"
-                  : "Keep (none)"
-                : mode === "none"
-                  ? "Remove"
-                  : mode === "url"
-                    ? "Replace: URL"
-                    : "Replace: PDF"}
-            </button>
-          ))}
-        </div>
-
-        {paperMode === "url" && (
-          <input
-            className="ssot-input"
-            type="url"
-            value={paperUrl}
-            onChange={(e) => setPaperUrl(e.target.value)}
-            placeholder="https://arxiv.org/abs/…"
-            spellCheck={false}
-          />
-        )}
-
-        {paperMode === "pdf" && (
-          <div className="newdiag__pdf">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="ssot-sr-only"
-              id="reprovision-pdf"
-              onChange={(e) => void onPickPdf(e.target.files?.[0])}
-            />
-            <label htmlFor="reprovision-pdf" className="ssot-btn newdiag__pdf-btn">
-              {uploading ? (
-                <Loader2 size={14} className="spin" />
-              ) : (
-                <Upload size={14} />
-              )}
-              {pdf ? pdf.name : "Choose PDF…"}
-            </label>
-            {pdf && (
-              <button
-                type="button"
-                className="ssot-icon-btn"
-                onClick={() => selectMode("pdf")}
-                title="Clear file"
-                aria-label="Clear file"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-        )}
+        <PaperPicker
+          options={[
+            {
+              value: "keep",
+              label: paperAttached ? "Keep" : "Keep (none)",
+            },
+            { value: "none", label: "Remove" },
+            { value: "url", label: "Replace: URL" },
+            { value: "pdf", label: "Replace: PDF" },
+          ]}
+          mode={paperMode}
+          onSelect={selectMode}
+          paperUrl={paperUrl}
+          onPaperUrlChange={setPaperUrl}
+          pdfInputId="reprovision-pdf"
+          pdf={pdf}
+          uploading={uploading}
+          onPickPdf={onPickPdf}
+          onClearPdf={() => selectMode("pdf")}
+          fileInputRef={fileInputRef}
+        />
       </div>
 
       {err && <div className="form__err">{err}</div>}

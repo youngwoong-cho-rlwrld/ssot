@@ -24,10 +24,11 @@
   justify-content: center;
   min-width: var(--ssot-control-h);
   min-height: var(--ssot-control-h);
-  border: 0;
+  border: 1px solid var(--ssot-border-strong);
   border-radius: var(--ssot-radius-sm);
   color: var(--ssot-text);
-  background: var(--ssot-surface-muted);
+  background: var(--ssot-surface);
+  font-family: var(--ssot-font-sans);
   font-size: var(--ssot-text-sm);
   font-weight: var(--ssot-weight-medium);
   letter-spacing: 0;
@@ -40,6 +41,7 @@
 }
 
 .u-btn:hover:not(:disabled) {
+  border-color: var(--ssot-accent);
   background: var(--ssot-accent-soft);
 }
 
@@ -57,6 +59,7 @@
   padding: 0 9px;
   color: var(--ssot-text);
   background: var(--ssot-surface);
+  font-family: var(--ssot-font-sans);
   font-size: var(--ssot-text-sm);
   letter-spacing: 0;
   transition:
@@ -86,6 +89,7 @@
   border-radius: var(--ssot-radius-sm);
   color: var(--ssot-text);
   background: var(--ssot-surface);
+  font-family: var(--ssot-font-sans);
   font-size: var(--ssot-text-sm);
   letter-spacing: 0;
   cursor: pointer;

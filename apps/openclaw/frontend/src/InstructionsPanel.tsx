@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Save } from "lucide-react";
 import { Modal } from "@ssot/ui/Modal";
 import { getInstructions, getInstruction, putInstruction } from "./api";
+import { errMessage } from "./util";
 import type { InstructionFile } from "./types";
 
 // These files are injected into every agent turn's system prompt, read fresh
@@ -44,7 +45,7 @@ export function InstructionsPanel({ onClose }: { onClose: () => void }) {
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(errMessage(err));
         }
       })
       .finally(() => setLoading(false));
@@ -65,7 +66,7 @@ export function InstructionsPanel({ onClose }: { onClose: () => void }) {
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(errMessage(err));
         }
       })
       .finally(() => {
@@ -97,7 +98,7 @@ export function InstructionsPanel({ onClose }: { onClose: () => void }) {
       );
       setNote(`Saved${res.backed_up ? " (previous version backed up)" : ""}. ${APPLIES_NOTE}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       setSaving(false);
     }
@@ -159,7 +160,7 @@ export function InstructionsPanel({ onClose }: { onClose: () => void }) {
           </span>
           <button
             type="button"
-            className="instructions__save"
+            className="ssot-btn ssot-btn-primary instructions__save"
             onClick={() => void save()}
             disabled={saving || loading || !dirty}
           >

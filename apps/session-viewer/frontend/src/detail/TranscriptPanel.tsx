@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Copy, Check, Star, Trash2 } from "lucide-react";
-import { ToolCallView } from "@ssot/ui/ToolCallView";
+import { TurnView } from "@ssot/ui/TurnView";
 import { deleteSession, getDetail } from "../api";
-import type { BoardNode, SessionDetail, Turn } from "../types";
+import type { BoardNode, SessionDetail } from "../types";
 import { formatAbsolute, relativeTime } from "../board/util";
 
 const SWATCHES = [
@@ -244,7 +244,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 
         <div className="drawer__body">
           {loading && <div className="drawer__status">Loading transcript...</div>}
-          {error && <div className="drawer__status drawer__status--err">{error}</div>}
+          {error && <div className="drawer__status drawer__status--err" role="alert">{error}</div>}
           {detail && detail.turns.length === 0 && !loading && (
             <div className="drawer__status">No messages.</div>
           )}
@@ -254,17 +254,5 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
         </div>
       </aside>
     </>
-  );
-}
-
-function TurnView({ turn }: { turn: Turn }) {
-  return (
-    <div className={`turn turn--${turn.role}`}>
-      <div className="turn__role">{turn.role}</div>
-      {turn.text && <div className="turn__text">{turn.text}</div>}
-      {turn.tool_calls.map((tc, i) => (
-        <ToolCallView key={i} call={tc} />
-      ))}
-    </div>
   );
 }

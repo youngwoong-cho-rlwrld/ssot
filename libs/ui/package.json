@@ -19,12 +19,15 @@
     "./Modal": "./src/Modal.tsx",
     "./ChatSendIcon": "./src/ChatSendIcon.tsx",
     "./chat-panel": "./src/chat-panel.ts",
+    "./dates": "./src/dates.ts",
     "./ModelSwitcher": "./src/ModelSwitcher.tsx",
     "./models-catalog": "./src/models-catalog.ts",
     "./PanelResizeHandle": "./src/PanelResizeHandle.tsx",
     "./SsotSelect": "./src/SsotSelect.tsx",
     "./ToolCallView": "./src/ToolCallView.tsx",
+    "./TurnView": "./src/TurnView.tsx",
     "./transcript-types": "./src/transcript-types.ts",
+    "./useDragResize": "./src/useDragResize.ts",
     "./package.json": "./package.json"
   }
 }

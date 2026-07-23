@@ -24,6 +24,10 @@ export function useBoard(): UseBoardResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  // Per-uid write sequence so out-of-order PUT responses can't clobber newer
+  // state: each updateNode bumps the uid's seq, and a late .then() bails if a
+  // newer write has since been issued for that uid.
+  const seqRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     mounted.current = true;
@@ -50,6 +54,8 @@ export function useBoard(): UseBoardResult {
 
   const updateNode = useCallback(
     (uid: string, partial: Partial<Omit<BoardNode, "uid">>) => {
+      const seq = (seqRef.current.get(uid) ?? 0) + 1;
+      seqRef.current.set(uid, seq);
       setBoard((prev) => {
         const next = new Map(prev);
         const existing = prev.get(uid) ?? defaultNode(uid);
@@ -59,6 +65,7 @@ export function useBoard(): UseBoardResult {
       putBoardNode(uid, partial)
         .then((saved) => {
           if (!mounted.current) return;
+          if (seqRef.current.get(uid) !== seq) return;
           setBoard((prev) => {
             const next = new Map(prev);
             next.set(uid, saved);

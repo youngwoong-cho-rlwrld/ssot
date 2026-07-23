@@ -1,40 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HeartPulse, Pause, Play } from "lucide-react";
 import { getHeartbeat, setHeartbeat, setPause } from "./api";
-import type { HeartbeatResponse } from "./types";
+import { useAsyncData } from "./hooks";
+import { errMessage } from "./util";
 
 const PRESETS = ["15m", "30m", "1h", "2h"];
 const EVERY_RE = /^\d+[smhd]$/;
 
 export function HeartbeatControl() {
-  const [data, setData] = useState<HeartbeatResponse | null>(null);
+  const { data, error, setError, reload, mounted } = useAsyncData((signal) =>
+    getHeartbeat(signal),
+  );
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [custom, setCustom] = useState("");
   // Heartbeat enable/disable is a live gateway toggle not reflected in status,
   // so we track the user's intent locally for responsive UI.
   const [enabledLocal, setEnabledLocal] = useState<boolean | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  const load = useCallback((signal?: AbortSignal) => {
-    return getHeartbeat(signal)
-      .then((d) => {
-        setData(d);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!signal?.aborted) setError(err instanceof Error ? err.message : String(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => {
-      controller.abort();
-    };
-  }, [load]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,13 +42,15 @@ export function HeartbeatControl() {
     setError(null);
     try {
       await fn();
-      await load();
+      await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setError(errMessage(err));
     } finally {
       // Drop the optimistic override so the reloaded backend state drives the UI.
-      setEnabledLocal(null);
-      setBusy(false);
+      if (mounted.current) {
+        setEnabledLocal(null);
+        setBusy(false);
+      }
     }
   };
 
@@ -95,7 +80,7 @@ export function HeartbeatControl() {
     <div className="heartbeat" ref={rootRef}>
       <button
         type="button"
-        className={`heartbeat__chip${paused ? " heartbeat__chip--paused" : ""}`}
+        className={`ssot-btn heartbeat__chip${paused ? " heartbeat__chip--paused" : ""}`}
         onClick={() => setOpen((o) => !o)}
         title="Heartbeat & pause controls"
       >
@@ -120,7 +105,7 @@ export function HeartbeatControl() {
               <button
                 key={p}
                 type="button"
-                className={`heartbeat__preset${
+                className={`ssot-btn heartbeat__preset${
                   every === p ? " heartbeat__preset--active" : ""
                 }`}
                 disabled={busy}
@@ -161,7 +146,7 @@ export function HeartbeatControl() {
 
           <button
             type="button"
-            className={`heartbeat__pause${paused ? " heartbeat__pause--resume" : ""}`}
+            className={`ssot-btn heartbeat__pause${paused ? " heartbeat__pause--resume" : ""}`}
             disabled={busy}
             onClick={togglePause}
           >

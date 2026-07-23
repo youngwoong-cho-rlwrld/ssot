@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
-from . import settings
 from .models import Session
 
 log = logging.getLogger("session_board.sources")
@@ -262,19 +261,6 @@ def parse_claude_meta(path: Path) -> Optional[Session]:
         return None
 
 
-def scan_claude() -> list[Session]:
-    """Scan all Claude session files into Session metadata objects."""
-    base = settings.CLAUDE_ROOT
-    out: list[Session] = []
-    if not base.exists():
-        return out
-    for path in base.glob("*/*.jsonl"):
-        sess = parse_claude_meta(path)
-        if sess is not None:
-            out.append(sess)
-    return out
-
-
 # ---------------------------------------------------------------------------
 # Codex
 # ---------------------------------------------------------------------------
@@ -455,19 +441,6 @@ def parse_codex_meta(path: Path) -> Optional[Session]:
         return None
 
 
-def scan_codex() -> list[Session]:
-    """Scan all Codex session files into Session metadata objects."""
-    base = settings.CODEX_ROOT
-    out: list[Session] = []
-    if not base.exists():
-        return out
-    for path in base.glob("**/*.jsonl"):
-        sess = parse_codex_meta(path)
-        if sess is not None:
-            out.append(sess)
-    return out
-
-
 # ---------------------------------------------------------------------------
 # OpenClaw
 # ---------------------------------------------------------------------------
@@ -603,18 +576,3 @@ def parse_openclaw_meta(path: Path) -> Optional[Session]:
     except Exception as exc:  # noqa: BLE001 - defensive per-file isolation
         log.warning("failed to parse openclaw session %s: %s", path, exc)
         return None
-
-
-def scan_openclaw() -> list[Session]:
-    """Scan OpenClaw agent session envelopes, excluding trajectory sidecars."""
-    base = settings.OPENCLAW_ROOT
-    out: list[Session] = []
-    if not base.exists():
-        return out
-    for path in base.glob("*/sessions/*.jsonl"):
-        if path.name.endswith(".trajectory.jsonl"):
-            continue
-        session = parse_openclaw_meta(path)
-        if session is not None:
-            out.append(session)
-    return out

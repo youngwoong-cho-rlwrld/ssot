@@ -36,7 +36,7 @@ export function StatusBar({ status, error, onOpenInstructions }: StatusBarProps)
         )}
         <button
           type="button"
-          className="statusbar__instructions"
+          className="ssot-btn statusbar__instructions"
           onClick={onOpenInstructions}
           title="Edit global instructions"
         >

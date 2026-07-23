@@ -89,7 +89,7 @@ export default function App() {
 
       <main className="app__board">
         {error && (
-          <div className="app__banner app__banner--err">
+          <div className="app__banner app__banner--err" role="alert">
             Failed to load sessions: {error}
           </div>
         )}

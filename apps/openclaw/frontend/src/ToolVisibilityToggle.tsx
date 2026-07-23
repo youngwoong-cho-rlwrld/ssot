@@ -20,7 +20,7 @@ export function ToolVisibilityToggle({
   return (
     <button
       type="button"
-      className={`tool-toggle${visible ? " tool-toggle--on" : ""}`}
+      className={`ssot-btn tool-toggle${visible ? " tool-toggle--on" : ""}`}
       onClick={onToggle}
       aria-label={label}
       aria-pressed={visible}

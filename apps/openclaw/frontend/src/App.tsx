@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { StatusBar } from "./StatusBar";
 import { SessionList } from "./SessionList";
 import { TranscriptPanel } from "./TranscriptPanel";
@@ -7,7 +7,8 @@ import { Chat } from "./Chat";
 import { InstructionsPanel } from "./InstructionsPanel";
 import { SetupCard } from "./SetupCard";
 import { ApiError, getStatus } from "./api";
-import { sessionLabel } from "./util";
+import { usePolling } from "./hooks";
+import { errMessage, sessionLabel } from "./util";
 import type { OpenClawSession, StatusResponse } from "./types";
 
 const PROBE_MS = 10_000;
@@ -40,34 +41,18 @@ export default function App() {
   const chatMode = selected === null || selected.kind === "direct";
   const boundKey = selected?.kind === "direct" ? selected.key : null;
 
-  useEffect(() => {
-    let alive = true;
-    let controller: AbortController | null = null;
-    let timer: number | null = null;
-    const probe = async () => {
-      const requestController = new AbortController();
-      controller = requestController;
-      try {
-        const nextStatus = await getStatus(requestController.signal);
-        if (!alive) return;
-        setStatus(nextStatus);
-        setStatusError(null);
-        setCliMissing(false);
-      } catch (err) {
-        if (requestController.signal.aborted || !alive) return;
-        setStatusError(err instanceof Error ? err.message : String(err));
-        setCliMissing(err instanceof ApiError && err.kind === "cli_missing");
-      } finally {
-        if (alive) timer = window.setTimeout(() => void probe(), PROBE_MS);
-      }
-    };
-    void probe();
-    return () => {
-      alive = false;
-      controller?.abort();
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, []);
+  usePolling(async (signal) => {
+    try {
+      const nextStatus = await getStatus(signal);
+      setStatus(nextStatus);
+      setStatusError(null);
+      setCliMissing(false);
+    } catch (err) {
+      if (signal.aborted) return;
+      setStatusError(errMessage(err));
+      setCliMissing(err instanceof ApiError && err.kind === "cli_missing");
+    }
+  }, PROBE_MS);
 
   if (cliMissing) {
     return (

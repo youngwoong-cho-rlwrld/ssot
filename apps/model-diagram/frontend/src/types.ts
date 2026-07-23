@@ -9,6 +9,15 @@ export const FALLBACK_CLUSTERS: string[] = ["local", "kakao", "skt", "mlxp"];
 
 export type Status = "running" | "done" | "error";
 
+// Human-readable run-status labels for the diagram-list status pill and the
+// viewer's run-history option text. One canonical Title Case map so the two
+// cannot drift.
+export const STATUS_LABEL: Record<Status, string> = {
+  running: "Running",
+  done: "Ready",
+  error: "Error",
+};
+
 export type PaperStatus = "none" | "attached" | "mismatch";
 
 export type ErrorKind =
@@ -114,7 +123,8 @@ export interface ChatMessage {
 }
 
 export interface ChatHistory {
-  thread_id: number;
+  // null until the first message is posted (GET is read-only and never creates a thread).
+  thread_id: number | null;
   run_id?: number;
   messages: ChatMessage[];
 }

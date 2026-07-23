@@ -69,17 +69,13 @@ export interface ChatResult {
   status?: string;
   summary?: string;
   result?: {
-    payloads?: { text?: string | null; mediaUrl?: string | null }[];
+    payloads?: { text?: string | null }[];
     meta?: {
       finalAssistantVisibleText?: string;
       sessionId?: string;
       sessionKey?: string;
     };
   };
-}
-
-export interface ApiError {
-  error: string;
 }
 
 // --- models ----------------------------------------------------------------

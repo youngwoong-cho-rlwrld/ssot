@@ -233,3 +233,51 @@ html[data-ssot-theme='dark'] .ssot-listbox {
   width: 14px;
   color: var(--ssot-accent);
 }
+
+/*
+ * Segmented control: a small pill group where exactly one option is active.
+ * Shared by model-diagram (paper-source toggle) and session-viewer (agent
+ * filter). Markup:
+ *   <div class="ssot-seg" role="group">
+ *     <button class="ssot-seg__btn ssot-seg__btn--on">A</button>
+ *     <button class="ssot-seg__btn">B</button>
+ *   </div>
+ */
+.ssot-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ssot-border-strong);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--ssot-surface-muted);
+}
+
+.ssot-seg__btn {
+  border: none;
+  border-radius: var(--ssot-radius-sm);
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--ssot-text-soft);
+  font: inherit;
+  font-size: var(--ssot-text-sm);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ssot-seg__btn:hover {
+  color: var(--ssot-text);
+}
+
+.ssot-seg__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.ssot-seg__btn--on {
+  background: var(--ssot-surface);
+  color: var(--ssot-accent);
+  box-shadow: var(--ssot-shadow);
+}

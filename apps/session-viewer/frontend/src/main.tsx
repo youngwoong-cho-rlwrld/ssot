@@ -6,6 +6,7 @@ import "@ssot/theme/tokens.css";
 import "@ssot/theme/base.css";
 import "@ssot/theme/header.css";
 import "@ssot/theme/controls.css";
+import "@ssot/theme/transcript.css";
 import "@ssot/theme/theme-init.js";
 import "@ssot/theme/runtime.js";
 import "./styles.css";

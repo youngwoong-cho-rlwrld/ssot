@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { deleteSession, getSessions } from "./api";
+import { usePolling } from "./hooks";
 import type { OpenClawSession } from "./types";
 import {
   ACTIVE_WINDOW_MS,
+  errMessage,
   formatTokens,
   relativeTimeMs,
   sessionLabel,
@@ -51,7 +53,7 @@ export function SessionList({
       })
       .catch((err) => {
         if (signal?.aborted || !aliveRef.current) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMessage(err));
       })
       .finally(() => {
         if (aliveRef.current) setLoading(false);
@@ -60,22 +62,12 @@ export function SessionList({
 
   useEffect(() => {
     aliveRef.current = true;
-    let controller: AbortController | null = null;
-    let timer: number | null = null;
-    const tick = async () => {
-      controller = new AbortController();
-      await load(controller.signal);
-      if (aliveRef.current) {
-        timer = window.setTimeout(() => void tick(), POLL_MS);
-      }
-    };
-    void tick();
     return () => {
       aliveRef.current = false;
-      controller?.abort();
-      if (timer !== null) window.clearTimeout(timer);
     };
-  }, [load, reloadToken]);
+  }, []);
+
+  usePolling(load, POLL_MS, [reloadToken]);
 
   const doDelete = async (s: OpenClawSession, force: boolean) => {
     if (!s.sessionId) return;
@@ -87,7 +79,7 @@ export function SessionList({
       setSessions((prev) => prev.filter((x) => x.key !== s.key));
       onDeleted?.(s.key);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       setBusyKey(null);
       void load();
@@ -101,7 +93,7 @@ export function SessionList({
         {loading && <RefreshCw size={13} className="spin panel__spin" />}
         <button
           type="button"
-          className="sessions__new"
+          className="ssot-btn sessions__new"
           onClick={onNewChat}
           title="Start a new chat"
         >

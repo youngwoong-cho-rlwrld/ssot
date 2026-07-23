@@ -1,0 +1,169 @@
+/*
+ * Shared transcript surface: agent turns, collapsible tool calls, and the
+ * "active" pulse dot. Extracted from OpenClaw and session-viewer, which rendered
+ * near-identical copies. Rules key off the --ssot-* tokens (and the base.css
+ * aliases --accent/--muted/--line/--ink/--panel-bg), so any app that loads
+ * tokens.css + base.css can render transcripts and chat tool calls identically
+ * by importing this file and using these class names. Pairs with the shared
+ * @ssot/ui <TurnView> and <ToolCallView>.
+ */
+
+/* ------------------------------- Turns --------------------------------- */
+.turn {
+  border-radius: var(--ssot-radius);
+  padding: 10px 12px;
+  font-size: var(--ssot-text-sm);
+  line-height: 1.5;
+}
+
+.turn__role {
+  font-size: var(--ssot-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: var(--ssot-weight-semibold);
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+}
+
+.turn__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+}
+
+.turn--user {
+  background: var(--accent-soft);
+}
+
+.turn--user .turn__role {
+  color: var(--accent);
+}
+
+.turn--assistant {
+  background: var(--muted);
+}
+
+.turn--system {
+  background: var(--ssot-warning-soft);
+}
+
+.turn--system .turn__role {
+  color: var(--ssot-warning);
+}
+
+/* ----------------------------- Tool calls ------------------------------ */
+.tool {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--ssot-radius-sm);
+  background: var(--panel-bg);
+  overflow: hidden;
+}
+
+.tool__summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--ssot-text-xs);
+}
+
+.tool__summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool__summary:hover {
+  background: var(--muted);
+}
+
+.tool__summary:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ssot-ring);
+}
+
+.tool__name {
+  font-family: var(--font-mono);
+  font-weight: var(--ssot-weight-semibold);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.tool__preview {
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tool__body {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.tool__label {
+  font-size: var(--ssot-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin: 4px 0 3px;
+}
+
+.tool__pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--ssot-text-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+  background: var(--muted);
+  border-radius: var(--ssot-radius-sm);
+  padding: 8px 9px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+/* ------------------------------- Pulse --------------------------------- */
+/* "Active" indicator: a solid dot with an expanding ring. */
+.pulse {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  display: inline-flex;
+}
+
+.pulse__dot {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ssot-success);
+}
+
+.pulse__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ssot-success);
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse__ring {
+    animation: none;
+  }
+}
