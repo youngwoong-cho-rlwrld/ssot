@@ -8,16 +8,9 @@ import { toast } from "sonner";
 import { api, type Job, type SubmitResponse } from "@/lib/api";
 import { jobDetailHref } from "@/lib/job-links";
 import type { JobPhase } from "@/lib/job-status";
+import { Modal } from "@ssot/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { InlineLoading } from "@/components/loading-state";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 type ResumeAction = "resume" | "retry";
 
@@ -93,11 +86,10 @@ export function ResumeJobButton({
         {resume.isPending ? submittingLabel : primaryLabel}
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-[min(92vw,32rem)]">
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription className="[overflow-wrap:anywhere]">
+      {open && (
+        <Modal title={title} onClose={() => setOpen(false)}>
+          <div className="modal__body space-y-2">
+            <p className="[overflow-wrap:anywhere]">
               This submits a new {phaseLabel} job on{" "}
               <span className="font-mono">{cluster}</span> from {isRetry ? "failed" : "timed-out"} job{" "}
               <span className="font-mono">{jobId}</span>
@@ -107,10 +99,7 @@ export function ResumeJobButton({
                 </>
               ) : null}
               .
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+            </p>
             {normalizedPhase === "train" ? (
               <p>
                 {isRetry
@@ -180,7 +169,7 @@ export function ResumeJobButton({
             </div>
           </div>
 
-          <DialogFooter>
+          <div className="modal__foot">
             <Button
               variant="outline"
               onClick={() => setOpen(false)}
@@ -194,9 +183,9 @@ export function ResumeJobButton({
             >
               {resume.isPending ? "Submitting..." : submitLabel}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

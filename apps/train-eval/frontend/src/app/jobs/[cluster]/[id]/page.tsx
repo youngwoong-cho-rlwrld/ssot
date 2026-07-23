@@ -42,14 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Modal } from "@ssot/ui/Modal";
 import { ConfigCard, DataInterfaceCard } from "@/components/config-card";
 import { CopyButton } from "@/components/copy-button";
 import { CopyCheckpointDialog } from "@/components/copy-checkpoint-dialog";
@@ -340,11 +333,14 @@ export default function JobDetail({ params }: { params: Promise<{ cluster: strin
         jobId={id}
       />
 
-      <Dialog open={confirmCancel} onOpenChange={setConfirmCancel}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel this job?</DialogTitle>
-            <DialogDescription>
+      {confirmCancel && (
+        <Modal
+          title="Cancel this job?"
+          className="modal--confirm"
+          onClose={() => setConfirmCancel(false)}
+        >
+          <div className="modal__body">
+            <p>
               This will run <code className="font-mono">{cancelLabel}</code> on
               job <span className="font-mono">{id}</span>{" "}
               {details.data?.variant && (
@@ -354,9 +350,9 @@ export default function JobDetail({ params }: { params: Promise<{ cluster: strin
               )}
               on <span className="font-mono">{cluster}</span>. In-progress steps
               will be lost; checkpoints already on disk are preserved.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
+            </p>
+          </div>
+          <div className="modal__foot">
             <Button variant="outline" onClick={() => setConfirmCancel(false)}>
               Keep running
             </Button>
@@ -369,9 +365,9 @@ export default function JobDetail({ params }: { params: Promise<{ cluster: strin
             >
               Yes, {cancelLabel}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Modal>
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <ProgressCard
@@ -1088,16 +1084,16 @@ function EvalRunRow({
     <tr className="border-b border-slate-100 last:border-0 dark:border-slate-900">
       {showTask && (
         <td className="truncate py-2 pr-4 font-mono text-xs">
-          {row.task ?? <span className="text-slate-400">—</span>}
+          {row.task ?? <span className="text-slate-400">-</span>}
         </td>
       )}
       <td className="whitespace-nowrap py-2 pr-4 font-mono text-xs">{row.eval_set}</td>
       <td className="whitespace-nowrap py-2 pr-4 font-mono text-xs">{row.run}</td>
       <td className="whitespace-nowrap py-2 pr-4 font-mono text-xs">
-        {row.seed ?? <span className="text-slate-400">—</span>}
+        {row.seed ?? <span className="text-slate-400">-</span>}
       </td>
       <td className="whitespace-nowrap py-2 pr-4 font-mono text-xs">
-        {formatEvalRunSuccess(row) ?? <span className="text-slate-400">—</span>}
+        {formatEvalRunSuccess(row) ?? <span className="text-slate-400">-</span>}
       </td>
       <td className="w-full py-2">
         <div className="flex min-w-0 items-center justify-between gap-4">
@@ -1294,11 +1290,11 @@ function LogStream({
   const logText =
     receivedCount === 0
       ? connState === "open"
-        ? "(connected — no log output yet...)"
+        ? "(connected, no log output yet...)"
         : connState === "done"
-          ? "(stream ended — no log output)"
+          ? "(stream ended, no log output)"
           : connState === "retrying"
-            ? "(log stream disconnected — retrying... too many open job tabs can exhaust the browser's connection pool; close or reload stale tabs)"
+            ? "(log stream disconnected, retrying... too many open job tabs can exhaust the browser's connection pool; close or reload stale tabs)"
             : "(connecting to log stream...)"
       : [
           hiddenOlderCount > 0

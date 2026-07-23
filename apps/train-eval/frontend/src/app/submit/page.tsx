@@ -45,14 +45,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Modal } from "@ssot/ui/Modal";
 import { useMyMlxpNode } from "@/hooks/use-my-mlxp-node";
 import { DatasetField } from "@/components/submit/dataset-field";
 import { MlxpCard } from "@/components/submit/mlxp-card";
@@ -1436,7 +1429,7 @@ export default function SubmitPage() {
                   </Select>
                   {selectedPartition?.is_background && (
                     <p className="text-xs text-[var(--ssot-text-soft)]">
-                      Preemptible partition — submit auto-adds{" "}
+                      Preemptible partition, submit auto-adds{" "}
                       <code>--requeue</code>; train_body resumes from latest
                       checkpoint after preemption.
                     </p>
@@ -1663,21 +1656,20 @@ export default function SubmitPage() {
         </aside>
       </div>
 
-      <Dialog open={datasetDialogOpen} onOpenChange={setDatasetDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Dataset override</DialogTitle>
-            <DialogDescription>
+      {datasetDialogOpen && (
+        <Modal title="Dataset override" onClose={() => setDatasetDialogOpen(false)}>
+          <div className="modal__body">
+            <p>
               Edit the dataset values used for <code>--dataset-path</code> in
               this submission.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[70vh] overflow-y-auto pr-1">
-            {datasetField ?? (
-              <EmptyState message="Pick an experiment before editing datasets." />
-            )}
+            </p>
+            <div className="mt-3 max-h-[70vh] overflow-y-auto pr-1">
+              {datasetField ?? (
+                <EmptyState message="Pick an experiment before editing datasets." />
+              )}
+            </div>
           </div>
-          <DialogFooter>
+          <div className="modal__foot">
             {datasetTouched && (
               <Button
                 variant="outline"
@@ -1690,20 +1682,17 @@ export default function SubmitPage() {
               </Button>
             )}
             <Button onClick={() => setDatasetDialogOpen(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Modal>
+      )}
 
-      <Dialog open={gitCommitDialogOpen} onOpenChange={setGitCommitDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Training commit</DialogTitle>
-            <DialogDescription>
+      {gitCommitDialogOpen && (
+        <Modal title="Training commit" onClose={() => setGitCommitDialogOpen(false)}>
+          <div className="modal__body space-y-2">
+            <p>
               Set <code>TRAIN_GIT_COMMIT</code> for this submission.
               Leave it empty to use the repo HEAD at submit time.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
+            </p>
             <Select
               value={selectedGitCommitValue}
               onValueChange={(value) => updateTrainConfig({ gitCommit: value })}
@@ -1746,7 +1735,7 @@ export default function SubmitPage() {
               </p>
             )}
           </div>
-          <DialogFooter>
+          <div className="modal__foot">
             {trainGitCommitTrimmed && (
               <Button
                 variant="outline"
@@ -1756,33 +1745,35 @@ export default function SubmitPage() {
               </Button>
             )}
             <Button onClick={() => setGitCommitDialogOpen(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Modal>
+      )}
 
-      <Dialog open={gitDialogOpen} onOpenChange={setGitDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Commit uncommitted changes before training?</DialogTitle>
-            <DialogDescription>
+      {gitDialogOpen && (
+        <Modal
+          title="Commit uncommitted changes before training?"
+          onClose={() => setGitDialogOpen(false)}
+        >
+          <div className="modal__body space-y-3">
+            <p>
               Training submissions record the selected model-code git commit.
               The current {dirtyGitStatus?.repo_label ?? "training repo"} working
               tree is dirty, so the backend will commit these changes before
               submitting and store that hash in the job snapshot.
-            </DialogDescription>
-          </DialogHeader>
-          {dirtyGitStatus?.repo_path && (
-            <div className="rounded border border-[var(--ssot-border)] bg-[var(--ssot-surface-muted)] p-3 text-xs">
-              <div className="text-[var(--ssot-text-soft)]">Repo</div>
-              <div className="break-all font-mono">{dirtyGitStatus.repo_path}</div>
+            </p>
+            {dirtyGitStatus?.repo_path && (
+              <div className="rounded border border-[var(--ssot-border)] bg-[var(--ssot-surface-muted)] p-3 text-xs">
+                <div className="text-[var(--ssot-text-soft)]">Repo</div>
+                <div className="break-all font-mono">{dirtyGitStatus.repo_path}</div>
+              </div>
+            )}
+            <div className="max-h-56 overflow-auto rounded border border-[var(--ssot-border)] bg-[var(--ssot-surface-muted)] p-3 font-mono text-xs">
+              {dirtyGitStatus?.files.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
             </div>
-          )}
-          <div className="max-h-56 overflow-auto rounded border border-[var(--ssot-border)] bg-[var(--ssot-surface-muted)] p-3 font-mono text-xs">
-            {dirtyGitStatus?.files.map((line) => (
-              <div key={line}>{line}</div>
-            ))}
           </div>
-          <DialogFooter>
+          <div className="modal__foot">
             <Button
               variant="outline"
               onClick={() => setGitDialogOpen(false)}
@@ -1799,9 +1790,9 @@ export default function SubmitPage() {
             >
               {submit.isPending ? "Submitting..." : "Commit and submit"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

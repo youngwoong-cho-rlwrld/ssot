@@ -6,7 +6,7 @@ import { ImmediateTooltip } from "@/components/immediate-tooltip";
 // Used by the jobs list and the job-detail sacct table (N153).
 export function JobTimestamp({ iso }: { iso?: string | null }) {
   const formatted = formatJobTimestamp(iso);
-  if (!formatted) return <span className="text-slate-400">—</span>;
+  if (!formatted) return <span className="text-slate-400">-</span>;
   return (
     <ImmediateTooltip content={formatted.full}>
       <span>{formatted.short}</span>

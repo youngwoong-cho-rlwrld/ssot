@@ -457,7 +457,7 @@ function JobTable({
                         <CopyButton value={j.variant} title="Copy experiment" />
                       </div>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-slate-400">-</span>
                     )}
                   </Td>
                 )}
@@ -500,7 +500,7 @@ function JobTable({
                           )}
                           {copyable && <CopyCheckpointShortcut job={j} />}
                           {!resumable && !retryable && !copyable && (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-slate-400">-</span>
                           )}
                         </div>
                       );
@@ -512,7 +512,7 @@ function JobTable({
                 <Td className="font-mono text-xs text-[var(--ssot-text-soft)] min-w-[180px]">{j.nodelist}</Td>
                 {showProgress && (
                   <Td className="font-mono text-xs">
-                    {j.time_left || <span className="text-slate-400">—</span>}
+                    {j.time_left || <span className="text-slate-400">-</span>}
                   </Td>
                 )}
                 <Td className="font-mono text-xs"><JobTimestamp iso={j.start} /></Td>

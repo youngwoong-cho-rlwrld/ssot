@@ -20,7 +20,7 @@ export function parseSlurmDuration(s: string): number {
 
 /** Humanize seconds: "45s", "12m", "3h 7m", "2d 4h". */
 export function formatDuration(seconds: number): string {
-  if (!isFinite(seconds) || seconds <= 0) return "—";
+  if (!isFinite(seconds) || seconds <= 0) return "-";
   if (seconds < 60) return `${Math.round(seconds)}s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
   const days = Math.floor(seconds / 86400);

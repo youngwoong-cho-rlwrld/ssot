@@ -7,6 +7,7 @@ const basePath = process.env.TRAIN_EVAL_BASE_PATH ?? "/train-eval";
 
 const nextConfig: NextConfig = {
   basePath,
+  transpilePackages: ["@ssot/ui"],
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },

@@ -253,7 +253,7 @@ function QueueLabel({
   queuedJobs: number;
 }) {
   if (queuedGpus <= 0 && queuedJobs <= 0) {
-    return <span className="text-slate-400">—</span>;
+    return <span className="text-slate-400">-</span>;
   }
   return (
     <span>

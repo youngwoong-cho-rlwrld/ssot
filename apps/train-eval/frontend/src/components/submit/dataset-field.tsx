@@ -3,16 +3,9 @@
 import { useState } from "react";
 import { Plus, Settings, X } from "lucide-react";
 import type { Variant, Dataset } from "@/lib/api";
+import { Modal } from "@ssot/ui/Modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -173,27 +166,27 @@ function DatasetDirControl({
           <code className="font-mono">{datasetDir}</code>
         </button>
       </ImmediateTooltip>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              Dataset directory on <code className="font-mono">{cluster}</code>
-            </DialogTitle>
-            <DialogDescription>
+      {open && (
+        <Modal
+          title={`Dataset directory on ${cluster}`}
+          onClose={() => setOpen(false)}
+        >
+          <div className="modal__body">
+            <p>
               Absolute path on the cluster (slurm: a path or <code>~/</code>;
               mlxp: under <code>/data/</code>). The submit page lists every
               subdir of this path that contains <code>meta/info.json</code>.
               Saved per-cluster in this browser.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={datasetDir}
-            className="font-mono text-xs"
-            autoFocus
-          />
-          <DialogFooter>
+            </p>
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={datasetDir}
+              className="mt-3 font-mono text-xs"
+              autoFocus
+            />
+          </div>
+          <div className="modal__foot">
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
@@ -206,9 +199,9 @@ function DatasetDirControl({
             >
               Save
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
@@ -242,7 +235,7 @@ function SingleDatasetPicker({
         </SelectContent>
       </Select>
       <p className="text-xs text-[var(--ssot-text-soft)]">
-        Defaults to <code>{variant.vars.DATASET_NAME ?? "—"}</code> from{" "}
+        Defaults to <code>{variant.vars.DATASET_NAME ?? "-"}</code> from{" "}
         <code>config.sh</code>. Changing here overrides for this submission only.
       </p>
     </div>

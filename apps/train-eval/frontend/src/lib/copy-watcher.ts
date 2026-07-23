@@ -19,7 +19,7 @@ type ActiveCopy = {
 const watched = new Set<string>();
 
 function formatBytes(b: number | null): string {
-  if (b == null) return "—";
+  if (b == null) return "-";
   if (b < 1024) return `${b}B`;
   const u = ["KB", "MB", "GB", "TB"];
   let v = b / 1024;
@@ -126,7 +126,7 @@ async function watch({ copyId, destCluster, jobName }: ActiveCopy) {
         // user dismisses it rather than letting it auto-close.
         toast.success(
           `Copied ${s.copies_done} checkpoint${s.copies_done === 1 ? "" : "s"} to ${destCluster}` +
-            (jobName ? ` — ${jobName}` : ""),
+            (jobName ? ` - ${jobName}` : ""),
           {
             id: toastId,
             duration: Infinity,
@@ -180,7 +180,7 @@ async function watch({ copyId, destCluster, jobName }: ActiveCopy) {
       const phase = s.phase ? `${s.phase}: ` : "";
       toast.loading(
         pct != null
-          ? `${prefix} — ${phase}${pct}% (${formatBytes(shownDst)} / ${formatBytes(src)})`
+          ? `${prefix} - ${phase}${pct}% (${formatBytes(shownDst)} / ${formatBytes(src)})`
           : `${prefix}…`,
         { id: toastId, duration: Infinity, action: cancelAction },
       );

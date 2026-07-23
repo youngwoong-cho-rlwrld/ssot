@@ -11,15 +11,8 @@ import {
 } from "@/lib/api";
 import { basename } from "@/lib/format";
 import { startCopyWatcher } from "@/lib/copy-watcher";
+import { Modal } from "@ssot/ui/Modal";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -129,19 +122,16 @@ export function CopyCheckpointDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(true) : resetAndClose())}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-xl overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Copy checkpoint</DialogTitle>
-          <DialogDescription>
+    <>
+      {open && (
+        <Modal title="Copy checkpoint" onClose={resetAndClose}>
+        <div className="modal__body min-w-0 space-y-3">
+          <p>
             Copies the selected <code>checkpoint-N</code> dirs from{" "}
             <span className="font-mono">{cluster}</span> to another cluster.
             Selected step dirs are copied under the owning run name when one
             exists.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="min-w-0 space-y-3">
+          </p>
           <div className="min-w-0 space-y-1.5">
             <Label>Checkpoints</Label>
             {checkpoints.isLoading && (
@@ -222,7 +212,7 @@ export function CopyCheckpointDialog({
           <PreviousCopies history={copyHistory} active={activeCopies.data ?? []} />
         </div>
 
-        <DialogFooter>
+        <div className="modal__foot">
           <Button variant="outline" onClick={resetAndClose}>
             Cancel
           </Button>
@@ -236,9 +226,10 @@ export function CopyCheckpointDialog({
                 ? `Copy ${selected.size}`
                 : "Copy"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+        </Modal>
+      )}
+    </>
   );
 }
 

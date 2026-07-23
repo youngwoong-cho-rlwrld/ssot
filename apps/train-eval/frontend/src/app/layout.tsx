@@ -5,6 +5,7 @@ import "@ssot/theme/tokens.css";
 import "@ssot/theme/base.css";
 import "@ssot/theme/header.css";
 import "@ssot/theme/controls.css";
+import "@ssot/theme/modal.css";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Nav } from "@/components/nav";
