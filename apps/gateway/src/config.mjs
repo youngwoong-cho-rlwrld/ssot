@@ -151,7 +151,6 @@ for (const a of apps) {
   const apiPrefix = String(a.api?.prefix || '/api').trim();
   const normalizedApiPrefix = (apiPrefix.startsWith('/') ? apiPrefix : `/${apiPrefix}`)
     .replace(/\/+$/, '') || '/api';
-  if (a.api) a.api.prefix = normalizedApiPrefix;
   a.apiBase = `${a.basePath === '/' ? '' : a.basePath}${normalizedApiPrefix}`;
 }
 

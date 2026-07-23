@@ -11,6 +11,7 @@
     "settings:clone": "node scripts/clone-user-settings.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
     "@ssot/theme": "*",
     "express": "^5.1.0",
     "http-proxy-middleware": "^3.0.5"

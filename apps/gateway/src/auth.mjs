@@ -11,6 +11,11 @@ import { parseCookies, serializeCookie, appendSetCookie } from './cookies.mjs';
 
 export const SESSION_COOKIE = 'ssot_session';
 
+// Shared 401 for the gateway's account-scoped JSON endpoints.
+export function sendUnauthenticated(res) {
+  return res.status(401).json({ error: 'unauthenticated' });
+}
+
 const env = (k, d) => {
   const v = process.env[k];
   return v === undefined || v === '' ? d : v;
@@ -89,18 +94,31 @@ const escapeHtml = (s) =>
     "'": '&#39;',
   })[c]);
 
-function loginPage({ next, error, email }) {
-  const err = error ? `<p class="err">${escapeHtml(error)}</p>` : '';
+// Shared HTML scaffold for the gateway's server-rendered mini-pages (login,
+// signed-out, 404). Callers supply the <head> stylesheet/inline-style block and
+// the <body> inner HTML; the doctype, charset, favicons, and theme-init script
+// are identical across all of them.
+export function pageShell({ title, styles = '', body }) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sign in - SSOT</title>
+<title>${title}</title>
 <script src="/portal-assets/theme/theme-init.js"></script>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="icon" href="/favicon.ico" type="image/png" />
-<link rel="stylesheet" href="/portal-assets/theme/tokens.css" />
-<link rel="stylesheet" href="/portal-assets/theme/base.css" />
-<link rel="stylesheet" href="/portal-assets/theme/controls.css" />
+${styles}</head>
+<body>${body}</body></html>`;
+}
+
+// Stylesheets shared by the two centered-card pages below.
+const CARD_STYLESHEETS =
+  '<link rel="stylesheet" href="/portal-assets/theme/tokens.css" />\n' +
+  '<link rel="stylesheet" href="/portal-assets/theme/base.css" />\n' +
+  '<link rel="stylesheet" href="/portal-assets/theme/controls.css" />';
+
+function loginPage({ next, error, email }) {
+  const err = error ? `<p class="err">${escapeHtml(error)}</p>` : '';
+  const styles = `${CARD_STYLESHEETS}
 <style>
   /* Centered card page: override base.css's full-viewport shell. */
   html, body { height: auto; }
@@ -119,8 +137,8 @@ function loginPage({ next, error, email }) {
   .hint { margin-top: 12px; text-align: center; font-size: var(--ssot-text-xs); color: var(--ssot-text-faint); }
   .err { margin-top: 14px; font-size: var(--ssot-text-sm); color: var(--ssot-danger);
     background: var(--ssot-danger-soft); border-radius: var(--ssot-radius-sm); padding: 8px 10px; }
-</style></head>
-<body><div class="card">
+</style>`;
+  const body = `<div class="card">
   <div class="brand">SSOT</div>
   <div class="sub">Sign in to continue</div>
   ${err}
@@ -131,22 +149,14 @@ function loginPage({ next, error, email }) {
       required value="${escapeHtml(email || '')}" placeholder="you@example.com" />
     <button type="submit" class="ssot-btn ssot-btn-primary">Sign in</button>
   </form>
-</div></body></html>`;
+</div>`;
+  return pageShell({ title: 'Sign in - SSOT', styles, body });
 }
 
 // Minimal signed-out landing for the portal root: the same centered card grammar
 // as the login page, but just a prompt + a link to the sign-in form (no app list).
 export function signedOutPage() {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sign in - SSOT</title>
-<script src="/portal-assets/theme/theme-init.js"></script>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-<link rel="icon" href="/favicon.ico" type="image/png" />
-<link rel="stylesheet" href="/portal-assets/theme/tokens.css" />
-<link rel="stylesheet" href="/portal-assets/theme/base.css" />
-<link rel="stylesheet" href="/portal-assets/theme/controls.css" />
+  const styles = `${CARD_STYLESHEETS}
 <style>
   html, body { height: auto; }
   p { margin: 0; }
@@ -158,12 +168,13 @@ export function signedOutPage() {
   .brand { font-size: var(--ssot-text-xl); font-weight: var(--ssot-weight-semibold); letter-spacing: 0.12em; }
   .sub { margin-top: 6px; color: var(--ssot-text-soft); font-size: var(--ssot-text-sm); }
   .card .ssot-btn { margin-top: 24px; width: 100%; }
-</style></head>
-<body><div class="card">
+</style>`;
+  const body = `<div class="card">
   <div class="brand">SSOT</div>
   <div class="sub">Sign in to continue</div>
   <a class="ssot-btn ssot-btn-primary" href="/auth/login">Sign in</a>
-</div></body></html>`;
+</div>`;
+  return pageShell({ title: 'Sign in - SSOT', styles, body });
 }
 
 // Registers /auth/login (GET form + POST submit) and /auth/logout.

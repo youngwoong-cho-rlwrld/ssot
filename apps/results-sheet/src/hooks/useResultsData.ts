@@ -11,6 +11,7 @@ import type { ResultsResponse } from "../lib/results";
 import { normalizeResultsPayload } from "../lib/resultsPayload";
 import { normalizeClusterNames } from "../lib/clusters";
 import { apiPath } from "../lib/basePath";
+import { fetchJson } from "../lib/http";
 
 const CLUSTERS_STALE_MS = 5 * 60_000;
 const RESULTS_REFRESH_MS = 120_000;
@@ -82,32 +83,6 @@ async function fetchClusterResults(cluster: string, fresh: boolean): Promise<Res
     apiPath(`/api/results?cluster=${encodeURIComponent(cluster)}${fresh ? "&fresh=1" : ""}`),
   );
   return normalizeResultsPayload(payload, cluster);
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = text ? JSON.parse(text) : null;
-  } catch {
-    payload = text;
-  }
-  if (!response.ok) {
-    throw new Error(payloadErrorMessage(payload) ?? `${response.status} ${response.statusText}`);
-  }
-  return payload as T;
-}
-
-function payloadErrorMessage(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const record = payload as Record<string, unknown>;
-  if (typeof record.error === "string") return record.error;
-  if (!Array.isArray(record.errors)) return null;
-  const first = record.errors[0];
-  return first && typeof first === "object" && typeof (first as Record<string, unknown>).error === "string"
-    ? String((first as Record<string, unknown>).error)
-    : null;
 }
 
 function combineResultQueries(

@@ -28,7 +28,7 @@ import {
   type ChartGroupOverrides,
   type ChartType,
 } from "./chartTypes.ts";
-import { normalizeTableColor } from "./tablePalette.ts";
+import { normalizeTableColor } from "./tableColors.ts";
 import {
   createEmptyFilters,
   isBlankFilterValue,

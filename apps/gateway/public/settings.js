@@ -170,7 +170,8 @@
     te = te || {};
     renderClusters(te.clusters);
     const w = te.wandb || {};
-    $('te-wandb-entity').value = w.entity || '';
+    // The W&B entity is not part of stored settings; refreshWandbStatus fills it
+    // from the live status endpoint.
     $('te-wandb-project').value = w.project || '';
     const ws = $('te-wandb-status');
     if (ws) ws.textContent = w.configured ? 'configured' : 'not configured';
@@ -181,6 +182,7 @@
     $('te-slack-webhook').value = '';
     $('te-notify-submitted').checked = !!n.notify_submitted;
     $('te-notify-running').checked = !!n.notify_running;
+    $('te-notify-suspended').checked = !!n.notify_suspended;
     $('te-notify-completed').checked = !!n.notify_completed;
     $('te-notify-failed').checked = !!n.notify_failed;
     $('te-notify-cancelled').checked = !!n.notify_cancelled;
@@ -374,6 +376,7 @@
           enabled: $('te-notify-enabled').checked,
           notify_submitted: $('te-notify-submitted').checked,
           notify_running: $('te-notify-running').checked,
+          notify_suspended: $('te-notify-suspended').checked,
           notify_completed: $('te-notify-completed').checked,
           notify_failed: $('te-notify-failed').checked,
           notify_cancelled: $('te-notify-cancelled').checked,

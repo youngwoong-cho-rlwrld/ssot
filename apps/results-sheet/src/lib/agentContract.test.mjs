@@ -18,7 +18,7 @@ import {
   VALUELESS_FILTER_OPERATORS,
 } from "./agentContract.mjs";
 import { CHART_TYPES as EXPORTED_CHART_TYPES } from "./chartTypes.ts";
-import { TABLE_COLORS as EXPORTED_TABLE_COLORS } from "./tablePalette.ts";
+import { TABLE_COLORS as EXPORTED_TABLE_COLORS } from "./tableColors.ts";
 import {
   FILTER_OPERATORS as EXPORTED_FILTER_OPERATORS,
   VALUELESS_FILTER_OPERATORS as EXPORTED_VALUELESS_OPERATORS,

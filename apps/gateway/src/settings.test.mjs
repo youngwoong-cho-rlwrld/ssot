@@ -47,6 +47,19 @@ async function withServer(user, callback, options) {
   }
 }
 
+// The page-wide PUT /api/settings is the only settings write path; it requires
+// every namespace present. Build a full, valid body and override one section
+// per case to exercise a single namespace's behavior through the batch route.
+function batchBody(overrides = {}) {
+  return {
+    profile: { username: '' },
+    'train-eval': { clusters: [], wandb: {}, notifications: {} },
+    'results-sheet': { configs_root: '' },
+    'session-viewer': { claude_root: '', codex_root: '' },
+    ...overrides,
+  };
+}
+
 test('SQLite values start empty while built-in cluster keys are available', async () => {
   assert.equal(statSync(dataDir).mode & 0o777, 0o700);
   assert.equal(statSync(dbPath).mode & 0o777, 0o600);
@@ -103,10 +116,16 @@ test('a rejected W&B key is not persisted', async () => {
   await withServer(
     other,
     async (origin) => {
-      const response = await fetch(`${origin}/api/settings/train-eval`, {
+      const response = await fetch(`${origin}/api/settings`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ wandb: { project: 'project', api_key: 'bad-key' } }),
+        body: JSON.stringify(batchBody({
+          'train-eval': {
+            clusters: [],
+            wandb: { project: 'project', api_key: 'bad-key' },
+            notifications: {},
+          },
+        })),
       });
       assert.equal(response.status, 400);
       assert.deepEqual(getSettings(other.id, 'train-eval'), {});
@@ -122,30 +141,32 @@ test('a rejected W&B key is not persisted', async () => {
 
 test('train-eval settings are stored once in SQLite and secrets are redacted', async () => {
   await withServer(owner, async (origin) => {
-    const saved = await fetch(`${origin}/api/settings/train-eval`, {
+    const saved = await fetch(`${origin}/api/settings`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        clusters: [
-          {
-            name: 'kakao',
-            env: {
-              SSH_ALIAS: 'kakao-login-1',
-              DATA_DIR: '/data/person',
-              SPECIAL: "person's path $HOME",
+      body: JSON.stringify(batchBody({
+        'train-eval': {
+          clusters: [
+            {
+              name: 'kakao',
+              env: {
+                SSH_ALIAS: 'kakao-login-1',
+                DATA_DIR: '/data/person',
+                SPECIAL: "person's path $HOME",
+              },
             },
+          ],
+          wandb: { project: 'project', api_key: 'wandb-secret' },
+          notifications: {
+            enabled: true,
+            notify_failed: true,
+            slack_webhook_url: 'https://hooks.example/secret',
           },
-        ],
-        wandb: { project: 'project', api_key: 'wandb-secret' },
-        notifications: {
-          enabled: true,
-          notify_failed: true,
-          slack_webhook_url: 'https://hooks.example/secret',
         },
-      }),
+      })),
     });
     assert.equal(saved.status, 200);
-    const publicValue = await saved.json();
+    const publicValue = (await saved.json())['train-eval'];
     assert.equal(publicValue.wandb.api_key, undefined);
     assert.equal(publicValue.wandb.configured, true);
     assert.equal(publicValue.notifications.slack_webhook_url, undefined);
@@ -175,18 +196,22 @@ test('train-eval settings are stored once in SQLite and secrets are redacted', a
 
 test('built-in cluster keys are restored server-side and custom keys remain supported', async () => {
   await withServer(other, async (origin) => {
-    const response = await fetch(`${origin}/api/settings/train-eval`, {
+    const response = await fetch(`${origin}/api/settings`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        clusters: [{
-          name: 'kakao',
-          env: { SSH_ALIAS: 'host', CUSTOM_VALUE: 'yes', CUSTOM_EMPTY: '' },
-        }],
-      }),
+      body: JSON.stringify(batchBody({
+        'train-eval': {
+          clusters: [{
+            name: 'kakao',
+            env: { SSH_ALIAS: 'host', CUSTOM_VALUE: 'yes', CUSTOM_EMPTY: '' },
+          }],
+          wandb: {},
+          notifications: {},
+        },
+      })),
     });
     assert.equal(response.status, 200);
-    const trainEval = await response.json();
+    const trainEval = (await response.json())['train-eval'];
     const kakao = trainEval.clusters.find((cluster) => cluster.name === 'kakao');
     assert.equal(kakao.env.CLUSTER, 'kakao');
     assert.equal(kakao.env.PARTITION, '');
@@ -333,14 +358,16 @@ test('a rejected page-wide W&B key leaves every section unchanged', async () => 
 
 test('blank secret inputs preserve the existing SQLite secret', async () => {
   await withServer(owner, async (origin) => {
-    const response = await fetch(`${origin}/api/settings/train-eval`, {
+    const response = await fetch(`${origin}/api/settings`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        clusters: [],
-        wandb: { project: 'next', api_key: '' },
-        notifications: { enabled: false, slack_webhook_url: '' },
-      }),
+      body: JSON.stringify(batchBody({
+        'train-eval': {
+          clusters: [],
+          wandb: { project: 'next', api_key: '' },
+          notifications: { enabled: false, slack_webhook_url: '' },
+        },
+      })),
     });
     assert.equal(response.status, 200);
   });
@@ -355,17 +382,19 @@ test('blank secret inputs preserve the existing SQLite secret', async () => {
 
 test('explicit secret revocation removes both credentials', async () => {
   await withServer(owner, async (origin) => {
-    const response = await fetch(`${origin}/api/settings/train-eval`, {
+    const response = await fetch(`${origin}/api/settings`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        clusters: [],
-        wandb: { project: '', clear_api_key: true },
-        notifications: { enabled: false, clear_slack_webhook_url: true },
-      }),
+      body: JSON.stringify(batchBody({
+        'train-eval': {
+          clusters: [],
+          wandb: { project: '', clear_api_key: true },
+          notifications: { enabled: false, clear_slack_webhook_url: true },
+        },
+      })),
     });
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = (await response.json())['train-eval'];
     assert.equal(body.wandb.configured, false);
     assert.equal(body.notifications.configured, false);
   });
@@ -376,16 +405,16 @@ test('explicit secret revocation removes both credentials', async () => {
 
 test('profile and path settings reject invalid types and usernames', async () => {
   await withServer(owner, async (origin) => {
-    for (const [namespace, body] of [
-      ['profile', { username: 'bad train name' }],
-      ['profile', { username: 'prefix_train_user' }],
-      ['results-sheet', { configs_root: 42 }],
-      ['session-viewer', { claude_root: [], codex_root: '' }],
+    for (const override of [
+      { profile: { username: 'bad train name' } },
+      { profile: { username: 'prefix_train_user' } },
+      { 'results-sheet': { configs_root: 42 } },
+      { 'session-viewer': { claude_root: [], codex_root: '' } },
     ]) {
-      const response = await fetch(`${origin}/api/settings/${namespace}`, {
+      const response = await fetch(`${origin}/api/settings`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(batchBody(override)),
       });
       assert.equal(response.status, 400);
     }

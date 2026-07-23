@@ -5,8 +5,14 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import { config, repoRoot } from './config.mjs';
-import { registerAuthRoutes, getRequestUser, signedOutPage } from './auth.mjs';
+import { config } from './config.mjs';
+import {
+  registerAuthRoutes,
+  getRequestUser,
+  signedOutPage,
+  sendUnauthenticated,
+  pageShell,
+} from './auth.mjs';
 import { getSettings } from './db.mjs';
 import { registerSettingsRoutes } from './settings.mjs';
 
@@ -78,7 +84,7 @@ app.use((req, res, next) => {
     ({ base }) => req.path === base || req.path.startsWith(`${base}/`)
   );
   if (apiMount && !req.ssotUser) {
-    return res.status(401).json({ error: 'unauthenticated' });
+    return sendUnauthenticated(res);
   }
   if (req.ssotUser && apiMount?.id === 'session-viewer') {
     const roots = getSettings(req.ssotUser.id, 'session-viewer');
@@ -131,7 +137,7 @@ app.use((req, res, next) => {
 
 app.get('/api/auth/me', (req, res) => {
   const user = req.ssotUser;
-  if (!user) return res.status(401).json({ error: 'unauthenticated' });
+  if (!user) return sendUnauthenticated(res);
   const profile = getSettings(user.id, 'profile');
   res.json({
     user: {
@@ -233,7 +239,8 @@ app.get('/healthz', (_req, res) => {
 // Upstream status endpoint retained for tooling/monitoring; the portal no
 // longer polls it. Any HTTP response counts as "up"; static apps are "up"
 // when their build output exists.
-app.get('/api/portal/status', async (_req, res) => {
+app.get('/api/portal/status', async (req, res) => {
+  if (!req.ssotUser) return sendUnauthenticated(res);
   const entries = await Promise.all(
     config.apps.map(async (a) => {
       if (a.mode === 'static') {
@@ -307,7 +314,7 @@ function openaiSubscription() {
 }
 
 app.get('/api/portal/subscriptions', (req, res) => {
-  if (!req.ssotUser) return res.status(401).json({ error: 'unauthenticated' });
+  if (!req.ssotUser) return sendUnauthenticated(res);
   res.json({
     claude: claudeSubscription(),
     openai: openaiSubscription(),
@@ -391,22 +398,21 @@ for (const a of config.apps) {
 
 // --- fallback ------------------------------------------------------------
 app.use((_req, res) => {
+  const styles =
+    `<link rel="stylesheet" href="/portal-assets/theme/tokens.css" />` +
+    `<style>body{font-family:var(--ssot-font-sans);background:var(--ssot-bg);` +
+    `color:var(--ssot-text);min-height:100vh;display:flex;align-items:center;` +
+    `justify-content:center;margin:0;font-size:var(--ssot-text-md)}` +
+    `a{color:var(--ssot-accent);text-decoration:none}a:hover{text-decoration:underline}</style>`;
   res
     .status(404)
     .type('html')
     .send(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8" />` +
-        `<meta name="viewport" content="width=device-width, initial-scale=1" />` +
-        `<title>Not found - SSOT</title>` +
-        `<script src="/portal-assets/theme/theme-init.js"></script>` +
-        `<link rel="icon" href="/favicon.svg" type="image/svg+xml" />` +
-        `<link rel="icon" href="/favicon.ico" type="image/png" />` +
-        `<link rel="stylesheet" href="/portal-assets/theme/tokens.css" />` +
-        `<style>body{font-family:var(--ssot-font-sans);background:var(--ssot-bg);` +
-        `color:var(--ssot-text);min-height:100vh;display:flex;align-items:center;` +
-        `justify-content:center;margin:0;font-size:var(--ssot-text-md)}` +
-        `a{color:var(--ssot-accent);text-decoration:none}a:hover{text-decoration:underline}</style>` +
-        `</head><body><p>Not found. <a href="/">SSOT portal</a></p></body></html>`
+      pageShell({
+        title: 'Not found - SSOT',
+        styles,
+        body: `<p>Not found. <a href="/">SSOT portal</a></p>`,
+      })
     );
 });
 

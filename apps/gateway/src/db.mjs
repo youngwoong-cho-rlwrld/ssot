@@ -69,7 +69,7 @@ export function upsertUser({ email, name, picture }) {
   return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 }
 
-export function getUserById(id) {
+function getUserById(id) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 }
 
@@ -159,7 +159,7 @@ export function getSettings(userId, namespace) {
   return out;
 }
 
-export function setSetting(userId, namespace, key, value) {
+function setSetting(userId, namespace, key, value) {
   db.prepare(
     `INSERT INTO user_settings (user_id, namespace, key, value, updated_at)
      VALUES (?, ?, ?, ?, ?)
@@ -181,50 +181,6 @@ export function setSettings(userId, namespace, obj) {
     throw error;
   }
   return getSettings(userId, namespace);
-}
-
-// Replaces one namespace atomically. Settings PUT endpoints use replacement
-// semantics so deleting a field in the UI also deletes it from SQLite.
-export function replaceSettings(userId, namespace, obj) {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    db.prepare('DELETE FROM user_settings WHERE user_id = ? AND namespace = ?').run(
-      userId,
-      namespace
-    );
-    for (const [key, value] of Object.entries(obj)) {
-      setSetting(userId, namespace, key, value);
-    }
-    db.exec('COMMIT');
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
-  return getSettings(userId, namespace);
-}
-
-// Read, transform, and replace one namespace while holding the same SQLite
-// write transaction. This is required when a replacement preserves redacted
-// secrets from the current value: a separate read followed by replace can
-// clobber a compatibility write from another process in between.
-export function transformSettings(userId, namespace, transform) {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const current = getSettings(userId, namespace);
-    const updated = transform(current);
-    db.prepare('DELETE FROM user_settings WHERE user_id = ? AND namespace = ?').run(
-      userId,
-      namespace
-    );
-    for (const [key, value] of Object.entries(updated)) {
-      setSetting(userId, namespace, key, value);
-    }
-    db.exec('COMMIT');
-    return getSettings(userId, namespace);
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
 }
 
 // Read, transform, and replace multiple namespaces in one transaction. The

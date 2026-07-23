@@ -1,5 +1,6 @@
 import express from 'express';
-import { getSettings, transformSettings, transformSettingsBatch } from './db.mjs';
+import { getSettings, transformSettingsBatch } from './db.mjs';
+import { sendUnauthenticated } from './auth.mjs';
 
 // The four settings namespaces the account page can read and write.
 const NAMESPACES = ['profile', 'train-eval', 'results-sheet', 'session-viewer'];
@@ -86,7 +87,7 @@ export const DEFAULT_CLUSTER_ENVS = Object.freeze({
 
 function requireUser(req, res) {
   if (!req.ssotUser) {
-    res.status(401).json({ error: 'unauthenticated' });
+    sendUnauthenticated(res);
     return null;
   }
   return req.ssotUser;
@@ -205,6 +206,7 @@ function normalizeTrainEval(body, current) {
       'enabled',
       'notify_submitted',
       'notify_running',
+      'notify_suspended',
       'notify_completed',
       'notify_failed',
       'notify_cancelled',
@@ -396,60 +398,6 @@ export function registerSettingsRoutes(app, { getWandbStatus, validateWandbKey }
           ]),
         ),
       );
-    } catch (error) {
-      console.error('[ssot-gateway] settings persistence failed', error);
-      res.status(503).json({ error: 'settings_unavailable' });
-    }
-  });
-
-  app.put('/api/settings/:namespace', jsonBody, async (req, res) => {
-    const user = requireUser(req, res);
-    if (!user) return;
-    const namespace = req.params.namespace;
-    if (!NAMESPACES.includes(namespace)) {
-      return res.status(400).json({ error: 'unknown_namespace' });
-    }
-    const body = req.body;
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return res.status(400).json({ error: 'invalid_body' });
-    }
-
-    // Validate all local structure before any external credential probe or DB
-    // write. Secret preservation is repeated atomically inside the transform.
-    try {
-      normalizeNamespace(namespace, body, {});
-    } catch (error) {
-      return res.status(400).json({
-        error: 'invalid_settings',
-        detail: error instanceof Error ? error.message : String(error),
-      });
-    }
-    const wandbKey =
-      namespace === 'train-eval' &&
-      body.wandb &&
-      typeof body.wandb === 'object' &&
-      typeof body.wandb.api_key === 'string'
-        ? body.wandb.api_key.trim()
-        : '';
-    if (wandbKey && validateWandbKey) {
-      try {
-        const status = await validateWandbKey(wandbKey, user.email);
-        if (!status?.logged_in) {
-          return res.status(400).json({
-            error: 'invalid_wandb_key',
-            detail: status?.error || 'Weights & Biases rejected the API key',
-          });
-        }
-      } catch (error) {
-        console.error('[ssot-gateway] W&B validation failed', error);
-        return res.status(503).json({ error: 'wandb_validation_unavailable' });
-      }
-    }
-    try {
-      const updated = transformSettings(user.id, namespace, (current) =>
-        normalizeNamespace(namespace, body, current)
-      );
-      res.json(publicNamespace(namespace, updated));
     } catch (error) {
       console.error('[ssot-gateway] settings persistence failed', error);
       res.status(503).json({ error: 'settings_unavailable' });

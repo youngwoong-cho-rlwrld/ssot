@@ -1,17 +1,29 @@
 import type { Field } from "../enmight/types/apiTypes.ts";
 import type { ColorStylerItemType, RowType } from "../enmight/types/layoutTypes.ts";
 import { filterColumnIds, rowMatchesFilters } from "../enmight/utils/tables/filters.ts";
-import { DEFAULT_TABLE_COLOR } from "./agentContract.mjs";
-
-export {
+import {
+  DEFAULT_TABLE_COLOR,
   DEFAULT_TABLE_RULE_COLOR,
-  normalizeTableColor,
-  tableColorLabel,
   TABLE_COLORS,
-  TABLE_COLOR_SWATCHES,
-} from "./tablePalette.ts";
+} from "./agentContract.mjs";
 
-export { DEFAULT_TABLE_COLOR };
+export { DEFAULT_TABLE_COLOR, DEFAULT_TABLE_RULE_COLOR, TABLE_COLORS };
+
+export const TABLE_COLOR_SWATCHES = TABLE_COLORS.map((color) => color.value);
+
+const COLOR_BY_VALUE = new Map(TABLE_COLORS.map((color) => [color.value.toLowerCase(), color]));
+const COLOR_BY_LABEL = new Map(TABLE_COLORS.map((color) => [color.label.toLowerCase(), color]));
+
+export function normalizeTableColor(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return COLOR_BY_VALUE.get(normalized)?.value ?? COLOR_BY_LABEL.get(normalized)?.value ?? null;
+}
+
+export function tableColorLabel(value: unknown): string {
+  const normalized = normalizeTableColor(value);
+  return normalized ? COLOR_BY_VALUE.get(normalized.toLowerCase())?.label ?? "" : "";
+}
 
 export function createTableColorResolver(rules: ColorStylerItemType[]) {
   const compiled = rules.map((rule) => ({

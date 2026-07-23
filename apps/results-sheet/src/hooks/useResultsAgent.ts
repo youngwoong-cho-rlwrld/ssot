@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { validateAgentEnvelope, type AgentAction } from "@/lib/agentActions";
 import { apiPath } from "@/lib/basePath";
+import { errorMessage, readJsonRecord } from "@/lib/http";
 import { makeId } from "@/lib/id";
 import type {
   AgentConnectionStatus,
@@ -130,6 +131,10 @@ export function useResultsAgent({ enabled, context, columns, applyActions }: Use
       });
       const payload = await readJsonRecord(response);
       if (!response.ok) {
+        // The server received the request and rejected it: drop the session key
+        // so the next send starts a fresh OpenClaw session. Timeouts and network
+        // errors (handled in catch) keep the key so the conversation can resume.
+        sessionKeyRef.current = null;
         throw new Error(typeof payload.error === "string"
           ? payload.error
           : `${response.status} ${response.statusText}`);
@@ -155,7 +160,6 @@ export function useResultsAgent({ enabled, context, columns, applyActions }: Use
       setStatus("connected");
       setStatusDetail("Connected to OpenClaw.");
     } catch (error) {
-      sessionKeyRef.current = null;
       const messageText = controller.signal.aborted
         ? "OpenClaw request timed out."
         : errorMessage(error);
@@ -219,13 +223,3 @@ function currentSessionKey(ref: { current: string | null }) {
   return sessionKey;
 }
 
-async function readJsonRecord(response: Response): Promise<Record<string, unknown>> {
-  const payload = await response.json() as unknown;
-  return payload && typeof payload === "object" && !Array.isArray(payload)
-    ? payload as Record<string, unknown>
-    : {};
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
