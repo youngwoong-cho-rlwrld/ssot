@@ -152,7 +152,7 @@ export function SessionList({
                 {confirming ? (
                   <div className="session__confirm" role="group">
                     <span className="session__confirm-msg">
-                      {active ? "Active — delete anyway?" : "Delete?"}
+                      {active ? "Active, delete anyway?" : "Delete?"}
                     </span>
                     <button
                       type="button"

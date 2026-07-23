@@ -87,7 +87,12 @@ class SsotUser extends HTMLElement {
       localId ||
       user.username ||
       (user.id ? user.id.split('@')[0] : user.email ? user.email.split('@')[0] : 'Account');
-    label.style.cssText = 'max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    // line-height:1.35 (overriding the chip's compact line-height:1) so the em box
+    // is tall enough to contain descenders — with line-height:1 the overflow:hidden
+    // (needed for the ellipsis) clipped the bottom of glyphs like g/y/p. The 24px
+    // avatar still governs the pill height, so this does not make the chip taller.
+    label.style.cssText =
+      'max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;';
 
     a.replaceChildren(avatar, label);
     this.replaceChildren(a);

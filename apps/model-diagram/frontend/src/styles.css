@@ -731,23 +731,8 @@
   overflow-y: auto;
 }
 
-.vsection__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 auto;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: 0;
-  color: var(--ssot-text-soft);
-  font: inherit;
-  text-align: left;
-}
-
-.vsection__toggle .panel__title {
-  color: inherit;
-}
+/* .vsection__toggle (chat header strip title) now lives in the shared
+   @ssot/theme/chat.css so results-sheet's chat header matches. */
 
 /* The chat body/composer come entirely from the shared @ssot/theme/chat.css
    (panel__body.chat__body / bubble* / chat__compose·input·send) — no local chat
@@ -862,119 +847,6 @@
   font-size: var(--ssot-text-xs);
   font-weight: var(--ssot-weight-semibold);
   color: var(--ssot-text-soft);
-}
-
-/* ----------------------------- Model switcher --------------------------- */
-/* Ported from the OpenClaw model switcher (same markup + classes) so the two
- * apps' pickers look and behave identically. Tokens resolve via @ssot/theme. */
-
-.model-switcher {
-  position: relative;
-  display: inline-flex;
-}
-
-.model-switcher__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  font: inherit;
-  font-size: var(--ssot-text-sm);
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: var(--ssot-radius-sm);
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.model-switcher__btn:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.model-switcher__btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.model-switcher__current {
-  font-family: var(--font-mono);
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.model-switcher__pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 30;
-  width: 320px;
-  max-height: 60vh;
-  overflow: auto;
-  padding: 6px;
-  background: var(--panel-bg);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
-}
-
-.model-switcher__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.model-switcher__item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  font: inherit;
-  font-size: var(--ssot-text-sm);
-  text-align: left;
-  color: var(--ink);
-  background: transparent;
-  border: none;
-  border-radius: var(--ssot-radius-sm);
-  cursor: pointer;
-}
-
-.model-switcher__item:hover {
-  background: var(--muted);
-}
-
-.model-switcher__item--active {
-  color: var(--accent);
-}
-
-.model-switcher__item:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.model-switcher__check {
-  width: 14px;
-  flex-shrink: 0;
-  color: var(--accent);
-}
-
-.model-switcher__name {
-  font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.model-switcher__provider {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--ssot-text-xs);
-  color: var(--ink-faint);
 }
 
 /* Embedded run progress: the stage checklist shown inside the Viewer frame for

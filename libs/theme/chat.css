@@ -232,6 +232,43 @@
 
 /* ------------------------------- Composer ------------------------------- */
 
+/* Chat panel header strip title/affordance — the borderless flex "CHAT WITH AGENT"
+   toggle inside a shared .panel__head. Shared so model-diagram's collapsible chat
+   section and results-sheet's chat panel render the header identically. */
+.vsection__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  color: var(--ssot-text-soft);
+  font: inherit;
+  text-align: left;
+}
+
+.vsection__toggle .panel__title {
+  color: inherit;
+}
+
+/* Slim model-select row directly above the composer (the picker sits here, left-
+   aligned, not in the panel header). Shared so model-diagram and results-sheet
+   render it identically. It carries the divider above the footer, so the composer
+   below drops its own top border to avoid a double rule. */
+.chat__modelbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.chat__modelbar + .chat__compose {
+  border-top: none;
+}
+
 .chat__compose {
   display: flex;
   gap: 8px;

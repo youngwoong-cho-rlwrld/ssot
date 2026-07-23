@@ -17,6 +17,10 @@
   "exports": {
     "./Markdown": "./src/Markdown.tsx",
     "./Modal": "./src/Modal.tsx",
+    "./ChatSendIcon": "./src/ChatSendIcon.tsx",
+    "./chat-panel": "./src/chat-panel.ts",
+    "./ModelSwitcher": "./src/ModelSwitcher.tsx",
+    "./models-catalog": "./src/models-catalog.ts",
     "./PanelResizeHandle": "./src/PanelResizeHandle.tsx",
     "./SsotSelect": "./src/SsotSelect.tsx",
     "./ToolCallView": "./src/ToolCallView.tsx",

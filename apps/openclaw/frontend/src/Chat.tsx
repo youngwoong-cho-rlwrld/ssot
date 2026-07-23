@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SendHorizontal } from "lucide-react";
+import { ChatSendIcon } from "@ssot/ui/ChatSendIcon";
 import { assistantReply, getTranscriptByKey, postChat } from "./api";
 import { Markdown } from "./Markdown";
 import { ToolCallView } from "@ssot/ui/ToolCallView";
@@ -221,7 +221,7 @@ export function Chat({
           disabled={busy || !input.trim()}
           aria-label="Send message"
         >
-          <SendHorizontal size={18} />
+          <ChatSendIcon size={18} />
         </button>
       </div>
     </section>

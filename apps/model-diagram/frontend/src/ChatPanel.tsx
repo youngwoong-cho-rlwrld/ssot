@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { Ban, ChevronDown, ChevronRight, SendHorizontal } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight } from "lucide-react";
+import { ChatSendIcon } from "@ssot/ui/ChatSendIcon";
 import {
   cancelChat,
   getChat,
@@ -11,7 +12,8 @@ import {
 } from "./api";
 import { Markdown } from "@ssot/ui/Markdown";
 import { CancelConfirmModal } from "./CancelConfirmModal";
-import { ModelSelect } from "./ModelSelect";
+import { ModelSwitcher } from "@ssot/ui/ModelSwitcher";
+import { resolveCatalog } from "@ssot/ui/models-catalog";
 import type { ChatMessage, ModelOption } from "./types";
 
 interface Props {
@@ -177,9 +179,6 @@ export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
           <h3 className="panel__title">Chat with agent</h3>
         </button>
-        {open && models.length > 0 && (
-          <ModelSelect value={model} options={models} onChange={setModel} disabled={busy} />
-        )}
         {open && pendingId !== null && (
           <button
             type="button"
@@ -219,6 +218,18 @@ export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
             )}
           </div>
 
+          {models.length > 0 && (
+            <div className="chat__modelbar">
+              <ModelSwitcher
+                value={model}
+                options={resolveCatalog(models.map((m) => ({ key: m.id })))}
+                onChange={setModel}
+                disabled={busy}
+                title="Generation model"
+              />
+            </div>
+          )}
+
           <div className="chat__compose">
             <textarea
               className="chat__input"
@@ -236,7 +247,7 @@ export function ChatPanel({ runId, open, onToggle, onRevision }: Props) {
               disabled={busy || !input.trim()}
               aria-label="Send message"
             >
-              <SendHorizontal size={18} />
+              <ChatSendIcon size={18} />
             </button>
           </div>
         </>

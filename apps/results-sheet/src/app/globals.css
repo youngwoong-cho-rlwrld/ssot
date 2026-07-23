@@ -170,58 +170,20 @@ html[data-ssot-theme='dark'] {
   min-width: var(--panel-min-width, 340px);
   max-width: var(--panel-max-width, 440px);
   min-height: 0;
-  border-right: 1px solid var(--border-subtle-2);
-  background: var(--background-white-level-0);
-  padding-right: 8px;
-}
-
-.agentPanelHeader {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 8px 10px;
-}
-
-.agentPanelTitle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: var(--ssot-weight-semibold);
-}
-
-.agentPanelTitleGroup {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 8px;
-}
-
-.agentModelControl {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.agentModelSelect.ssot-select-trigger {
-  max-width: 190px;
+  /* Chrome aligned to model-diagram's chat column (shared --ssot-* tokens). The
+     header/body/composer come from the shared .panel__head / .panel__body.chat__body
+     / .chat__modelbar / .chat__compose grammar; only this resizable container +
+     the close button remain app-specific. NO border/padding here: the content must
+     be the full 340px (matching model-diagram's .viewer__left), and the 1px divider
+     comes from the workspace gap below — like model-diagram's .viewer__split. */
+  background: var(--ssot-bg);
 }
 
 .agentPanelClose {
-  width: 26px;
-  height: 26px;
-}
-
-.agentMessages {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 10px;
+  /* 24px so the header strip resolves to the shared .panel__head 41px height
+     (24px control + 16px padding + 1px border), matching model-diagram exactly. */
+  width: 24px;
+  height: 24px;
 }
 
 /* System notices sit alongside the shared user/assistant/error bubbles

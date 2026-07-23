@@ -27,7 +27,9 @@ import {
   uploadPaper,
   validate,
 } from "./api";
-import { ModelSelect } from "./ModelSelect";
+import { ModelSwitcher } from "@ssot/ui/ModelSwitcher";
+import { resolveCatalog } from "@ssot/ui/models-catalog";
+import { CHAT_PANEL_WIDTH } from "@ssot/ui/chat-panel";
 import { RunProgress } from "./RunProgress";
 import type {
   DiagramDetail,
@@ -43,14 +45,15 @@ const STATUS_LABEL: Record<Status, string> = {
   error: "error",
 };
 
-// Left chat/memo panel width — drag-resizable (mirrors results-sheet's agent
-// panel) and persisted so it survives reloads. The diagram keeps at least
-// LEFT_DIAGRAM_MIN so the panel can never swallow the whole viewport.
-const LEFT_MIN_WIDTH = 280;
-const LEFT_MAX_WIDTH = 640;
-const LEFT_DEFAULT_WIDTH = 340;
-const LEFT_DIAGRAM_MIN = 360;
-const LEFT_WIDTH_KEY = "md.viewer.leftWidth";
+// Left chat/memo panel width — drag-resizable and persisted. Default/min/max come
+// from the shared @ssot/ui constant so this and results-sheet's chat panel can't
+// drift. The storage key is versioned (.v2) so a stale saved width from the old
+// 360 default is discarded and everyone lands on the shared 340 default.
+const LEFT_MIN_WIDTH = CHAT_PANEL_WIDTH.min;
+const LEFT_MAX_WIDTH = CHAT_PANEL_WIDTH.max;
+const LEFT_DEFAULT_WIDTH = CHAT_PANEL_WIDTH.default;
+const LEFT_DIAGRAM_MIN = 360; // reserve for the diagram so the panel can't swallow it
+const LEFT_WIDTH_KEY = "md.viewer.leftWidth.v2";
 
 function clampWidth(width: number, max: number): number {
   return Math.round(Math.min(Math.max(width, LEFT_MIN_WIDTH), max));
@@ -90,8 +93,8 @@ export function Viewer({
   const [paperWarning, setPaperWarning] = useState<string | null>(null);
   const [reprovisioning, setReprovisioning] = useState(false);
   // Left-panel section states — collapsible strips (OpenClaw LIVE LOG grammar).
-  // Both start collapsed so the diagram has full width until the user opens one.
-  const [chatOpen, setChatOpen] = useState(false);
+  // Chat opens by default on a done run (the primary action); memo stays collapsed.
+  const [chatOpen, setChatOpen] = useState(true);
   const [memoOpen, setMemoOpen] = useState(false);
   // Agent-output pane state, owned here so its toggle can live in the viewer
   // header; wired down to the embedded RunProgress (running runs only).
@@ -553,7 +556,12 @@ function ReprovisionForm({
         {models.length > 0 && (
           <div className="field">
             <span className="field__label">Model</span>
-            <ModelSelect value={model} options={models} onChange={setModel} />
+            <ModelSwitcher
+              value={model}
+              options={resolveCatalog(models.map((m) => ({ key: m.id })))}
+              onChange={setModel}
+              title="Generation model"
+            />
           </div>
         )}
       </div>

@@ -11,6 +11,7 @@
     "./base.css": "./base.css",
     "./chat.css": "./chat.css",
     "./modal.css": "./modal.css",
+    "./model-switcher.css": "./model-switcher.css",
     "./panel-resize.css": "./panel-resize.css",
     "./header.css": "./header.css",
     "./controls.css": "./controls.css",

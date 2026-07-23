@@ -1,0 +1,250 @@
+/* Shared agent/LLM model picker, paired with @ssot/ui/ModelSwitcher.
+ *
+ * Extracted from OpenClaw's model switcher so every app's picker renders
+ * PIXEL-IDENTICALLY. Every rule pins its own typography (family, size, weight,
+ * line-height) and box metrics explicitly — never `font: inherit` — so an app's
+ * ambient fonts/resets (results-sheet's Mantine, train-eval's Tailwind) cannot
+ * leak in. Tokens are the shared @ssot/theme set every app imports (tokens.css +
+ * base.css aliases). Change the look here and it changes everywhere, together. */
+
+.model-switcher {
+  position: relative;
+  display: inline-flex;
+  /* Base typography for the whole widget; every child re-pins its own so a host
+     `button {}`/`span {}` reset cannot override the inherited value. */
+  font-family: var(--ssot-font-sans);
+  font-weight: var(--ssot-weight-normal);
+  font-style: normal;
+  line-height: 1.2;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.model-switcher__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  /* Pin an EXACT height so the trigger matches sibling pill controls (OpenClaw's
+     heartbeat chip + Instructions button) regardless of inner content — min-height
+     alone let a control with a taller inner element (the heartbeat's badge) exceed
+     it. 26px = 16px content + 8px padding + 2px border; the icon/label fit within. */
+  height: 26px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.2;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--ssot-radius-sm);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.model-switcher__btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.model-switcher__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.model-switcher__current {
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.2;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-switcher__pop {
+  /* Portaled to <body> and positioned with fixed left/top/max-height by the
+     component (so it escapes panel overflow-clipping and flips above the trigger
+     when space below is tight); position:fixed + coordinates are set inline. */
+  z-index: 40;
+  width: 320px;
+  overflow: auto;
+  padding: 6px;
+  font-family: var(--ssot-font-sans);
+  background: var(--panel-bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+
+.model-switcher__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.model-switcher__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.2;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-radius: var(--ssot-radius-sm);
+  cursor: pointer;
+}
+
+.model-switcher__item:hover {
+  background: var(--muted);
+}
+
+.model-switcher__item--active {
+  color: var(--accent);
+}
+
+.model-switcher__item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.model-switcher__check {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}
+
+.model-switcher__name {
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-switcher__provider {
+  margin-left: auto;
+  padding-left: 8px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.2;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.model-switcher__missing {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.2;
+  color: var(--ssot-warning);
+  background: var(--ssot-warning-soft);
+  border-radius: var(--ssot-radius-sm);
+}
+
+.model-switcher__configure {
+  padding: 6px;
+}
+
+.model-switcher__configure-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-semibold);
+  line-height: 1.2;
+}
+
+.model-switcher__key {
+  width: 100%;
+  padding: 6px 8px;
+  font-family: var(--ssot-font-mono);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.2;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--ssot-radius-sm);
+}
+
+.model-switcher__key:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--ssot-ring);
+}
+
+.model-switcher__configure-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.model-switcher__save {
+  padding: 5px 12px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-medium);
+  line-height: 1.2;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--ssot-radius-sm);
+  cursor: pointer;
+}
+
+.model-switcher__save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.model-switcher__cancel {
+  padding: 5px 12px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-sm);
+  font-weight: var(--ssot-weight-medium);
+  line-height: 1.2;
+  color: var(--ink-soft);
+  background: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--ssot-radius-sm);
+  cursor: pointer;
+}
+
+.model-switcher__hint,
+.model-switcher__note,
+.model-switcher__msg {
+  padding: 6px 8px 2px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.4;
+  color: var(--ink-faint);
+}
+
+.model-switcher__err {
+  padding: 6px 8px;
+  font-family: var(--ssot-font-sans);
+  font-size: var(--ssot-text-xs);
+  font-weight: var(--ssot-weight-normal);
+  line-height: 1.4;
+  color: var(--ssot-danger);
+}

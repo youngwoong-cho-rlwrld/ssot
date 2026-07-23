@@ -50,7 +50,7 @@ export function StatusBar({ status, error, onOpenInstructions }: StatusBarProps)
           {error}
           <span className="statusbar__hint">
             {" "}
-            — is the gateway running? (<code>openclaw gateway</code>)
+            - is the gateway running? (<code>openclaw gateway</code>)
           </span>
         </div>
       )}

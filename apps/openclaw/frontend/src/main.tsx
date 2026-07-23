@@ -8,6 +8,7 @@ import "@ssot/theme/theme-init.js";
 import "@ssot/theme/runtime.js";
 import "@ssot/theme/chat.css";
 import "@ssot/theme/modal.css";
+import "@ssot/theme/model-switcher.css";
 import "./styles.css";
 import App from "./App";
 

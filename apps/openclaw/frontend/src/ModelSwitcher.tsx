@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Cpu, KeyRound } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { KeyRound } from "lucide-react";
+import { ModelSwitcher as SharedModelSwitcher } from "@ssot/ui/ModelSwitcher";
+import { resolveCatalog } from "@ssot/ui/models-catalog";
 import { getModels, setDefaultModel, setModelAuth } from "./api";
-import type { ModelInfo, ModelsResponse } from "./types";
+import type { ModelsResponse } from "./types";
 
+// The gateway's default-model picker. Owns the model data + the per-provider
+// API-key flow; the trigger/listbox presentation is the shared @ssot/ui
+// ModelSwitcher, and the option list is the shared canonical catalog resolved
+// against the daemon's live models, so it matches model-diagram + results-sheet.
 export function ModelSwitcher() {
   const [data, setData] = useState<ModelsResponse | null>(null);
   const [open, setOpen] = useState(false);
@@ -11,7 +17,6 @@ export function ModelSwitcher() {
   const [note, setNote] = useState<string | null>(null);
   const [configure, setConfigure] = useState<string | null>(null); // provider id
   const [keyInput, setKeyInput] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     return getModels(signal)
@@ -27,24 +32,22 @@ export function ModelSwitcher() {
     return () => c.abort();
   }, [load]);
 
-  // Close the popover on an outside click.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
+  const activeKey =
+    data?.models.find((m) => m.isDefault)?.key ?? data?.resolvedDefault ?? "";
   const current =
-    data?.models.find((m) => m.isDefault)?.name ??
-    data?.resolvedDefault ??
-    "unknown";
+    data?.models.find((m) => m.isDefault)?.name ?? data?.resolvedDefault ?? "unknown";
 
-  const choose = async (m: ModelInfo) => {
+  // Canonical catalog resolved against the daemon's live models: every entry
+  // appears in one shared order; ids that the daemon exposes are enabled (select
+  // via the daemon key), the rest are disabled with a reason tooltip. All items
+  // are additionally greyed while a mutation is in flight.
+  const options = resolveCatalog(data?.models ?? []).map((option) =>
+    busy ? { ...option, disabled: true } : option,
+  );
+
+  const choose = async (id: string) => {
+    const m = data?.models.find((x) => x.key === id);
+    if (!m) return;
     if (m.available) {
       setBusy(true);
       setError(null);
@@ -86,90 +89,65 @@ export function ModelSwitcher() {
     }
   };
 
+  const header = (
+    <>
+      {error && <div className="model-switcher__err">{error}</div>}
+      {!data && <div className="model-switcher__msg">Loading…</div>}
+    </>
+  );
+
   return (
-    <div className="model-switcher" ref={rootRef}>
-      <button
-        type="button"
-        className="model-switcher__btn"
-        onClick={() => setOpen((o) => !o)}
-        title="Default model"
-      >
-        <Cpu size={15} />
-        <span className="model-switcher__current">{current}</span>
-        <ChevronDown size={13} />
-      </button>
-
-      {open && (
-        <div className="model-switcher__pop">
-          {error && <div className="model-switcher__err">{error}</div>}
-          {!data && <div className="model-switcher__msg">Loading…</div>}
-
-          {configure ? (
-            <div className="model-switcher__configure">
-              <div className="model-switcher__configure-head">
-                <KeyRound size={14} />
-                <span>Add {configure} API key</span>
-              </div>
-              <input
-                type="password"
-                className="model-switcher__key"
-                placeholder={`${configure} API key`}
-                value={keyInput}
-                autoFocus
-                onChange={(e) => setKeyInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void saveKey()}
-              />
-              <div className="model-switcher__configure-actions">
-                <button
-                  type="button"
-                  className="model-switcher__save"
-                  disabled={busy || !keyInput.trim()}
-                  onClick={() => void saveKey()}
-                >
-                  {busy ? "Saving…" : "Save key"}
-                </button>
-                <button
-                  type="button"
-                  className="model-switcher__cancel"
-                  disabled={busy}
-                  onClick={() => setConfigure(null)}
-                >
-                  Cancel
-                </button>
-              </div>
-              <p className="model-switcher__hint">
-                Stored locally by the gateway; applies immediately.
-              </p>
-            </div>
-          ) : (
-            <ul className="model-switcher__list">
-              {data?.models.map((m) => (
-                <li key={m.key}>
-                  <button
-                    type="button"
-                    className={`model-switcher__item${
-                      m.isDefault ? " model-switcher__item--active" : ""
-                    }`}
-                    disabled={busy}
-                    onClick={() => void choose(m)}
-                  >
-                    <span className="model-switcher__check">
-                      {m.isDefault && <Check size={13} />}
-                    </span>
-                    <span className="model-switcher__name">{m.name}</span>
-                    <span className="model-switcher__provider">{m.provider}</span>
-                    {!m.available && (
-                      <span className="model-switcher__missing">missing key</span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {note && !configure && <div className="model-switcher__note">{note}</div>}
+    <SharedModelSwitcher
+      value={activeKey}
+      options={options}
+      onChange={(id) => void choose(id)}
+      title="Default model"
+      fallbackLabel={current}
+      open={open}
+      onOpenChange={setOpen}
+      header={header}
+      footer={
+        note && !configure ? <div className="model-switcher__note">{note}</div> : undefined
+      }
+    >
+      {configure ? (
+        <div className="model-switcher__configure">
+          <div className="model-switcher__configure-head">
+            <KeyRound size={14} />
+            <span>Add {configure} API key</span>
+          </div>
+          <input
+            type="password"
+            className="model-switcher__key"
+            placeholder={`${configure} API key`}
+            value={keyInput}
+            autoFocus
+            onChange={(e) => setKeyInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void saveKey()}
+          />
+          <div className="model-switcher__configure-actions">
+            <button
+              type="button"
+              className="model-switcher__save"
+              disabled={busy || !keyInput.trim()}
+              onClick={() => void saveKey()}
+            >
+              {busy ? "Saving…" : "Save key"}
+            </button>
+            <button
+              type="button"
+              className="model-switcher__cancel"
+              disabled={busy}
+              onClick={() => setConfigure(null)}
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="model-switcher__hint">
+            Stored locally by the gateway; applies immediately.
+          </p>
         </div>
-      )}
-    </div>
+      ) : undefined}
+    </SharedModelSwitcher>
   );
 }

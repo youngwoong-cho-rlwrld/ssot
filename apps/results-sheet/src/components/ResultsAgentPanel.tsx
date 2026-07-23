@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  IconChevronLeft,
-  IconMessageCircle,
-  IconSend,
-} from "@tabler/icons-react";
+import { IconChevronLeft, IconMessageCircle } from "@tabler/icons-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -21,7 +17,9 @@ import type {
 } from "@/lib/agentTypes";
 import { PanelResizeHandle } from "@ssot/ui/PanelResizeHandle";
 import { Markdown } from "@ssot/ui/Markdown";
-import { SsotSelect, type SsotSelectOption } from "@ssot/ui/SsotSelect";
+import { ModelSwitcher } from "@ssot/ui/ModelSwitcher";
+import { resolveCatalog } from "@ssot/ui/models-catalog";
+import { ChatSendIcon } from "@ssot/ui/ChatSendIcon";
 
 type ResultsAgentPanelProps = {
   open: boolean;
@@ -98,12 +96,11 @@ export function ResultsAgentPanel({
     "--panel-min-width": `${minWidth}px`,
     "--panel-max-width": `${maxWidth}px`,
   } as CSSProperties;
-  const availableModels: SsotSelectOption[] = models
-    .filter((model) => model.available)
-    .map((model) => ({ value: model.key, label: model.name }));
-  const modelOptions = availableModels.length > 0
-    ? availableModels
-    : [{ value: "", label: "No model" }];
+  // Shared canonical catalog resolved against the daemon's live models, so the
+  // list + order match model-diagram and openclaw exactly; daemon-exposed ids are
+  // enabled (select via the daemon key), the rest disabled with a reason tooltip.
+  const modelOptions = resolveCatalog(models);
+  const noneEnabled = modelOptions.every((option) => option.disabled);
   const statusTitle = statusDetail ? `${status}: ${statusDetail}` : status;
 
   return (
@@ -117,24 +114,10 @@ export function ResultsAgentPanel({
         onPointerDown={onResizeStart}
         onResizeBy={onResizeBy}
       />
-      <div className="agentPanelHeader">
-        <div className="agentPanelTitleGroup">
-          <div className="agentPanelTitle">
-            <IconMessageCircle size={16} stroke={1.5} aria-hidden="true" />
-            <span>Chat</span>
-          </div>
-          <div className="agentModelControl" title={statusTitle}>
-            <span className={`agentStatusDot agentStatusDot-${status}`} aria-hidden="true" />
-            <SsotSelect
-              className="compactSelect agentModelSelect"
-              aria-label="Chat model"
-              title={statusTitle}
-              value={selectedModel}
-              options={modelOptions}
-              disabled={pending || availableModels.length === 0}
-              onChange={onModelChange}
-            />
-          </div>
+      <div className="panel__head vsection__head">
+        <div className="vsection__toggle">
+          <IconMessageCircle size={16} stroke={1.5} aria-hidden="true" />
+          <h3 className="panel__title">Chat with agent</h3>
         </div>
         <button className="agentPanelClose" type="button" aria-label="Close agent panel" onClick={onClose}>
           <IconChevronLeft size={18} stroke={1.4} aria-hidden="true" />
@@ -142,7 +125,7 @@ export function ResultsAgentPanel({
       </div>
       <div
         ref={messagesRef}
-        className="agentMessages chat__body"
+        className="panel__body chat__body"
         role="log"
         aria-live="polite"
         onScroll={(event) => {
@@ -188,6 +171,20 @@ export function ResultsAgentPanel({
           ))}
         </div>
       )}
+      <div className="chat__modelbar">
+        <span
+          className={`agentStatusDot agentStatusDot-${status}`}
+          aria-hidden="true"
+          title={statusTitle}
+        />
+        <ModelSwitcher
+          title={statusTitle}
+          value={selectedModel}
+          options={modelOptions}
+          disabled={pending || noneEnabled}
+          onChange={onModelChange}
+        />
+      </div>
       <form className="chat__compose" onSubmit={handleSubmit}>
         <textarea
           className="chat__input"
@@ -208,7 +205,7 @@ export function ResultsAgentPanel({
             }
           }}
           placeholder="Ask about results or change the table..."
-          rows={3}
+          rows={2}
         />
         <button
           className="chat__send"
@@ -216,7 +213,7 @@ export function ResultsAgentPanel({
           aria-label="Send message"
           disabled={pending || value.trim().length === 0}
         >
-          <IconSend size={18} stroke={1.5} aria-hidden="true" />
+          <ChatSendIcon size={18} />
         </button>
       </form>
     </aside>

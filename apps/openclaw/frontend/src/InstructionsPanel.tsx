@@ -11,13 +11,13 @@ const APPLIES_NOTE = "Applies from the next agent turn (no restart needed).";
 // One-line orientation per file so the user knows what belongs where.
 const HINTS: Record<string, string> = {
   "AGENTS.md":
-    "Main behavioral instructions — put common rules like styling guides here.",
+    "Main behavioral instructions: put common rules like styling guides here.",
   "SOUL.md": "Personality and voice.",
   "IDENTITY.md": "Who the agent is.",
   "USER.md": "About the human.",
   "TOOLS.md": "Local tool notes.",
   "HEARTBEAT.md":
-    "Runs on scheduled heartbeat turns only — intentionally comments-only; active text here executes every heartbeat.",
+    "Runs on scheduled heartbeat turns only, intentionally comments-only; active text here executes every heartbeat.",
 };
 
 export function InstructionsPanel({ onClose }: { onClose: () => void }) {

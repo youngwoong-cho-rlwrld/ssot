@@ -12,7 +12,8 @@ import {
   validate,
 } from "./api";
 import { AuthSetupModal } from "./AuthSetupModal";
-import { ModelSelect } from "./ModelSelect";
+import { ModelSwitcher } from "@ssot/ui/ModelSwitcher";
+import { resolveCatalog } from "@ssot/ui/models-catalog";
 import {
   FALLBACK_CLUSTERS,
   type HealthResult,
@@ -262,7 +263,12 @@ export function NewDiagram({ prefill, onCancel, onStarted }: Props) {
           {models.length > 0 && (
             <div className="field">
               <span className="field__label">Model</span>
-              <ModelSelect value={model} options={models} onChange={setModel} />
+              <ModelSwitcher
+                value={model}
+                options={resolveCatalog(models.map((m) => ({ key: m.id })))}
+                onChange={setModel}
+                title="Generation model"
+              />
               {modelWarning && (
                 <span className="field__err field__err--action">
                   {modelWarning}

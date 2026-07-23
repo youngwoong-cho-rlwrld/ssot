@@ -6,6 +6,7 @@ import "@ssot/theme/base.css";
 import "@ssot/theme/chat.css";
 import "@ssot/theme/header.css";
 import "@ssot/theme/controls.css";
+import "@ssot/theme/model-switcher.css";
 import "@ssot/theme/panel-resize.css";
 import "@mantine/core/styles.css";
 import "@mantine/dates/styles.css";

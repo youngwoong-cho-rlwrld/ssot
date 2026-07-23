@@ -48,7 +48,7 @@ export function HeartbeatControl() {
   }, [open]);
 
   const agent = data?.agents?.[0];
-  const every = agent?.every ?? "—";
+  const every = agent?.every ?? "-";
   const paused = data?.paused ?? false;
   // The backend's `enabled` is authoritative (tracks the live toggle); the
   // local override is only a transient optimistic value cleared after reload.

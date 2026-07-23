@@ -21,6 +21,7 @@ import { useResultRowSync } from "@/hooks/useResultRowSync";
 import { useResultsData } from "@/hooks/useResultsData";
 import { useResultsViewState } from "@/hooks/useResultsViewState";
 import { useResultsAgent } from "@/hooks/useResultsAgent";
+import { CHAT_PANEL_WIDTH } from "@ssot/ui/chat-panel";
 import { usePanelResize } from "@/hooks/usePanelResize";
 import {
   agentColumnContext,
@@ -31,9 +32,11 @@ import { Button } from "@enmight/baseComponents/Buttons/Button";
 import type { RowType } from "@enmight/types/layoutTypes";
 import { rowMatchesFilters } from "@enmight/utils/tables/filters";
 
-const AGENT_PANEL_DEFAULT_WIDTH = 360;
-const AGENT_PANEL_MIN_WIDTH = 300;
-const AGENT_PANEL_MAX_WIDTH = 560;
+// Default/min/max come from the shared @ssot/ui constant so this and
+// model-diagram's chat column can't drift (both 340 / 280 / 640).
+const AGENT_PANEL_DEFAULT_WIDTH = CHAT_PANEL_WIDTH.default;
+const AGENT_PANEL_MIN_WIDTH = CHAT_PANEL_WIDTH.min;
+const AGENT_PANEL_MAX_WIDTH = CHAT_PANEL_WIDTH.max;
 const CHART_PANEL_DEFAULT_WIDTH = 720;
 const CHART_PANEL_MIN_WIDTH = 480;
 const CHART_PANEL_MAX_WIDTH = 1080;
